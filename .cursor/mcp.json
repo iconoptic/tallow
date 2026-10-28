@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "rea": {
+      "command": "npx",
+      "args": ["-y", "rea-agents@6.7.0", "mcp"],
+      "env": {
+        "JAVA_HOME": "/usr/lib/jvm/java-21-openjdk",
+        "GHIDRA_INSTALL_DIR": "/opt/ghidra",
+        "REA_JADX_MCP_JAR": "/home/btgrant/.local/share/rea/android/jadx-headless-mcp-0.7.1-all.jar",
+        "REA_TSHARK_COMMAND": "/usr/bin/tshark",
+        "REA_CAPINFOS_COMMAND": "/usr/bin/capinfos",
+        "REA_BINWALK_COMMAND": "/usr/bin/binwalk",
+        "REA_UNBLOB_COMMAND": "/home/btgrant/.local/bin/unblob"
+      }
+    }
+  }
+}

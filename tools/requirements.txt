@@ -1,0 +1,3 @@
+# Minimal deps for tools/ble_discover.py and optional RE helpers
+# Tested: bleak 3.0.2 on Python 3.14 (uses return_adv= and bluez={"adapter": …})
+bleak>=3.0,<4

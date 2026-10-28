@@ -1,0 +1,67 @@
+# Shallow-cloned reference repos (regenerate with tools/clone_references.sh)
+# Whitelist only the category dirs so a repo cloned at references/<name> is never
+# picked up as an embedded gitlink.
+/references/*
+!/references/README.md
+!/references/ble-stack/
+!/references/protocols-ble/
+!/references/protocols-wifi/
+!/references/firmware-liberation/
+!/references/re-tooling/
+/references/*/*
+!/references/*/.gitkeep
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Capture / reverse-engineering artifacts
+captures/
+rea-evidence/
+*.pcap
+*.pcapng
+*.cfa
+*.btsnoop
+btsnoop_hci.log*
+bugreport*.zip
+*.apk
+*.xapk
+*.dex
+*.so
+*.bin
+*.ug.bin
+*.uf2
+*.img
+
+# Secrets / local keys
+.env
+.env.*
+!.env.example
+**/local_keys.json
+**/devices.json
+**/tuya_devices.json
+configured-devices/
+secrets.yaml
+secrets.env
+/data/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Tool outputs
+led_discovery_*.json
+ble_capture_*.txt
+discovery*.json
