@@ -52,11 +52,14 @@ bugreport*.zip
 configured-devices/
 secrets.yaml
 secrets.env
+/secrets/
 /data/
 
 # IDE / OS
 .idea/
 .vscode/
+# Local docs-reconciliation ledger (hash + summary for the next agent)
+.cursor/docs-ledger.json
 *.swp
 .DS_Store
 Thumbs.db

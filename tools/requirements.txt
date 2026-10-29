@@ -1,3 +1,10 @@
-# Minimal deps for tools/ble_discover.py and optional RE helpers
+# Discovery plus the H7020 probe, which imports the pinned ha-govee-led-ble codec.
 # Tested: bleak 3.0.2 on Python 3.14 (uses return_adv= and bluez={"adapter": …})
+# kaitaistruct is the codec's pin. cryptography is imported by its advertisement parser.
 bleak>=3.0,<4
+kaitaistruct==0.11
+cryptography>=43
+# LAN page in app/h7020_panel.py
+fastapi>=0.115
+uvicorn>=0.32
+python-multipart>=0.0.9

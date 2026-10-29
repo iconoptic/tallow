@@ -44,7 +44,29 @@ Many stock firmwares soft-brick features or reboot-loop if they cannot reach clo
 
 ### BLE note
 
-Pure BLE lights never needed the internet. Isolation is about **Wi-Fi** stock firmware and any dual-radio bridge that still opens sockets.
+Pure BLE lights never needed the internet. Isolation is about **Wi-Fi** stock firmware and any dual-radio bridge that still opens sockets. The H7020 stays off this SSID ([devices/govee-h7020.md](devices/govee-h7020.md)).
+
+The host Bluetooth seed is `tools/setup_iot_ble.sh`. It comes up only while this access point is up, and inbound pairing stays closed. The radio, the allow file, and the commands are in [docs/01](01-bluetooth-server-hardware-and-proxies.md).
+
+## Host access point
+
+`tools/setup_iot_ap.sh` brings up this machine's IoT SSID. Run it with sudo; re-running it does not rotate the passphrase.
+
+One 2.4 GHz SSID on the Kootech adapter (USB `0bda:b812`). The default name is `tallow-iot`. WPA2-PSK, HT20, station isolation. The access point is `10.87.0.1/24`. DHCP offers no default route. DNS on this host answers every name with `0.0.0.0`. Chrony serves time to `10.87.0.0/24`. Firewall zone `tallow-iot` accepts DHCP, DNS, and NTP from that subnet and drops the rest. There is no masquerade and no port forward, so the LAN, Docker, and libvirt have no path in.
+
+The accept list starts empty. The SSID is up, and nothing can associate until its MAC is allowed. SSID, passphrase, channel, survey advice, and the accept list live in `secrets/iot-ap/` (gitignored).
+
+```bash
+sudo ./tools/setup_iot_ap.sh
+sudo ./tools/setup_iot_ap.sh status
+sudo ./tools/setup_iot_ap.sh allow aa:bb:cc:dd:ee:ff
+sudo ./tools/setup_iot_ap.sh revoke aa:bb:cc:dd:ee:ff
+sudo ./tools/setup_iot_ap.sh apply-channel
+```
+
+The Realtek combo (USB `0bda:d723`) is a survey radio. Its Bluetooth controller stays off. Every 30 minutes it scores channels 1, 6, and 11 and writes a recommendation next to the saved channel. That scan leaves hostapd running. `apply-channel` copies the recommendation into the saved channel and restarts the AP. If the combo is unplugged, the first `up` surveys once on the Kootech before hostapd starts, and later surveys record that the scanner is missing.
+
+ESP32 nodes join this SSID later. They are not a second AP on this machine.
 
 ## tuya-cloudcutter (OTA cloud cut + flash)
 
@@ -84,7 +106,7 @@ Bins ship under cloudcutter’s `custom-firmware/`; replace with newer releases 
 If you have a UART/SPI flash dump (or an extracted OTA blob), inspect it with REA before deciding “RE the protocol” vs “flash OpenBeken”:
 
 ```bash
-# Host deps: ./tools/install_re_toolchain.sh (binwalk + unblob)
+# Host deps: ./tools/install_re_toolchain_fedora.sh (binwalk + unblob)
 npx -y rea-agents@6.7.0 inspect-firmware-regions captures/bk7231_dump.bin
 npx -y rea-agents@6.7.0 extract-firmware captures/bk7231_dump.bin captures/fw-out/
 ```

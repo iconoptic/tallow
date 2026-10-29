@@ -4,7 +4,7 @@ Cheap light, kept local.
 
 The strings and bulbs already in the house, driven over BLE and Wi-Fi from one place on the LAN. Vendor apps stay outside.
 
-Device-specific inventory and the production web app are **later phases**. This repo is the bench: reference clones, reverse-engineering playbooks, hardware guidance, and discovery scripts.
+A full device inventory and the universal controller are later. The H7020 LAN page is the slice that runs now ([docs/devices/govee-h7020.md](docs/devices/govee-h7020.md)). This repo is the bench: reference clones, reverse-engineering playbooks, hardware guidance, and discovery scripts.
 
 ## Quick start
 
@@ -12,12 +12,12 @@ Device-specific inventory and the production web app are **later phases**. This 
 # Pull curated upstream references (gitignored; re-run on fresh clones)
 ./tools/clone_references.sh
 
-# Tooling venv (Arch/PEP 668: do not pip install system-wide)
+# Tooling venv (PEP 668: do not pip install system-wide)
 python -m venv .venv
 .venv/bin/pip install -r tools/requirements.txt
 
-# REA host toolchain (JDK 21, Ghidra, JADX JAR, unblob, Frida, …) — Arch
-./tools/install_re_toolchain.sh
+# REA host toolchain (JDK 21, Ghidra, JADX JAR, unblob, Frida, …) — Fedora
+./tools/install_re_toolchain_fedora.sh
 # Then restart Cursor so .cursor/mcp.json (REA MCP) loads.
 
 # BLE discovery (needs BlueZ + adapter permissions)
@@ -26,6 +26,9 @@ python -m venv .venv
 
 # Parse an Android HCI snoop for ATT writes
 .venv/bin/python tools/parse_btsnoop.py path/to/btsnoop_hci.log --hex
+
+# H7020 LAN page. Bind, password, scenes, and the agent socket: docs/devices/govee-h7020.md
+.venv/bin/python app/h7020_panel.py
 ```
 
 
@@ -33,14 +36,17 @@ python -m venv .venv
 
 | Path | Purpose |
 | --- | --- |
-| [docs/01-bluetooth-server-hardware-and-proxies.md](docs/01-bluetooth-server-hardware-and-proxies.md) | USB adapters vs ESP32 BLE proxies for a LAN web app |
+| [docs/01-bluetooth-server-hardware-and-proxies.md](docs/01-bluetooth-server-hardware-and-proxies.md) | Host Bluetooth seed, USB adapters, and ESP32 BLE proxies |
 | [docs/02-reverse-engineering-playbook.md](docs/02-reverse-engineering-playbook.md) | REA (JADX/Ghidra/ADB/Frida/tshark), btsnoop, btmon workflow |
 | [docs/03-known-light-protocols-matrix.md](docs/03-known-light-protocols-matrix.md) | Fingerprints for ELK-BLEDOM, Tuya, MagicHome, Govee, … |
-| [docs/04-firmware-liberation-and-network-isolation.md](docs/04-firmware-liberation-and-network-isolation.md) | IoT VLAN + CloudCutter / OpenBeken |
-| [docs/05-target-webapp-architecture.md](docs/05-target-webapp-architecture.md) | FastAPI + habluetooth + driver plugin blueprint |
+| [docs/04-firmware-liberation-and-network-isolation.md](docs/04-firmware-liberation-and-network-isolation.md) | Host IoT access point, isolation boundary, CloudCutter / OpenBeken |
+| [docs/05-target-webapp-architecture.md](docs/05-target-webapp-architecture.md) | FastAPI blueprint. The H7020 LAN page is the slice that exists |
+| [docs/devices/govee-h7020.md](docs/devices/govee-h7020.md) | Govee H7020 BLE frames, the probe, the LAN page, and the host agent socket |
+| [app/h7020_panel.py](app/h7020_panel.py) | House-LAN page for one Govee H7020. Patterns: `app/library.py`. Playback: `app/show.py`. Socket bearers: `app/agents.py` |
 | [AGENTS.md](AGENTS.md) | Instructions for future AI coding agents |
+| [.cursor/skills/improve-repo-docs/SKILL.md](.cursor/skills/improve-repo-docs/SKILL.md) | Reconcile docs with the tree. Ledger: `.cursor/docs-ledger.json`. Stop hook: `.cursor/hooks/docs-before-stop.py` |
 | [.cursor/mcp.json](.cursor/mcp.json) | Project-scoped REA MCP registration for Cursor |
-| [tools/](tools/) | Clone / RE toolchain scripts + discovery / snoop parsers |
+| [tools/](tools/) | Clone script, Fedora RE toolchain, IoT access point, Bluetooth seed, H7020 probe, panel token, discovery / snoop parsers |
 | `references/` | Shallow clones (not committed; see catalog below) |
 
 ## Hardware stance (summary)
@@ -74,6 +80,7 @@ Shallow-cloned by `./tools/clone_references.sh` into `references/`:
 | [dave-code-ruiz/elkbledom](https://github.com/dave-code-ruiz/elkbledom) | ELK-BLEDOM / Lotus Lantern / MELK |
 | [8none1/lednetwf_ble](https://github.com/8none1/lednetwf_ble) | Zengge LEDnetWF |
 | [rabidpaperclip/magichome2-ble](https://github.com/rabidpaperclip/magichome2-ble) | MagicHome2 / Surplife BLE |
+| [teh-hippo/ha-govee-led-ble](https://github.com/teh-hippo/ha-govee-led-ble) tag `v7.14.0-rc.2.h7020` | Govee H7020 BLE codec. The clone script unpacks `generated_protocol/` from the release zip. `tools/govee_h7020.py` calls it |
 
 ### Wi-Fi light protocols (`references/protocols-wifi/`)
 
@@ -82,7 +89,7 @@ Shallow-cloned by `./tools/clone_references.sh` into `references/`:
 | [jasonacox/tinytuya](https://github.com/jasonacox/tinytuya) | Tuya local LAN (+ BLE helpers) |
 | [python-kasa/python-kasa](https://github.com/python-kasa/python-kasa) | TP-Link Kasa / Tapo |
 | [Danielhiversen/flux_led](https://github.com/Danielhiversen/flux_led) | MagicHome / Flux LED (TCP 5577) |
-| [wez/govee2mqtt](https://github.com/wez/govee2mqtt) | Govee LAN / BLE / IoT reference |
+| [wez/govee2mqtt](https://github.com/wez/govee2mqtt) | Govee LAN and cloud for SKUs on Govee's LAN list. No BLE driver |
 
 ### Firmware liberation (`references/firmware-liberation/`)
 
@@ -99,14 +106,14 @@ Shallow-cloned by `./tools/clone_references.sh` into `references/`:
 | [LaurieWired/GhidraMCP](https://github.com/LaurieWired/GhidraMCP) | Fallback Ghidra ↔ MCP |
 | [zinja-coder/jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp) | Fallback JADX ↔ MCP for APK analysis |
 
-Host deps: `./tools/install_re_toolchain.sh`. Cursor loads REA via [`.cursor/mcp.json`](.cursor/mcp.json).
+Host deps: `./tools/install_re_toolchain_fedora.sh`. Cursor loads REA via [`.cursor/mcp.json`](.cursor/mcp.json).
 
 ## Next research round
 
 1. Inventory every owned light (name, MAC/IP, app, chip if known).
 2. Match against [docs/03](docs/03-known-light-protocols-matrix.md) or run the RE playbook.
 3. Isolate or flash Wi-Fi units ([docs/04](docs/04-firmware-liberation-and-network-isolation.md)).
-4. Implement drivers + FastAPI UI per [docs/05](docs/05-target-webapp-architecture.md).
+4. Inventory, groups, and proxies still follow [docs/05](docs/05-target-webapp-architecture.md). The H7020 page already has catalogue scenes, bulb paints, sequences, host schedules, and a host-only agent socket.
 
 ## Legal / ethics
 

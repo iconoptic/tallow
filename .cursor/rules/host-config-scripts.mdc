@@ -9,17 +9,17 @@ When asked to change this machine's configuration, write a script under `tools/`
 
 Host configuration means anything outside the repo that alters the machine: packages, systemd units, NetworkManager, firewalld, BlueZ, udev, polkit, sysctl, groups, and files under `/etc` or the user session.
 
-Inspect the machine if that makes the script correct (`pacman -Q`, `systemctl status`, reading a unit). Stop before the mutating command.
+Inspect the machine if that makes the script correct (`dnf list --installed`, `systemctl status`, reading a unit). Stop before the mutating command.
 
 ```bash
 # BAD — applies the change in the agent session
-sudo pacman -S --needed bluez bluez-utils
+sudo dnf install -y bluez
 sudo systemctl enable --now bluetooth.service
 
 # GOOD — tools/enable-bluetooth.sh, then tell the user:
 #   ./tools/enable-bluetooth.sh
-sudo pacman -S --needed bluez bluez-utils
+sudo dnf install -y bluez
 sudo systemctl enable --now bluetooth.service
 ```
 
-Match `tools/install_re_toolchain.sh`: `bash`, `set -euo pipefail`, idempotent, a short usage comment. Do not run the new script unless the user asks.
+Match `tools/install_re_toolchain_fedora.sh`: `bash`, `set -euo pipefail`, idempotent, a short usage comment. Do not run the new script unless the user asks.

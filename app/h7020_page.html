@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>H7020</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; background: #14120f; color: #f4efe6; }
+  main { max-width: 40rem; margin: 0 auto; padding: 1.5rem; }
+  button.wide, input[type="range"], input[type="color"], input[type="text"], input[type="time"], input[type="number"], select { width: 100%; box-sizing: border-box; }
+  button { font-size: 1rem; padding: 0.7rem; border: 0; border-radius: 0.6rem; background: #e7d7b1; color: #1c160f; }
+  label { display: block; margin: 1rem 0 0.35rem; }
+  input[type="color"] { height: 3rem; padding: 0; border: 0; background: transparent; }
+  input[type="text"], input[type="time"], input[type="number"], select { font-size: 1rem; padding: 0.55rem; }
+  .note { color: #c8bba6; }
+  .err { color: #ffb4a8; }
+  section { margin-top: 1.6rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.4rem 0 0.8rem; }
+  .bulbs button, .days button { width: auto; min-width: 2.4rem; padding: 0.45rem; background: #2a261f; color: #f4efe6; }
+  .bulbs button[aria-pressed="true"], .days button[aria-pressed="true"] { background: #e7d7b1; color: #1c160f; }
+  ul { padding-left: 1.1rem; }
+  li { margin: 0.35rem 0; }
+  li button { width: auto; margin-left: 0.4rem; padding: 0.3rem 0.55rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">H7020</h1>
+  <p class="note">__PHONE_HOME__</p>
+  <p id="meta" class="note"></p>
+  <p id="now" class="note"></p>
+  <p id="error" class="err"></p>
+  <button id="power" class="wide" type="button">Turn on</button>
+  <label for="brightness">Brightness <span id="bright-label">100</span></label>
+  <input id="brightness" type="range" min="1" max="100" value="100">
+  <label for="color">Color</label>
+  <input id="color" type="color" value="#ff0000">
+
+  <section>
+    <h2>Scenes</h2>
+    <label for="scene">Catalogue</label>
+    <select id="scene"></select>
+    <label for="scene-speed">Speed <span id="speed-label"></span></label>
+    <input id="scene-speed" type="number" min="0" step="1" value="0">
+    <button id="apply-scene" class="wide" type="button">Play scene</button>
+  </section>
+
+  <section>
+    <h2>Bulbs</h2>
+    <p class="note">Select bulbs, choose a color, and add a group. Paint sends those groups.</p>
+    <div id="bulbs" class="bulbs row"></div>
+    <label for="group-color">Group color</label>
+    <input id="group-color" type="color" value="#ff8000">
+    <button id="add-group" class="wide" type="button">Add group</button>
+    <p id="groups" class="note"></p>
+    <button id="paint" class="wide" type="button">Paint groups</button>
+    <button id="clear-groups" class="wide" type="button">Clear groups</button>
+  </section>
+
+  <section>
+    <h2>Patterns</h2>
+    <label for="pattern-id">Id</label>
+    <input id="pattern-id" type="text" autocomplete="off" placeholder="evening-walk">
+    <label for="pattern-name">Name</label>
+    <input id="pattern-name" type="text" autocomplete="off" placeholder="Evening walk">
+    <label for="pattern-kind">Kind</label>
+    <select id="pattern-kind">
+      <option value="scene">Scene</option>
+      <option value="paint">Paint</option>
+      <option value="sequence" selected>Sequence</option>
+    </select>
+    <label for="hold">Step hold (seconds)</label>
+    <input id="hold" type="number" min="1" step="1" value="4">
+    <label><input id="pattern-repeat" type="checkbox"> Repeat sequence</label>
+    <div class="row">
+      <button id="add-scene-step" type="button">Add scene step</button>
+      <button id="add-paint-step" type="button">Add paint step</button>
+      <button id="clear-steps" type="button">Clear steps</button>
+    </div>
+    <p id="steps" class="note"></p>
+    <button id="save-pattern" class="wide" type="button">Save pattern</button>
+    <ul id="pattern-list"></ul>
+  </section>
+
+  <section>
+    <h2>Schedules</h2>
+    <p class="note">Uses this computer's clock. The latest one that already came due today is the one that runs.</p>
+    <label for="schedule-id">Id</label>
+    <input id="schedule-id" type="text" autocomplete="off" placeholder="evening">
+    <label for="schedule-time">Time</label>
+    <input id="schedule-time" type="time" value="19:30">
+    <div id="days" class="days row"></div>
+    <label for="schedule-action">Action</label>
+    <select id="schedule-action">
+      <option value="pattern">Saved pattern</option>
+      <option value="scene">Scene showing above</option>
+      <option value="power">Power off</option>
+    </select>
+    <label for="schedule-pattern">Pattern</label>
+    <select id="schedule-pattern"></select>
+    <button id="save-schedule" class="wide" type="button">Save schedule</button>
+    <ul id="schedule-list"></ul>
+  </section>
+</main>
+<script>
+const power = document.querySelector("#power");
+const bright = document.querySelector("#brightness");
+const brightLabel = document.querySelector("#bright-label");
+const color = document.querySelector("#color");
+const title = document.querySelector("#title");
+const meta = document.querySelector("#meta");
+const now = document.querySelector("#now");
+const error = document.querySelector("#error");
+const sceneSelect = document.querySelector("#scene");
+const sceneSpeed = document.querySelector("#scene-speed");
+const speedLabel = document.querySelector("#speed-label");
+const bulbsEl = document.querySelector("#bulbs");
+const groupColor = document.querySelector("#group-color");
+const groupsEl = document.querySelector("#groups");
+const stepsEl = document.querySelector("#steps");
+const patternList = document.querySelector("#pattern-list");
+const scheduleList = document.querySelector("#schedule-list");
+const schedulePattern = document.querySelector("#schedule-pattern");
+const daysEl = document.querySelector("#days");
+
+const scenes = new Map();
+let bulbCount = 15;
+const selected = new Set();
+let groups = [];
+let steps = [];
+let patterns = [];
+let schedules = [];
+
+function hex(c) {
+  return "#" + [c.r, c.g, c.b].map((n) => n.toString(16).padStart(2, "0")).join("");
+}
+function rgbFrom(input) {
+  const v = input.value;
+  return [parseInt(v.slice(1, 3), 16), parseInt(v.slice(3, 5), 16), parseInt(v.slice(5, 7), 16)];
+}
+function showError(data, res) {
+  const detail = data && (data.error || data.detail);
+  error.textContent = detail || (res && res.ok ? "" : "The light did not take that.");
+}
+
+async function send(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: body ? {"Content-Type": "application/json"} : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401) location.href = "/login";
+  const data = await res.json().catch(() => ({}));
+  showError(data, res);
+  return {res, data};
+}
+
+function paint(s) {
+  title.textContent = s.name || "H7020";
+  const bits = [];
+  if (s.firmware) bits.push("fw " + s.firmware);
+  if (s.hardware) bits.push("hw " + s.hardware);
+  if (s.strings) bits.push(s.strings + " string");
+  if (s.connected === false) bits.push("disconnected");
+  if (s.preview) bits.push("preview");
+  meta.textContent = bits.join(" · ");
+  const mode = [];
+  if (s.mode) mode.push(s.mode);
+  if (s.scene && s.scene.name) mode.push(s.scene.name);
+  if (s.pattern_id) mode.push(s.pattern_id);
+  if (s.playing) mode.push("playing");
+  if (s.paint) mode.push(s.paint.length + " groups");
+  now.textContent = mode.join(" · ");
+  power.dataset.on = s.on ? "1" : "0";
+  power.textContent = s.on ? "Turn off" : "Turn on";
+  if (document.activeElement !== bright && s.brightness) {
+    bright.value = s.brightness;
+    brightLabel.textContent = s.brightness;
+  }
+  if (document.activeElement !== color && s.color) color.value = hex(s.color);
+  if (s.error) error.textContent = s.error;
+}
+
+async function refresh() {
+  const res = await fetch("/api/state");
+  if (res.status === 401) { location.href = "/login"; return; }
+  paint(await res.json());
+}
+
+function selectedScene() {
+  const info = scenes.get(sceneSelect.value);
+  if (!info) return null;
+  const body = {name: info.name};
+  if (info.speeds) body.speed = Number(sceneSpeed.value);
+  return body;
+}
+
+function syncSpeed() {
+  const info = scenes.get(sceneSelect.value);
+  const count = info && info.speeds ? info.speeds : 0;
+  sceneSpeed.hidden = count === 0;
+  sceneSpeed.previousElementSibling.hidden = count === 0;
+  if (!count) return;
+  sceneSpeed.max = String(count - 1);
+  if (info.default_speed != null) sceneSpeed.value = String(info.default_speed);
+  speedLabel.textContent = "0–" + (count - 1);
+}
+
+function renderBulbs() {
+  bulbsEl.replaceChildren();
+  for (let bulb = 1; bulb <= bulbCount; bulb += 1) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = String(bulb);
+    button.setAttribute("aria-label", "bulb " + bulb);
+    button.setAttribute("aria-pressed", selected.has(bulb) ? "true" : "false");
+    button.addEventListener("click", () => {
+      if (selected.has(bulb)) selected.delete(bulb);
+      else selected.add(bulb);
+      button.setAttribute("aria-pressed", selected.has(bulb) ? "true" : "false");
+    });
+    bulbsEl.appendChild(button);
+  }
+}
+
+function renderGroups() {
+  groupsEl.textContent = groups.length
+    ? groups.map((group) => group.bulbs.join(",") + " " + group.rgb.join(",")).join(" · ")
+    : "No groups yet.";
+}
+
+function renderSteps() {
+  stepsEl.textContent = steps.length
+    ? steps.map((step, index) => {
+        const what = step.scene ? step.scene.name : "paint";
+        return (index + 1) + ". " + what + " for " + step.hold + "s";
+      }).join(" · ")
+    : "No steps yet.";
+}
+
+function renderPatterns() {
+  patternList.replaceChildren();
+  schedulePattern.replaceChildren();
+  for (const pattern of patterns) {
+    const option = document.createElement("option");
+    option.value = pattern.id;
+    option.textContent = pattern.name;
+    schedulePattern.appendChild(option);
+    const item = document.createElement("li");
+    item.textContent = pattern.name + " (" + pattern.kind + ")";
+    const apply = document.createElement("button");
+    apply.type = "button";
+    apply.textContent = "Play";
+    apply.addEventListener("click", async () => {
+      const {data} = await send("POST", "/api/patterns/" + pattern.id + "/apply");
+      if (data.state) paint(data.state);
+    });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", async () => {
+      await send("DELETE", "/api/patterns/" + pattern.id);
+      await loadLibrary();
+    });
+    item.append(apply, remove);
+    patternList.appendChild(item);
+  }
+}
+
+function renderSchedules() {
+  scheduleList.replaceChildren();
+  for (const schedule of schedules) {
+    const item = document.createElement("li");
+    const action = schedule.action.power === false
+      ? "power off"
+      : (schedule.action.pattern || (schedule.action.scene && schedule.action.scene.name));
+    item.textContent = schedule.time + " " + schedule.days.join(",") + " " + action;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", async () => {
+      await send("DELETE", "/api/schedules/" + schedule.id);
+      await loadLibrary();
+    });
+    item.append(remove);
+    scheduleList.appendChild(item);
+  }
+}
+
+async function loadScenes() {
+  const {res, data} = await send("GET", "/api/scenes");
+  if (!res.ok) return;
+  sceneSelect.replaceChildren();
+  scenes.clear();
+  let category = "";
+  let group = null;
+  for (const scene of data.scenes || []) {
+    scenes.set(scene.name, scene);
+    if (scene.category !== category) {
+      category = scene.category;
+      group = document.createElement("optgroup");
+      group.label = category;
+      sceneSelect.appendChild(group);
+    }
+    const option = document.createElement("option");
+    option.value = scene.name;
+    option.textContent = scene.name;
+    group.appendChild(option);
+  }
+  syncSpeed();
+}
+
+async function loadLibrary() {
+  const patternsRes = await send("GET", "/api/patterns");
+  const schedulesRes = await send("GET", "/api/schedules");
+  patterns = patternsRes.data.patterns || [];
+  schedules = schedulesRes.data.schedules || [];
+  renderPatterns();
+  renderSchedules();
+}
+
+power.addEventListener("click", async () => {
+  const {data} = await send("POST", "/api/power", {on: power.dataset.on !== "1"});
+  if (data.state) paint(data.state);
+});
+bright.addEventListener("input", () => {
+  brightLabel.textContent = bright.value;
+  send("POST", "/api/brightness", {level: Number(bright.value)}).then(({data}) => {
+    if (data.state) paint(data.state);
+  });
+});
+color.addEventListener("input", () => {
+  const [r, g, b] = rgbFrom(color);
+  send("POST", "/api/color", {r, g, b}).then(({data}) => { if (data.state) paint(data.state); });
+});
+sceneSelect.addEventListener("change", syncSpeed);
+document.querySelector("#apply-scene").addEventListener("click", async () => {
+  const scene = selectedScene();
+  if (!scene) return;
+  const {data} = await send("POST", "/api/scene", scene);
+  if (data.state) paint(data.state);
+});
+document.querySelector("#add-group").addEventListener("click", () => {
+  if (!selected.size) { error.textContent = "Select at least one bulb."; return; }
+  groups.push({bulbs: [...selected].sort((a, b) => a - b), rgb: rgbFrom(groupColor)});
+  selected.clear();
+  renderBulbs();
+  renderGroups();
+  error.textContent = "";
+});
+document.querySelector("#clear-groups").addEventListener("click", () => {
+  groups = [];
+  renderGroups();
+});
+document.querySelector("#paint").addEventListener("click", async () => {
+  const {data} = await send("POST", "/api/paint", {groups});
+  if (data.state) paint(data.state);
+});
+document.querySelector("#add-scene-step").addEventListener("click", () => {
+  const scene = selectedScene();
+  if (!scene) return;
+  steps.push({hold: Number(document.querySelector("#hold").value), scene});
+  renderSteps();
+});
+document.querySelector("#add-paint-step").addEventListener("click", () => {
+  if (!groups.length) { error.textContent = "Add a paint group first."; return; }
+  steps.push({hold: Number(document.querySelector("#hold").value), paint: groups.map((group) => ({bulbs: group.bulbs.slice(), rgb: group.rgb.slice()}))});
+  renderSteps();
+  error.textContent = "";
+});
+document.querySelector("#clear-steps").addEventListener("click", () => {
+  steps = [];
+  renderSteps();
+});
+document.querySelector("#save-pattern").addEventListener("click", async () => {
+  const id = document.querySelector("#pattern-id").value.trim();
+  const name = document.querySelector("#pattern-name").value.trim();
+  const kind = document.querySelector("#pattern-kind").value;
+  const body = {id, name, kind};
+  if (kind === "scene") body.scene = selectedScene();
+  else if (kind === "paint") body.paint = groups;
+  else {
+    body.repeat = document.querySelector("#pattern-repeat").checked;
+    body.steps = steps;
+  }
+  const exists = patterns.some((pattern) => pattern.id === id);
+  const {res} = await send(exists ? "PUT" : "POST", exists ? "/api/patterns/" + id : "/api/patterns", body);
+  if (res.ok) await loadLibrary();
+});
+document.querySelector("#save-schedule").addEventListener("click", async () => {
+  const id = document.querySelector("#schedule-id").value.trim();
+  const actionKind = document.querySelector("#schedule-action").value;
+  let action;
+  if (actionKind === "power") action = {power: false};
+  else if (actionKind === "scene") action = {scene: selectedScene()};
+  else action = {pattern: schedulePattern.value};
+  const body = {
+    id,
+    enabled: true,
+    time: document.querySelector("#schedule-time").value,
+    days: [...daysEl.querySelectorAll("button")].filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.dataset.day),
+    action,
+  };
+  const exists = schedules.some((schedule) => schedule.id === id);
+  const {res} = await send(exists ? "PUT" : "POST", exists ? "/api/schedules/" + id : "/api/schedules", body);
+  if (res.ok) await loadLibrary();
+});
+
+for (const day of ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = day;
+  button.dataset.day = day;
+  button.setAttribute("aria-pressed", "true");
+  button.addEventListener("click", () => {
+    const pressed = button.getAttribute("aria-pressed") !== "true";
+    button.setAttribute("aria-pressed", pressed ? "true" : "false");
+  });
+  daysEl.appendChild(button);
+}
+
+renderGroups();
+renderSteps();
+refresh();
+setInterval(refresh, 3000);
+send("GET", "/api/capabilities").then(({data}) => {
+  if (data.bulbs) bulbCount = data.bulbs;
+  renderBulbs();
+});
+loadScenes();
+loadLibrary();
+</script>
+</body>
+</html>

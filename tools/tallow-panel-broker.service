@@ -1,0 +1,12 @@
+[Unit]
+Description=H7020 agent socket broker
+Documentation=file:///home/btgrant/Projects/tallow/docs/devices/govee-h7020.md
+
+[Service]
+ExecStart=/usr/bin/python3 -u /home/btgrant/Projects/tallow/tools/panel_broker.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

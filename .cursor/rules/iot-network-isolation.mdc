@@ -1,0 +1,36 @@
+---
+description: Isolated 2.4 GHz IoT sandbox, whitelist-only Wi-Fi and Bluetooth, control panel is the only path in
+alwaysApply: true
+---
+
+# IoT sandbox and whitelist
+
+Every Wi-Fi IoT device, including mesh nodes that only extend coverage, lives on an isolated network. Clients on regular Wi-Fi never join that network and never get a routed or NAT path into it.
+
+## Radio
+
+- Prefer **2.4 GHz** Wi-Fi for range and device compatibility. Throughput is not a design constraint.
+- Bluetooth is in scope on the same boundary. Membership rules apply to both radios.
+
+## Who may join
+
+Wi-Fi association and Bluetooth connections accept a whitelist only:
+
+- Controllers deployed to form the mesh
+- IoT devices those controllers operate
+
+Phones, laptops, guests, and any other device stay off the whitelist. Do not leave SSID auth, mesh join, or Bluetooth pairing open.
+
+## How people reach devices
+
+The control-panel web app is the only path from regular Wi-Fi into the sandbox. Clients talk to the panel; the panel talks to the sandbox. Do not add NAT, port forwards, or LAN-to-IoT routing so a phone can reach a device directly.
+
+```text
+# BAD — bulb on the house SSID, open mesh or BLE pairing,
+#       NAT or a route from the LAN into the IoT network
+# GOOD — bulb and mesh nodes on the isolated 2.4 GHz network;
+#        whitelist = mesh controllers + controlled devices;
+#        phone uses the control panel only
+```
+
+When changing drivers, host networking, firmware setup, or the panel, keep this boundary. Network layout detail lives in `docs/04-firmware-liberation-and-network-isolation.md`.

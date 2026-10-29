@@ -1,18 +1,19 @@
-# <path> <url> <HEAD sha> — written by tools/clone_references.sh
+# <path> <url> <HEAD sha> [ref] — written by tools/clone_references.sh
 references/ble-stack/bleak https://github.com/hbldh/bleak.git c7ca1b04b00b0bda5f98ccf9493e24784cfe869d
-references/ble-stack/bumble https://github.com/google/bumble.git 82d8fe2b943dca1650c571d2ca0aa8a908163a43
-references/ble-stack/habluetooth https://github.com/Bluetooth-Devices/habluetooth.git b41bfe7979223812cd50a592dda29b3ad4ea6cd4
+references/ble-stack/bumble https://github.com/google/bumble.git e1fe43c9b44be0d974a6fd533ac6d494fc50510a
+references/ble-stack/habluetooth https://github.com/Bluetooth-Devices/habluetooth.git 27e72f961fad27231793f3d6e7fc284f1b35539c
 references/ble-stack/bleak-esphome https://github.com/Bluetooth-Devices/bleak-esphome.git b2fb6bf4cb2ea4bf52284ce8664d11e3de46fdf4
 references/protocols-ble/led-ble https://github.com/Bluetooth-Devices/led-ble.git 01d0c44b53bca97aafb6b00dc2e1a5bc34d299d1
 references/protocols-ble/elkbledom https://github.com/dave-code-ruiz/elkbledom.git da1b4db600e4e0e53a02a7ca821f6c4983664457
-references/protocols-ble/lednetwf_ble https://github.com/8none1/lednetwf_ble.git a124f5d6142578cb69aa2cb1c21280095318d72a
+references/protocols-ble/lednetwf_ble https://github.com/8none1/lednetwf_ble.git 61da7f5a74943075dcd4940c287bd2bab36d1636
 references/protocols-ble/magichome2-ble https://github.com/rabidpaperclip/magichome2-ble.git ff6a44df4b1fc7a26c8dd0a825a3689544952e19
+references/protocols-ble/ha-govee-led-ble https://github.com/teh-hippo/ha-govee-led-ble.git 0ca80566f263a6638c5cb18e1343a7883618c31a v7.14.0-rc.2.h7020
 references/protocols-wifi/tinytuya https://github.com/jasonacox/tinytuya.git 3c0a687d442dc68e13eeafad39062526b20c109a
-references/protocols-wifi/python-kasa https://github.com/python-kasa/python-kasa.git e29864bfdc9aa520850c92517e5e0c94533b776d
+references/protocols-wifi/python-kasa https://github.com/python-kasa/python-kasa.git bd4826f1b3339e535b08b567b5d17b93a10858e3
 references/protocols-wifi/flux_led https://github.com/Danielhiversen/flux_led.git cea6348fc6769bf41c91403289b2690089adbec2
 references/protocols-wifi/govee2mqtt https://github.com/wez/govee2mqtt.git 6f5a8449ca63da8bdc7cc696288a993681ff2a69
 references/firmware-liberation/tuya-cloudcutter https://github.com/tuya-cloudcutter/tuya-cloudcutter.git b5712802c4cc0668a8db8434b7fef94bda8d40e5
-references/firmware-liberation/OpenBK7231T_App https://github.com/openshwprojects/OpenBK7231T_App.git 6a8d05f942622e030b21d3452a0524a9d6be73f9
-references/re-tooling/rea https://github.com/morluto/rea.git d0067ba34a39ea47dd7e11bb2e6169bc0938cc3f
+references/firmware-liberation/OpenBK7231T_App https://github.com/openshwprojects/OpenBK7231T_App.git 0d7dd8b31c7d1c3e65e50562ab0e0ec7272c1840
+references/re-tooling/rea https://github.com/morluto/rea.git 40b9c03f996270e944ff07cafb63be15ce903708
 references/re-tooling/GhidraMCP https://github.com/LaurieWired/GhidraMCP.git 1e980252087b2479a21b9ca6d82d5829538651a7
 references/re-tooling/jadx-ai-mcp https://github.com/zinja-coder/jadx-ai-mcp.git 9f4fce6f49902e95c62479c02d985d1eb0b3cbe1

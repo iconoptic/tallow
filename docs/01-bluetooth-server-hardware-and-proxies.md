@@ -12,6 +12,21 @@ Goal: control cheap BLE smart lights from a self-hosted web app reachable from a
 
 A “top tier” single dongle helps, but **proxies usually beat a single long-range radio** for reliability in a house.
 
+## This host
+
+The seed radio is the TP-Link UB500 (USB `2357:0604`) on USB 2.0 port 3-6. `tools/setup_iot_ble.sh` powers that controller and leaves it not discoverable and not pairable. No pairing agent is registered, so inbound pairing stays closed. `up` refuses unless the Kootech access point from [docs/04](04-firmware-liberation-and-network-isolation.md) is already up. It reinstalls that access-point script's combo-off oneshot, so bluetoothd AutoEnable cannot turn the Realtek combo's Bluetooth (USB `0bda:d723`) back on. That controller shares the survey antenna. House coverage is ESP32 proxies that join the IoT SSID. This script only prepares the host radio.
+
+Port 3-6 is the USB 2.0 port beside the Kootech antenna. A short USB 2.0 extension that moves the UB500 away from that antenna is worth doing before trusting RSSI from this stick. Leave the Kootech where it is.
+
+`secrets/iot-ble/accept_macs` starts empty (directory `0700`, file `0600`, gitignored with `secrets/`). It is the outbound allow list for the future controller. `allow` and `revoke` only edit that file; they do not change BlueZ policy. Re-running `up` leaves an existing allow file in place. Leave the kernel LE whitelist unset so `tools/ble_discover.py` still sees advertisers.
+
+```bash
+sudo ./tools/setup_iot_ble.sh
+sudo ./tools/setup_iot_ble.sh status
+sudo ./tools/setup_iot_ble.sh allow aa:bb:cc:dd:ee:ff
+sudo ./tools/setup_iot_ble.sh revoke aa:bb:cc:dd:ee:ff
+```
+
 ## Transport stack used by this project
 
 ```

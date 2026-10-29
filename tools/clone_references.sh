@@ -6,6 +6,14 @@
 #
 # Usage: clone_references.sh          clone missing repos, rewrite the lock
 #        clone_references.sh --check  report clones that are missing or differ from the lock
+#
+# clone_one dest url [ref]
+#   ref is a branch or tag. Omit it to clone the remote's default branch.
+#   A pinned ref is recorded as a fourth lock field. The check compares HEAD.
+#
+# ha-govee-led-ble is pinned to v7.14.0-rc.2.h7020. That tag omits Kaitai
+# output, so this script unpacks generated_protocol/ from the matching release
+# zip. --check reports that directory when it is missing.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -22,13 +30,14 @@ esac
 if [[ "${MODE}" == "record" ]]; then
   NEW_LOCK="$(mktemp)"
   trap 'rm -f "${NEW_LOCK}"' EXIT
-  echo "# <path> <url> <HEAD sha> — written by tools/clone_references.sh" >"${NEW_LOCK}"
+  echo "# <path> <url> <HEAD sha> [ref] — written by tools/clone_references.sh" >"${NEW_LOCK}"
 fi
 DRIFT=0
 
 clone_one() {
   local dest="$1"
   local url="$2"
+  local ref="${3:-}"
   local rel="${dest#"${ROOT}/"}"
   local sha
 
@@ -55,11 +64,20 @@ clone_one() {
     echo "error: ${rel} exists but is not a git clone; move it aside and re-run" >&2
     exit 1
   else
-    echo "clone ${rel}"
-    git clone --depth 1 --single-branch "${url}" "${dest}"
+    if [[ -n "${ref}" ]]; then
+      echo "clone ${rel} @ ${ref}"
+      git clone --depth 1 --single-branch --branch "${ref}" "${url}" "${dest}"
+    else
+      echo "clone ${rel}"
+      git clone --depth 1 --single-branch "${url}" "${dest}"
+    fi
   fi
   sha="$(git -C "${dest}" rev-parse HEAD)"
-  echo "${rel} ${url} ${sha}" >>"${NEW_LOCK}"
+  if [[ -n "${ref}" ]]; then
+    echo "${rel} ${url} ${sha} ${ref}" >>"${NEW_LOCK}"
+  else
+    echo "${rel} ${url} ${sha}" >>"${NEW_LOCK}"
+  fi
 }
 
 mkdir -p \
@@ -80,6 +98,25 @@ clone_one "${REF}/protocols-ble/led-ble"      "https://github.com/Bluetooth-Devi
 clone_one "${REF}/protocols-ble/elkbledom"    "https://github.com/dave-code-ruiz/elkbledom.git"
 clone_one "${REF}/protocols-ble/lednetwf_ble" "https://github.com/8none1/lednetwf_ble.git"
 clone_one "${REF}/protocols-ble/magichome2-ble" "https://github.com/rabidpaperclip/magichome2-ble.git"
+# H7020 BLE codec lives on this prerelease tag, not on the default branch.
+clone_one "${REF}/protocols-ble/ha-govee-led-ble" "https://github.com/teh-hippo/ha-govee-led-ble.git" "v7.14.0-rc.2.h7020"
+# The tag omits Kaitai output. The matching release zip carries generated_protocol/.
+govee_rel="references/protocols-ble/ha-govee-led-ble"
+govee_generated="${REF}/protocols-ble/ha-govee-led-ble/custom_components/ha_govee_led_ble/generated_protocol/__init__.py"
+if [[ ! -f "${govee_generated}" ]]; then
+  if [[ "${MODE}" == "check" ]]; then
+    echo "missing ${govee_rel} generated_protocol"
+    DRIFT=1
+  else
+    echo "unpack generated_protocol from v7.14.0-rc.2.h7020"
+    govee_zip="$(mktemp)"
+    curl -fsSL -o "${govee_zip}" \
+      "https://github.com/teh-hippo/ha-govee-led-ble/releases/download/v7.14.0-rc.2.h7020/ha_govee_led_ble.zip"
+    unzip -q -o "${govee_zip}" "generated_protocol/*" \
+      -d "${REF}/protocols-ble/ha-govee-led-ble/custom_components/ha_govee_led_ble"
+    rm -f "${govee_zip}"
+  fi
+fi
 
 # --- Local Wi-Fi light protocols ---
 clone_one "${REF}/protocols-wifi/tinytuya"    "https://github.com/jasonacox/tinytuya.git"

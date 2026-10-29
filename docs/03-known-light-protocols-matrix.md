@@ -63,9 +63,10 @@ Supports scenes/effects, HSB color, music modes on some hardware. Phone app and 
 
 | Field | Typical value |
 | --- | --- |
-| Transport | BLE (+ optional LAN/cloud) |
-| Reference | `references/protocols-wifi/govee2mqtt` (Rust; covers BLE + LAN + IoT) |
-| Notes | Model-specific; prefer LAN when the device supports Govee LAN API |
+| Transport | BLE |
+| H7020 | [devices/govee-h7020.md](devices/govee-h7020.md). Probe: `tools/govee_h7020.py`. Page: `app/h7020_panel.py` |
+| Reference | `references/protocols-ble/ha-govee-led-ble` tag `v7.14.0-rc.2.h7020` |
+| Notes | One central. Close the phone app before the host connects. The LAN page holds that central while it runs. H7020 has no Govee LAN API |
 
 ## Wi-Fi families
 
@@ -102,9 +103,10 @@ After extracting local keys, move devices to a no-WAN VLAN ([doc 04](04-firmware
 
 | Field | Typical value |
 | --- | --- |
-| Ports | UDP **4001** (control), **4002** (status), **4003** (scan/multicast) — confirm per govee2mqtt docs |
-| Prerequisite | Enable LAN control in Govee app for supported SKUs |
-| Reference | `references/protocols-wifi/govee2mqtt` |
+| Ports | UDP **4001** device scan, UDP **4003** device commands, UDP **4002** replies to the controller |
+| Prerequisite | SKU on Govee's LAN list, then LAN Control enabled in the Govee app |
+| Reference | `references/protocols-wifi/govee2mqtt` (LAN and cloud; no BLE driver) |
+| Notes | H7020 is not on that list. See [devices/govee-h7020.md](devices/govee-h7020.md) |
 
 ## Quick fingerprint table
 
@@ -117,7 +119,8 @@ After extracting local keys, move devices to a no-WAN VLAN ([doc 04](04-firmware
 | Name `GATT-DEMO` | MR Star | mrstar protocol docs |
 | TCP 5577 open | MagicHome | flux_led |
 | TCP 6668 open | Tuya | tinytuya |
-| UDP 400x Govee | Govee LAN | govee2mqtt |
+| Name `Govee_H7020*` | Govee H7020 | [devices/govee-h7020.md](devices/govee-h7020.md) |
+| UDP 4001/4003 | Govee LAN (SKU on the LAN list) | govee2mqtt |
 | AP `OpenBK*` / `kickstart-*` | Already liberated | OpenBeken / ESPHome |
 
 ## Color-order gotcha

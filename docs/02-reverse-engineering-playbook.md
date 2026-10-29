@@ -4,10 +4,10 @@ Use this workflow on devices **you own**. Goal: recover the local BLE GATT or LA
 
 ## Prerequisites
 
-Install host tools (Arch) once:
+Install host tools (Fedora) once:
 
 ```bash
-./tools/install_re_toolchain.sh
+./tools/install_re_toolchain_fedora.sh
 ```
 
 That provisions JDK 21, Ghidra, the pinned jadx-headless-mcp JAR, unblob, Frida, mitmproxy, apktool, etc. Cursor loads REA via [`.cursor/mcp.json`](../.cursor/mcp.json). Prefer **REA MCP tools** when available; otherwise:
@@ -69,7 +69,8 @@ Before deep RE:
 | Tuya / Smart Life | `references/protocols-wifi/tinytuya` |
 | MagicHome Wi-Fi | `references/protocols-wifi/flux_led` |
 | Kasa / Tapo | `references/protocols-wifi/python-kasa` |
-| Govee | `references/protocols-wifi/govee2mqtt` |
+| Govee H7020 | `references/protocols-ble/ha-govee-led-ble`, `tools/govee_h7020.py`, [devices/govee-h7020.md](devices/govee-h7020.md) |
+| Govee LAN | `references/protocols-wifi/govee2mqtt` |
 
 ## Phase 2 — Android APK static analysis (AI-assisted)
 
@@ -79,10 +80,10 @@ Most BLE lights ship an Android APK that builds GATT payloads in Java or a nativ
 
 | Tool | Role | Clone / install |
 | --- | --- | --- |
-| **REA** (primary) | MCP/CLI over JADX, Ghidra, ADB, Frida, tshark, firmware | `references/re-tooling/rea` + `tools/install_re_toolchain.sh` |
+| **REA** (primary) | MCP/CLI over JADX, Ghidra, ADB, Frida, tshark, firmware | `references/re-tooling/rea` + `tools/install_re_toolchain_fedora.sh` |
 | JADX + JADX-AI-MCP | Fallback APK decompile MCP | `references/re-tooling/jadx-ai-mcp` |
 | Ghidra + GhidraMCP | Fallback native / firmware MCP | `references/re-tooling/GhidraMCP` |
-| apktool | Manifest, resources, smali (also via REA) | `android-apktool` |
+| apktool | Manifest, resources, smali (also via REA) | install script |
 | Frida | Runtime hooks on `writeCharacteristic` | `frida-tools` via install script |
 
 ### Pulling the APK from a phone (REA)

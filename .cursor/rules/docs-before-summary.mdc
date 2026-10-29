@@ -1,0 +1,18 @@
+---
+description: Reconcile docs with the working tree before the final summary
+alwaysApply: true
+---
+
+# Docs before summary
+
+When the requested work is done and this session can edit files, run this check once before the final summary. Skip it when the session cannot edit files.
+
+```bash
+python3 .cursor/skills/improve-repo-docs/scripts/diff_hash.py --json
+```
+
+Compare `diff_hash` with `.cursor/docs-ledger.json`. When `clean` is true, or the hashes match, write the summary.
+
+When they differ, launch one generalPurpose subagent. Do not edit documentation in the parent turn. Tell the subagent to read `.cursor/skills/improve-repo-docs/SKILL.md` and run it in working-tree mode. It writes the ledger last.
+
+The stop hook repeats this check if the ledger hash was not updated.

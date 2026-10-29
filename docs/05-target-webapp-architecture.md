@@ -2,7 +2,7 @@
 
 Blueprint for the future **universal, self-hosted smart-light controller**: a LAN-only web UI that drives every owned device through Bluetooth and/or Wi-Fi without vendor clouds.
 
-This document is intentional design guidance for a later implementation phase. No application code lives here yet.
+This document is the design for the full controller. The H7020 LAN page in `app/h7020_panel.py` is the phase 3 slice: one string, catalogue scenes, bulb paints, saved sequences, host schedules, and a host-only agent socket. Inventory, groups, and proxies are still ahead.
 
 ## Goals
 
@@ -85,7 +85,8 @@ Wrap battle-tested libraries from `references/` rather than re-encoding frames:
 | Tuya LAN | `tinytuya` |
 | MagicHome Wi-Fi | `flux_led` |
 | Kasa/Tapo | `python-kasa` |
-| Govee | port patterns from `govee2mqtt` or call its MQTT bridge |
+| Govee LAN | port patterns from `govee2mqtt` or call its MQTT bridge |
+| Govee H7020 | `app/h7020_panel.py` on the house LAN. Frames from `tools/govee_h7020.py`. See [devices/govee-h7020.md](devices/govee-h7020.md) |
 | OpenBeken / ESPHome | HTTP / native API / MQTT |
 
 ## BLE connection management
@@ -99,7 +100,7 @@ Use **habluetooth** concepts even if you do not embed Home Assistant:
 
 Operational rules:
 
-- One GATT connection per light; disconnect idle clients after a timeout to free slots.
+- One GATT connection per light; disconnect idle clients after a timeout to free slots. The running H7020 page keeps its link up ([devices/govee-h7020.md](devices/govee-h7020.md)).
 - Cache GATT services where the stack allows.
 - Prefer Write Without Response when that is what the stock app used.
 - Exponential backoff on disconnect storms.
@@ -124,6 +125,8 @@ Operational rules:
 | WS | `/ws` | State diffs, discovery events |
 
 Keep payloads boring JSON. Push state on every successful apply and on LAN notify/poll.
+
+The H7020 page is the flat version of this for one device, id `h7020`. House-LAN HTTP uses the password cookie. A unix socket at `data/panel/agent.sock` (mode `0600`) accepts scoped bearer tokens for a tool running on this host. The libvirt guest that runs Hermes is not given a path to that socket or to `10.87.0.0/24`. `GET /api/manifest` on the socket lists the calls. Scenes, paints, patterns, and local schedules are in [devices/govee-h7020.md](devices/govee-h7020.md). Groups, WebSocket, and the inventory routes above are still ahead.
 
 ## Frontend
 
@@ -161,9 +164,9 @@ For pure LAN Wi-Fi control (no local BLE), bridge networking is fine. BLE wants 
 
 1. **Inventory + discovery tools** (this repo’s `tools/` + docs) — identify owned devices.
 2. **CLI drivers** per family — prove frames without UI.
-3. **FastAPI + single-device UI** — end-to-end loop.
+3. **FastAPI + single-device UI** — the H7020 page in `app/h7020_panel.py`, including catalogue scenes, bulb paints, saved sequences, host schedules, and a host-only agent socket.
 4. **habluetooth + proxies** — whole-house BLE.
-5. **Groups / scenes / optional MQTT out** — niceties.
+5. **Groups / optional MQTT out** — niceties. Per-device scenes for the H7020 are already on that page.
 
 ## Related
 

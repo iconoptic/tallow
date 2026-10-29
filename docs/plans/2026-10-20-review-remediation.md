@@ -6,8 +6,8 @@ Fixes for the three-model adversarial review (Grok, Fable, Kimi) of the research
 
 ## Before you start
 
-- **The tree changed after the reviews.** A later pass (21:20–21:23) made REA the primary RE tool. It added `references/re-tooling/rea`, `.cursor/mcp.json` and `tools/install_re_toolchain.sh`, and edited README, AGENTS, `.gitignore`, docs 02 and 04, and the clone script. The clone count is now **17**, not 16. Re-read each file before editing. Fixes are anchored by section heading, not line number.
-- `tools/install_re_toolchain.sh` and `.cursor/mcp.json` belong to that REA work. Leave them alone except for item A13.
+- **The tree changed after the reviews.** A later pass (21:20–21:23) made REA the primary RE tool. It added `references/re-tooling/rea`, `.cursor/mcp.json` and the host RE toolchain installer (now `tools/install_re_toolchain_fedora.sh`), and edited README, AGENTS, `.gitignore`, docs 02 and 04, and the clone script. The clone count was **17** after that pass, not 16. The H7020 pin makes it **18**. Re-read each file before editing. Fixes are anchored by section heading, not line number.
+- `tools/install_re_toolchain_fedora.sh` and `.cursor/mcp.json` belong to that REA work. Leave them alone except for item A13.
 - Do not run `git` commits (AGENTS.md). Do not connect to or flash devices.
 - The three workstreams touch **disjoint files**, so they can run in parallel:
   - **A:** `tools/*`
@@ -92,10 +92,10 @@ Reproduced with synthetic captures. A 40-byte Write Command split at a 27-byte A
 ### Other tools
 
 - **A12 — `tools/requirements.txt`:** use `bleak>=3.0,<4`, with a comment "tested: bleak 3.0.2, Python 3.14". The tool depends on 3.x behaviour (`return_adv`, `bluez=` kwarg).
-- **A13 — `tools/install_re_toolchain.sh`** (small, and coordinate with the REA work): replace the fixed `/tmp/rea-doctor.err` with a `mktemp` path.
+- **A13 — `tools/install_re_toolchain_fedora.sh`:** done. Doctor stdout and stderr already use `mktemp` paths.
 - **A14 — `tools/clone_references.sh`** (decision 3):
-  - After each clone or skip, record `<dest> <url> <HEAD sha>` to a tracked `tools/references.lock`.
-  - Add `--check`, which reports any clone whose HEAD differs from the lock.
+  - After each clone or skip, record `<dest> <url> <HEAD sha> [ref]` to a tracked `tools/references.lock`. A pinned ref is the fourth field.
+  - Add `--check`, which reports any clone whose HEAD differs from the lock, and a missing H7020 `generated_protocol/`.
   - If `dest` exists but has no `.git`, exit with a clear message instead of letting `git clone` fail under `set -e`.
 
 **Acceptance A:**
