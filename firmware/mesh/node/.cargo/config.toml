@@ -1,0 +1,16 @@
+[build]
+target = "xtensa-esp32-espidf"
+
+[target.xtensa-esp32-espidf]
+linker = "ldproxy"
+rustflags = ["--cfg", "espidf_time64"]
+
+[unstable]
+build-std = ["std", "panic_abort"]
+
+[env]
+MCU = "esp32"
+# Same IDF as the ESPHome nodes. Installed inside this folder, not on the host.
+ESP_IDF_VERSION = "v5.5.5"
+ESP_IDF_TOOLS_INSTALL_DIR = "workspace"
+ESP_IDF_SDKCONFIG_DEFAULTS = "sdkconfig.defaults"

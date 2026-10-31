@@ -1,0 +1,6 @@
+# name	wifi_mac	chip	usb_path	notes
+# usb_path is the port on this host. Both CP2102s report serial 0001, so the path
+# is what tells them apart. `tools/mesh.sh ports` reads this file.
+node-0	70:4b:ca:04:21:64	esp32	12	mesh id 642104ca, root during tests
+node-1	20:9b:a9:99:1e:54	esp32	7	mesh id 541e99a9, flash manufacturer 0x5e
+toby-cam-0	unknown	esp32s3	11	MB0200 cam, not a mesh node, needs BOOT+RST for its first read

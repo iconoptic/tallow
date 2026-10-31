@@ -5,7 +5,9 @@ alwaysApply: true
 
 # IoT sandbox and whitelist
 
-Every Wi-Fi IoT device, including mesh nodes that only extend coverage, lives on an isolated network. Clients on regular Wi-Fi never join that network and never get a routed or NAT path into it.
+Every Wi-Fi IoT device lives on an isolated network, `tallow-iot`. Clients on regular Wi-Fi never join that network and never get a routed or NAT path into it.
+
+Rust mesh nodes (`firmware/mesh/`) join no Wi-Fi network at all. They speak ESP-NOW to each other, and the mesh key decides who can join. Their only path to anything else is the root node's USB link to this host. They are part of the sandbox, and this rule's boundary applies to them the same way.
 
 ## Radio
 
@@ -14,10 +16,14 @@ Every Wi-Fi IoT device, including mesh nodes that only extend coverage, lives on
 
 ## Who may join
 
-Wi-Fi association and Bluetooth connections accept a whitelist only:
+Wi-Fi association, mesh membership, and Bluetooth connections accept a whitelist only:
 
 - Controllers deployed to form the mesh
 - IoT devices those controllers operate
+
+Mesh membership is holding `firmware/mesh/mesh.key`. Every mesh frame is authenticated with it, so a build with no key, a default key, or an unauthenticated frame type is an open mesh join.
+
+Listening is not joining. Nodes may hear any device's broadcasts, but they connect only to whitelisted devices.
 
 Phones, laptops, guests, and any other device stay off the whitelist. Do not leave SSID auth, mesh join, or Bluetooth pairing open.
 
@@ -27,8 +33,10 @@ The control-panel web app is the only path from regular Wi-Fi into the sandbox. 
 
 ```text
 # BAD — bulb on the house SSID, open mesh or BLE pairing,
-#       NAT or a route from the LAN into the IoT network
-# GOOD — bulb and mesh nodes on the isolated 2.4 GHz network;
+#       NAT or a route from the LAN into the IoT network,
+#       a mesh node joining a Wi-Fi network or holding a socket
+# GOOD — bulb on the isolated 2.4 GHz network;
+#        mesh nodes on keyed ESP-NOW, reaching only this host over USB;
 #        whitelist = mesh controllers + controlled devices;
 #        phone uses the control panel only
 ```
