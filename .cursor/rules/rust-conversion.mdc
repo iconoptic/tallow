@@ -1,0 +1,27 @@
+---
+description: Guardrails for the Rust conversion, for any model working in firmware or host Rust
+globs: firmware/mesh/**,firmware/cam/**,host/**,tools/mesh*,docs/plans/rust-conversion/**
+alwaysApply: false
+---
+
+# Rust conversion
+
+Read `docs/plans/rust-conversion/agent-brief.md` before working here. Do one task from the plan, then stop.
+
+- Run `tools/mesh.sh check --fast` before and after. Do not report success without its real output.
+- Never flash a board. Give the user the command and what to look for.
+- Never touch `toby-cam-1`.
+- Never weaken a test or a pass mark to get green. Stop and report.
+- `firmware/mesh/core` stays `no_std`, with no heap and no OS calls. Use `wrapping_sub` for clock maths.
+- Every frame stays authenticated. Mesh nodes never join Wi-Fi or open a socket.
+- Never use `EspNow::take()`, and never use `EspGap` remote-name or pairing events.
+- `unsafe` lives only in the files the task names, each block with a comment saying why it is sound.
+- A change to bytes on the air bumps `VERSION` in `wire.rs` and updates the golden frames.
+
+```rust
+// BAD: panics on a short frame from the air
+let rank = payload[0];
+
+// GOOD
+let Some(&rank) = payload.first() else { return None };
+```
