@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""LAN page for one Govee H7020. Holds a single BLE connection from this host.
+"""The tallow LAN panel: a menu, one Govee H7020, the cams, and house settings.
 
-Packets come from tools/govee_h7020.py. This file does not copy frames.
+The H7020 page holds a single BLE connection from this host. Packets come from
+tools/govee_h7020.py; this file does not copy frames. Cams come from app/cams.py.
 
   .venv/bin/python app/h7020_panel.py
   .venv/bin/python app/h7020_panel.py --preview
 
 Create secrets/panel/password (mode 0600) first. The process binds a house LAN
 address, never 0.0.0.0 and never the IoT access point. Agent tokens are
-accepted only on the host unix socket data/panel/agent.sock.
+accepted only on the host unix socket data/panel/agent.sock, which sees the
+H7020 API and nothing else: no menu, no cams, and no settings.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ import argparse
 import asyncio
 import hashlib
 import hmac
+import html
 import ipaddress
 import json
 import signal
@@ -29,13 +32,14 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "app"))
 
 import agents  # noqa: E402
+import cams as camlib  # noqa: E402
 import govee_h7020 as light  # noqa: E402
 import library  # noqa: E402
 import show as playback  # noqa: E402
@@ -54,7 +58,7 @@ LOGIN_HTML = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>H7020</title>
+<title>tallow</title>
 <style>
   body {{ font-family: system-ui, sans-serif; margin: 0; background: #14120f; color: #f4efe6; }}
   main {{ max-width: 28rem; margin: 0 auto; padding: 1.5rem; }}
@@ -66,7 +70,7 @@ LOGIN_HTML = """<!doctype html>
 </head>
 <body>
 <main>
-  <h1>H7020</h1>
+  <h1>tallow</h1>
   <p class="err">{error}</p>
   <form method="post" action="/login">
     <label for="password">Password</label>
@@ -81,6 +85,10 @@ LOGIN_HTML = """<!doctype html>
 CONTROLS_HTML = (
     Path(__file__).with_name("h7020_page.html").read_text(encoding="utf-8").replace("__PHONE_HOME__", PHONE_HOME)
 )
+MENU_HTML = Path(__file__).with_name("menu_page.html").read_text(encoding="utf-8")
+CAMS_HTML = Path(__file__).with_name("cams_page.html").read_text(encoding="utf-8")
+SETTINGS_HTML = Path(__file__).with_name("settings_page.html").read_text(encoding="utf-8")
+PANEL_CSS = Path(__file__).with_name("panel.css").read_text(encoding="utf-8")
 
 
 def reject_bind_host(host: str) -> str | None:
@@ -374,8 +382,16 @@ class LightSession:
             "timeout": timeout,
             "strings": strings,
         }
-        await self._bind(identify=True)
-        self._writer = asyncio.create_task(self._writer_loop())
+        try:
+            await self._bind(identify=True)
+        except (Exception, SystemExit) as exc:
+            # The writer keeps trying, as it does after a dropped link.
+            self.state["error"] = f"{type(exc).__name__}: {exc}"
+            self.state["connected"] = False
+            self._wake.set()
+            raise
+        finally:
+            self._writer = asyncio.create_task(self._writer_loop())
 
     async def open_preview(self) -> None:
         """Serve the page without taking the BLE central."""
@@ -513,8 +529,9 @@ def create_app(
     stage: playback.Show | None = None,
     limiter: library.WriteLimiter | None = None,
     agents_path: Path = AGENTS_PATH,
+    cams: camlib.Book | list[camlib.Cam] | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="H7020", docs_url=None, redoc_url=None, lifespan=lifespan)
+    app = FastAPI(title="tallow", docs_url=None, redoc_url=None, lifespan=lifespan)
     catalog = catalog or library.Library(ROOT / "data" / "panel")
     stage = stage or playback.Show(session, catalog)
     limiter = limiter or library.WriteLimiter()
@@ -657,11 +674,113 @@ def create_app(
             ],
         }
 
+    book = cams if isinstance(cams, camlib.Book) else camlib.Book(cams=cams)
+    hubs = camlib.Hubs()
+    app.state.hubs = hubs
+
+    def lan_only(request: Request) -> None:
+        """The menu, the pages, and the cams belong to the house LAN. The socket gets a 404."""
+        if request.scope.get("tallow_channel") == "agent":
+            raise HTTPException(status_code=404, detail="not found")
+
+    def lan_viewer(request: Request) -> None:
+        lan_only(request)
+        if not lan_page(request):
+            raise HTTPException(status_code=401, detail="login")
+
+    def house_html(source: str) -> str:
+        """Fill the cameras name and the node network into a page."""
+        return source.replace("__CAMS_TITLE__", html.escape(book.title())).replace(
+            "__IOT_NET__", html.escape(str(camlib.IOT_NET))
+        )
+
+    def page(request: Request, markup: str) -> Response:
+        lan_only(request)
+        if not lan_page(request):
+            return RedirectResponse("/login", status_code=303)
+        return HTMLResponse(markup)
+
+    def camera_document() -> dict[str, Any]:
+        listed = book.all()
+        return {
+            "title": book.title(),
+            "cams": [{"id": cam.id, "name": cam.name, "address": cam.address} for cam in listed],
+            "error": book.error,
+        }
+
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> HTMLResponse:
         if not lan_page(request):
             return HTMLResponse(LOGIN_HTML.format(error=""), status_code=200)
-        return HTMLResponse(CONTROLS_HTML)
+        return HTMLResponse(house_html(MENU_HTML))
+
+    @app.get("/lights", response_class=HTMLResponse)
+    async def lights_page(request: Request) -> Response:
+        return page(request, CONTROLS_HTML)
+
+    @app.get("/cams", response_class=HTMLResponse)
+    async def cams_page(request: Request) -> Response:
+        return page(request, house_html(CAMS_HTML))
+
+    @app.get("/settings", response_class=HTMLResponse)
+    async def settings_page(request: Request) -> Response:
+        return page(request, house_html(SETTINGS_HTML))
+
+    @app.get("/panel.css")
+    async def panel_css(request: Request) -> Response:
+        lan_only(request)
+        return Response(PANEL_CSS, media_type="text/css", headers={"cache-control": "no-cache"})
+
+    @app.get("/api/cams")
+    async def cam_index(request: Request) -> JSONResponse:
+        lan_viewer(request)
+        listed = book.all()
+        hubs.prune(listed)
+        return JSONResponse({"cams": [{"id": cam.id, "name": cam.name} for cam in listed], "error": book.error})
+
+    @app.get("/api/cams/status")
+    async def cam_status(request: Request) -> JSONResponse:
+        lan_viewer(request)
+
+        async def one(cam: camlib.Cam) -> tuple[str, dict[str, Any]]:
+            # A cam that is streaming holds its one socket. Ask it nothing.
+            viewing = hubs.watching(cam)
+            return cam.id, {"online": viewing > 0 or await camlib.reachable(cam), "viewers": viewing}
+
+        return JSONResponse(dict(await asyncio.gather(*(one(cam) for cam in book.all()))))
+
+    @app.get("/cams/{cam_id}/stream")
+    async def cam_stream(request: Request, cam_id: str) -> Response:
+        lan_viewer(request)
+        cam = book.get(cam_id)
+        if cam is None:
+            raise HTTPException(status_code=404, detail="no such cam")
+        hub = hubs.hub(cam)
+        if hub.watching >= camlib.VIEWERS_MAX:
+            raise HTTPException(status_code=429, detail="cam busy")
+        try:
+            queue = await hub.join()
+        except camlib.CamDown as exc:
+            print(f"Cam did not answer ({exc}).", file=sys.stderr)
+            raise HTTPException(status_code=502, detail="The cam is not answering.") from exc
+        return camlib.Feed(hub, queue)
+
+    @app.get("/api/settings/cameras")
+    async def settings_cameras(request: Request) -> JSONResponse:
+        lan_viewer(request)
+        return JSONResponse(camera_document())
+
+    @app.put("/api/settings/cameras")
+    async def save_settings_cameras(request: Request) -> JSONResponse:
+        lan_viewer(request)
+        if book.path is None:
+            raise HTTPException(status_code=400, detail="cameras are not stored in a file")
+        try:
+            camlib.save_inventory(book.path, await read_body(request))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        book.forget()
+        return JSONResponse(camera_document())
 
     @app.get("/login", response_class=HTMLResponse)
     async def login_form(request: Request) -> HTMLResponse:
@@ -685,6 +804,13 @@ def create_app(
             path="/",
             max_age=60 * 60 * 24 * 30,
         )
+        return response
+
+    @app.post("/logout")
+    async def logout(request: Request) -> RedirectResponse:
+        lan_only(request)
+        response = RedirectResponse("/login", status_code=303)
+        response.delete_cookie(COOKIE, path="/")
         return response
 
     @app.get("/api/state")
@@ -884,8 +1010,15 @@ def _connect_args(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def build_runtime(password: str, connect: dict[str, Any], *, preview: bool = False) -> FastAPI:
-    session = LightSession()
+def build_runtime(
+    password: str,
+    connect: dict[str, Any],
+    *,
+    preview: bool = False,
+    cams: camlib.Book | list[camlib.Cam] | None = None,
+    session: LightSession | None = None,
+) -> FastAPI:
+    session = session or LightSession()
     root = ROOT / "data" / ("panel-preview" if preview else "panel")
     catalog = library.Library(root)
     stage = playback.Show(session, catalog)
@@ -897,14 +1030,13 @@ def build_runtime(password: str, connect: dict[str, Any], *, preview: bool = Fal
                 await session.open_preview()
             else:
                 await session.open(**connect)
-        except SystemExit:
-            raise
-        except Exception as exc:
+        except (Exception, SystemExit) as exc:
+            # The cams do not wait on the light. The light page shows it disconnected.
             print(
-                f"Connect failed ({type(exc).__name__}: {exc}). Close Govee Home so this host can be the only central.",
+                f"Connect failed ({type(exc).__name__}: {exc}). Close Govee Home so this host can be the only central. "
+                "Still trying.",
                 file=sys.stderr,
             )
-            raise SystemExit(1) from exc
         stage.start()
         try:
             yield
@@ -912,7 +1044,7 @@ def build_runtime(password: str, connect: dict[str, Any], *, preview: bool = Fal
             await stage.stop()
             await session.close()
 
-    return create_app(password, session, lifespan, catalog, stage)
+    return create_app(password, session, lifespan, catalog, stage, cams=cams)
 
 
 def serve(app: FastAPI, host: str, port: int, sock_path: Path) -> None:
@@ -973,8 +1105,11 @@ def main() -> None:
     parser.add_argument("--timeout", type=float, default=20.0)
     parser.add_argument("--strings", type=int, choices=(1, 2), help="15-bulb strings. Default: device report, else 1")
     parser.add_argument("--preview", action="store_true", help="Bind 127.0.0.1 and skip BLE")
+    parser.add_argument("--password-file", type=Path, help="Preview only: a throwaway password for contract tests")
     args = parser.parse_args()
-    password = load_password(PASSWORD_PATH)
+    if args.password_file and not args.preview:
+        raise SystemExit("--password-file needs --preview. The real panel reads secrets/panel/password.")
+    password = load_password(args.password_file or PASSWORD_PATH)
     if args.preview:
         if args.host not in (None, "127.0.0.1"):
             raise SystemExit("Preview binds only 127.0.0.1.")
@@ -983,11 +1118,18 @@ def main() -> None:
         host = choose_host(args.host, default_route_ipv4(), local_ipv4())
     data_name = "panel-preview" if args.preview else "panel"
     sock_path = ROOT / "data" / data_name / "agent.sock"
+    cams_path = ROOT / "data" / data_name / "cams.json"
+    try:
+        count = len(camlib.load_cams(cams_path))
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"Cams unreadable: {exc}") from exc
     print(f"Panel http://{host}:{args.port}/", file=sys.stderr)
     print(f"Agent socket {sock_path}", file=sys.stderr)
+    print(f"Cams {count} from {cams_path}, re-read when it changes", file=sys.stderr)
     if args.preview:
         print("Preview only. BLE is not connected.", file=sys.stderr)
-    serve(build_runtime(password, _connect_args(args), preview=args.preview), host, args.port, sock_path)
+    runtime = build_runtime(password, _connect_args(args), preview=args.preview, cams=camlib.Book(cams_path))
+    serve(runtime, host, args.port, sock_path)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,9 @@
 
 Blueprint for the future **universal, self-hosted smart-light controller**: a LAN-only web UI that drives every owned device through Bluetooth and/or Wi-Fi without vendor clouds.
 
-This document is the design for the full controller. The H7020 LAN page in `app/h7020_panel.py` is the phase 3 slice: one string, catalogue scenes, bulb paints, saved sequences, host schedules, and a host-only agent socket. Inventory, groups, and proxies are still ahead.
+This document is the design for the full controller. The LAN panel in `app/h7020_panel.py` is the phase 3 slice. `/` is a menu with three entries: the H7020 page at `/lights` (one string, catalogue scenes, bulb paints, saved sequences, host schedules, and a host-only agent socket), the cameras app at `/cams`, and Settings at `/settings`. The cameras tile uses the inventory title, or Cameras when that field is missing. Camera inventory, the settings page, and logout are in [devices/keyestudio-mb0200-s3-cam.md](devices/keyestudio-mb0200-s3-cam.md#cams-page). Turning a schedule off stays on the light page ([devices/govee-h7020.md](devices/govee-h7020.md#lan-page)). The universal device inventory, groups, and proxies are still ahead. A Rust mesh of ESP32 nodes hears the house and writes `data/mesh/map.json` only while `tools/mesh.sh host` runs. That map is not on the panel, and it has node ids, not rooms ([doc 01](01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh)).
+
+The [Rust conversion plan](plans/2026-10-31-rust-conversion.md) changes what this gets built with. The panel, the H7020 driver, the broker, and the mesh host end move to Rust in `host/`, on axum and `bluer`, and GATT at a distance goes over the mesh, not through ESPHome proxies. Where this design differs, the plan wins: FastAPI, uvicorn, `habluetooth`, `bleak`, and `bleak-esphome` below describe the Python target. It covers other lights too: new drivers are Rust crates, not wrapped Python, with `tinytuya`, `flux_led`, and the like kept as sources of test vectors. Only the H7020 is in the plan, so the library table under [Implementation sources](#implementation-sources) names what each crate is checked against, not what it wraps. Python stays runnable until the plan's phase 5, and its task T5.3 then updates this document.
 
 ## Goals
 
@@ -91,6 +93,8 @@ Wrap battle-tested libraries from `references/` rather than re-encoding frames:
 
 ## BLE connection management
 
+This section is the target for control. `habluetooth` and `bleak-esphome` are not wired. The mesh in `firmware/mesh/` uses neither. It listens, reports over serial, and has no path to a light's GATT ([doc 01](01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh)).
+
 Use **habluetooth** concepts even if you do not embed Home Assistant:
 
 - Multiple scanners (local adapters + ESPHome proxies via **bleak-esphome**).
@@ -107,7 +111,7 @@ Operational rules:
 
 ## LAN engine
 
-- Async discovery workers per protocol (Tuya broadcast, Govee multicast, mDNS for ESPHome).
+- Async discovery workers per protocol (Tuya broadcast, Govee multicast). The host does not use mDNS on `tallow-iot`; ESPHome nodes set static addresses in `10.87.0.20`–`10.87.0.49` ([doc 04](04-firmware-liberation-and-network-isolation.md#esp32-nodes)).
 - Per-device lock + timeout.
 - Watchdog: mark unavailable when pings fail; do not block the event loop.
 
@@ -126,7 +130,9 @@ Operational rules:
 
 Keep payloads boring JSON. Push state on every successful apply and on LAN notify/poll.
 
-The H7020 page is the flat version of this for one device, id `h7020`. House-LAN HTTP uses the password cookie. A unix socket at `data/panel/agent.sock` (mode `0600`) accepts scoped bearer tokens for a tool running on this host. The libvirt guest that runs Hermes is not given a path to that socket or to `10.87.0.0/24`. `GET /api/manifest` on the socket lists the calls. Scenes, paints, patterns, and local schedules are in [devices/govee-h7020.md](devices/govee-h7020.md). Groups, WebSocket, and the inventory routes above are still ahead.
+The H7020 page is the flat version of this for one device, id `h7020`. House-LAN HTTP uses the password cookie. A unix socket at `data/panel/agent.sock` (mode `0600`) accepts scoped bearer tokens. The broker on this host holds the Hermes bearer and is the process that opens that socket. The libvirt guest is not given the socket file, the token, or `10.87.0.0/24`. Its container's added reach is `127.0.0.1:17620` on the guest, which dials the broker over vsock. `GET /api/manifest` on the socket lists the calls. Scenes, paints, patterns, and local schedules are in [devices/govee-h7020.md](devices/govee-h7020.md). Groups, WebSocket, and the inventory routes above are still ahead.
+
+The menu at `/` is the first step toward one panel with several apps. Each app is a page behind the same cookie; the agent socket sees none of them, and it does not see Settings or logout. Cams are the first app that is not a light. The browser asks the panel, and the panel dials the cam on `10.87.0.0/24` once and shares that one connection among every screen watching, because the cam's web server holds one connection at a time and jams for minutes if hammered (`app/cams.py`). The inventory file is re-read when it changes. Settings writes that file, including the cameras name; `GET /api/cams` still omits addresses. Inventory, the settings API, routes, limits, and page behaviour: [devices/keyestudio-mb0200-s3-cam.md](devices/keyestudio-mb0200-s3-cam.md#cams-page).
 
 ## Frontend
 
@@ -164,13 +170,16 @@ For pure LAN Wi-Fi control (no local BLE), bridge networking is fine. BLE wants 
 
 1. **Inventory + discovery tools** (this repo’s `tools/` + docs) — identify owned devices.
 2. **CLI drivers** per family — prove frames without UI.
-3. **FastAPI + single-device UI** — the H7020 page in `app/h7020_panel.py`, including catalogue scenes, bulb paints, saved sequences, host schedules, and a host-only agent socket.
-4. **habluetooth + proxies** — whole-house BLE.
+3. **FastAPI + single-device UI** — the panel in `app/h7020_panel.py`: a menu, the cams, settings, and the H7020 page with catalogue scenes, bulb paints, saved sequences, host schedules, and a host-only agent socket.
+4. **Whole-house radios** — hearing first. The Rust mesh in `firmware/mesh/` reports BLE and Classic devices to `tools/mesh_host.py`, proven on two boards over one physical hop. Control is not built, and neither is the map on the panel ([doc 01](01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh)). ESPHome firmware is in `firmware/esphome/`; one MB0200 ran an earlier image as a relay and as a cam on 2026-10-28. Nothing on the host consumes an ESPHome node yet, and `habluetooth` is not wired ([doc 01](01-bluetooth-server-hardware-and-proxies.md#tallow-nodes)).
 5. **Groups / optional MQTT out** — niceties. Per-device scenes for the H7020 are already on that page.
+
+The Rust conversion has its own [phases, 0 to 5](plans/2026-10-31-rust-conversion.md#phases). "Phase 3" in this document means item 3 above.
 
 ## Related
 
 - [01 Bluetooth hardware and proxies](01-bluetooth-server-hardware-and-proxies.md)
 - [02 Reverse engineering playbook](02-reverse-engineering-playbook.md)
 - [03 Known light protocols matrix](03-known-light-protocols-matrix.md)
+- [Rust conversion plan](plans/2026-10-31-rust-conversion.md)
 - Agent handoff: [`../AGENTS.md`](../AGENTS.md)

@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings</title>
+<link rel="stylesheet" href="/panel.css">
+</head>
+<body>
+<main>
+  <a class="back" href="/">&larr; tallow</a>
+  <h1>Settings</h1>
+  <p id="error" class="err"></p>
+  <p id="status" class="note"></p>
+
+  <form id="cameras">
+    <h2>Cameras</h2>
+    <p class="note">The name is what the menu and the cameras page call them. Each address is a node on __IOT_NET__. The order here is the order on the cameras page.</p>
+    <label for="cams-title">Name</label>
+    <input id="cams-title" type="text" maxlength="40" autocomplete="off" spellcheck="false" required>
+    <div id="rows"></div>
+    <div class="bar">
+      <button id="add" class="quiet" type="button">Add a camera</button>
+      <button type="submit">Save</button>
+    </div>
+  </form>
+
+  <section>
+    <h2>Panel</h2>
+    <p class="note">This logs this browser out. The password stays in the file on this computer.</p>
+    <form method="post" action="/logout">
+      <button type="submit">Log out</button>
+    </form>
+  </section>
+</main>
+<script>
+const titleEl = document.getElementById("cams-title");
+const rowsEl = document.getElementById("rows");
+const errorEl = document.getElementById("error");
+const statusEl = document.getElementById("status");
+
+function labeled(text, key, value, max) {
+  const label = document.createElement("label");
+  label.textContent = text;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = value || "";
+  input.maxLength = max;
+  input.autocomplete = "off";
+  input.spellCheck = false;
+  input.dataset.key = key;
+  label.append(input);
+  return label;
+}
+
+function move(box, direction) {
+  const sibling = direction < 0 ? box.previousElementSibling : box.nextElementSibling;
+  if (!sibling || !sibling.classList.contains("cam-row")) return;
+  if (direction < 0) rowsEl.insertBefore(box, sibling);
+  else rowsEl.insertBefore(sibling, box);
+}
+
+function action(text, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "quiet";
+  button.textContent = text;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function addRow(cam) {
+  const box = document.createElement("div");
+  box.className = "cam-row";
+  box.append(
+    labeled("Id", "id", cam.id, 63),
+    labeled("Name", "name", cam.name, 40),
+    labeled("Address", "address", cam.address, 15),
+  );
+  const bar = document.createElement("div");
+  bar.className = "bar";
+  bar.append(
+    action("Up", () => move(box, -1)),
+    action("Down", () => move(box, 1)),
+    action("Remove", () => box.remove()),
+  );
+  box.append(bar);
+  rowsEl.append(box);
+}
+
+function show(message, ok) {
+  errorEl.textContent = ok ? "" : message;
+  statusEl.textContent = ok ? message : "";
+}
+
+function fill(data) {
+  titleEl.value = data.title || "";
+  rowsEl.replaceChildren();
+  for (const cam of data.cams || []) addRow(cam);
+  if (data.error) show(`cams.json is not read: ${data.error}`, false);
+}
+
+async function load() {
+  const response = await fetch("/api/settings/cameras", { headers: { accept: "application/json" }, cache: "no-store" });
+  if (response.status === 401) {
+    location.href = "/login";
+    return;
+  }
+  if (!response.ok) {
+    show("The panel did not answer.", false);
+    return;
+  }
+  fill(await response.json());
+}
+
+document.getElementById("add").addEventListener("click", () => addRow({ id: "", name: "", address: "" }));
+
+document.getElementById("cameras").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const cams = [...rowsEl.querySelectorAll(".cam-row")].map((box) => {
+    const cam = {};
+    box.querySelectorAll("input").forEach((input) => {
+      cam[input.dataset.key] = input.value.trim();
+    });
+    return cam;
+  });
+  const response = await fetch("/api/settings/cameras", {
+    method: "PUT",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ title: titleEl.value.trim(), cams }),
+  });
+  if (response.status === 401) {
+    location.href = "/login";
+    return;
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    show(data.detail || "The panel did not take that.", false);
+    return;
+  }
+  fill(data);
+  show("Saved.", true);
+});
+
+load();
+</script>
+</body>
+</html>

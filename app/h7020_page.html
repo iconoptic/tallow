@@ -25,6 +25,7 @@
 </head>
 <body>
 <main>
+  <a href="/" style="color: #e7d7b1; text-decoration: none;">&larr; tallow</a>
   <h1 id="title">H7020</h1>
   <p class="note">__PHONE_HOME__</p>
   <p id="meta" class="note"></p>
@@ -274,7 +275,21 @@ function renderSchedules() {
     const action = schedule.action.power === false
       ? "power off"
       : (schedule.action.pattern || (schedule.action.scene && schedule.action.scene.name));
-    item.textContent = schedule.time + " " + schedule.days.join(",") + " " + action;
+    const on = schedule.enabled !== false;
+    item.textContent = schedule.time + " " + schedule.days.join(",") + " " + action + (on ? "" : " (off)");
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.textContent = on ? "Turn off" : "Turn on";
+    toggle.addEventListener("click", async () => {
+      await send("PUT", "/api/schedules/" + schedule.id, {
+        id: schedule.id,
+        enabled: !on,
+        time: schedule.time,
+        days: schedule.days,
+        action: schedule.action,
+      });
+      await loadLibrary();
+    });
     const remove = document.createElement("button");
     remove.type = "button";
     remove.textContent = "Delete";
@@ -282,7 +297,7 @@ function renderSchedules() {
       await send("DELETE", "/api/schedules/" + schedule.id);
       await loadLibrary();
     });
-    item.append(remove);
+    item.append(toggle, remove);
     scheduleList.appendChild(item);
   }
 }

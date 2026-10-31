@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import time
@@ -358,6 +360,15 @@ async def _invoke(
     status = next(message["status"] for message in messages if message["type"] == "http.response.start")
     raw = b"".join(message.get("body", b"") for message in messages if message["type"] == "http.response.body")
     return status, raw
+
+
+class SchedulePageTest(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_a_disabled_schedule_is_shown_as_off(self) -> None:
+        harness = Path(__file__).with_name("schedule_off_harness.js")
+        run = subprocess.run(["node", str(harness)], capture_output=True, text=True, timeout=30, check=False)
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertIn("ok schedule off", run.stdout)
 
 
 if __name__ == "__main__":

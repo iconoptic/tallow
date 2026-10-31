@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__CAMS_TITLE__</title>
+<link rel="stylesheet" href="/panel.css">
+</head>
+<body>
+<main class="wide">
+  <a class="back" href="/">&larr; tallow</a>
+  <h1>__CAMS_TITLE__</h1>
+  <p class="note">A cam streams only while a screen is watching it. Nothing is saved.</p>
+  <p id="error" class="err"></p>
+  <div id="bar" class="bar" hidden>
+    <button id="all-on" type="button">Watch all</button>
+    <button id="all-off" class="quiet" type="button">Stop all</button>
+  </div>
+  <div id="cams" class="grid"></div>
+  <div id="empty" hidden>
+    <p class="note">No cams yet. Add one in <a href="/settings">Settings</a>.</p>
+  </div>
+</main>
+<script>
+const REFRESH_MS = 20000;
+const WATCHING_REFRESH_MS = 5000;
+// While someone wants to watch, keep asking. Gently: a cam that has just dropped jams if hammered.
+const RETRY_MS = [2000, 4000, 8000, 15000, 30000];
+const gridEl = document.getElementById("cams");
+const errorEl = document.getElementById("error");
+const barEl = document.getElementById("bar");
+const emptyEl = document.getElementById("empty");
+const tiles = new Map();
+
+function make(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function clock(since) {
+  const seconds = Math.floor((Date.now() - since) / 1000);
+  const pad = (n) => String(n).padStart(2, "0");
+  const hours = Math.floor(seconds / 3600);
+  const rest = `${pad(Math.floor((seconds % 3600) / 60))}:${pad(seconds % 60)}`;
+  return hours ? `${hours}:${rest}` : rest;
+}
+
+function paint(tile) {
+  const { dot, stateEl, button } = tile;
+  button.textContent = tile.watching ? "Stop" : "Watch";
+  button.disabled = !tile.watching && tile.online === false;
+  tile.screen.classList.toggle("live", tile.live);
+  tile.hint.hidden = tile.live;
+  tile.hint.textContent = tile.watching ? tile.retrying ? "Reconnecting…" : "Connecting…"
+    : tile.online === false ? "Offline." : "Not watching.";
+  dot.className = "dot" + (tile.watching || tile.online ? " on" : tile.online === false ? " off" : "");
+  if (tile.watching) stateEl.textContent = tile.live ? `Live ${clock(tile.since)}` : "Connecting";
+  else stateEl.textContent = tile.online === false ? "Offline" : tile.online ? "Ready" : "Checking";
+}
+
+function stop(tile, message) {
+  clearTimeout(tile.timer);
+  // Dropping src closes the connection. The panel hangs up on the cam once the last screen is gone.
+  tile.img.removeAttribute("src");
+  tile.img.hidden = true;
+  tile.watching = false;
+  tile.live = false;
+  tile.retrying = false;
+  tile.tries = 0;
+  tile.box.classList.remove("big");
+  tile.errEl.textContent = message || "";
+  paint(tile);
+}
+
+function watch(tile, retry) {
+  clearTimeout(tile.timer);
+  if (!retry) {
+    tile.errEl.textContent = "";
+    tile.tries = 0;
+  }
+  tile.watching = true;
+  tile.live = false;
+  tile.since = Date.now();
+  tile.img.hidden = false;
+  tile.img.src = `/cams/${encodeURIComponent(tile.id)}/stream?t=${Date.now()}`;
+  paint(tile);
+}
+
+function lost(tile) {
+  if (!tile.watching) return;
+  tile.img.removeAttribute("src");
+  tile.live = false;
+  const wait = RETRY_MS[Math.min(tile.tries, RETRY_MS.length - 1)];
+  tile.tries += 1;
+  tile.retrying = true;
+  tile.errEl.textContent = `The cam is not answering. Trying again in ${Math.round(wait / 1000)} s.`;
+  paint(tile);
+  tile.timer = setTimeout(() => watch(tile, true), wait);
+}
+
+function addTile(cam) {
+  const box = make("section", "cam");
+  const head = make("header");
+  const title = make("div");
+  const name = make("h2", "", cam.name);
+  const stateLine = make("p", "state");
+  const dot = make("span", "dot");
+  const stateEl = make("span");
+  stateLine.append(dot, stateEl);
+  title.append(name, stateLine);
+  const button = make("button", "", "Watch");
+  button.type = "button";
+  head.append(title, button);
+  const screen = make("div", "screen");
+  screen.tabIndex = 0;
+  const hint = make("span");
+  const img = make("img");
+  img.alt = `${cam.name}, live`;
+  img.hidden = true;
+  screen.append(hint, img);
+  const errEl = make("p", "err");
+  errEl.setAttribute("role", "status");
+  box.append(head, screen, errEl);
+  gridEl.append(box);
+  const tile = {
+    id: cam.id, box, name, dot, stateEl, button, screen, hint, img, errEl,
+    online: undefined, watching: false, live: false, retrying: false, resume: false, tries: 0, since: 0, timer: 0,
+  };
+  button.addEventListener("click", () => (tile.watching ? stop(tile) : watch(tile)));
+  img.addEventListener("load", () => {
+    tile.live = true;
+    tile.retrying = false;
+    tile.tries = 0;
+    tile.errEl.textContent = "";
+    paint(tile);
+  });
+  img.addEventListener("error", () => lost(tile));
+  const enlarge = () => tile.live && tile.box.classList.toggle("big");
+  screen.addEventListener("click", enlarge);
+  screen.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      enlarge();
+    }
+  });
+  tiles.set(cam.id, tile);
+  paint(tile);
+}
+
+function sync(cams) {
+  const ids = new Set(cams.map((cam) => cam.id));
+  for (const [id, tile] of tiles) {
+    if (ids.has(id)) continue;
+    stop(tile);
+    tile.box.remove();
+    tiles.delete(id);
+  }
+  for (const cam of cams) {
+    const tile = tiles.get(cam.id);
+    if (!tile) addTile(cam);
+    else if (tile.name.textContent !== cam.name) tile.name.textContent = cam.name;
+  }
+  // Keep the page in the order of the file.
+  cams.forEach((cam) => gridEl.append(tiles.get(cam.id).box));
+  emptyEl.hidden = cams.length > 0;
+  barEl.hidden = cams.length < 2;
+}
+
+async function getJson(path) {
+  const response = await fetch(path, { headers: { accept: "application/json" }, cache: "no-store" });
+  if (response.status === 401) {
+    location.href = "/login";
+    throw new Error("login");
+  }
+  if (!response.ok) throw new Error(String(response.status));
+  return response.json();
+}
+
+async function refresh() {
+  try {
+    const list = await getJson("/api/cams");
+    sync(list.cams);
+    errorEl.textContent = list.error ? `cams.json is not read: ${list.error}` : "";
+    const status = await getJson("/api/cams/status");
+    for (const [id, tile] of tiles) {
+      const now = status[id];
+      if (now) tile.online = now.online;
+      // A picture the panel has stopped sending ends without an error. Nobody watching means ours ended.
+      if (now && tile.live && now.viewers === 0) lost(tile);
+      paint(tile);
+    }
+  } catch (error) {
+    if (error.message !== "login") errorEl.textContent = "The panel did not answer.";
+  }
+}
+
+document.getElementById("all-on").addEventListener("click", () => {
+  tiles.forEach((tile) => !tile.watching && tile.online !== false && watch(tile));
+});
+document.getElementById("all-off").addEventListener("click", () => tiles.forEach((tile) => tile.watching && stop(tile)));
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") tiles.forEach((tile) => tile.box.classList.remove("big"));
+});
+
+// A phone in a pocket should not keep a cam on. Pick up where it left off.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    tiles.forEach((tile) => {
+      tile.resume = tile.watching;
+      if (tile.watching) stop(tile);
+    });
+  } else {
+    tiles.forEach((tile) => {
+      if (tile.resume) watch(tile);
+      tile.resume = false;
+    });
+    refresh();
+  }
+});
+window.addEventListener("pagehide", () => tiles.forEach((tile) => tile.watching && stop(tile)));
+
+setInterval(() => tiles.forEach((tile) => tile.live && paint(tile)), 1000);
+setInterval(() => !document.hidden && refresh(), REFRESH_MS);
+setInterval(() => !document.hidden && [...tiles.values()].some((tile) => tile.watching) && refresh(), WATCHING_REFRESH_MS);
+refresh();
+</script>
+</body>
+</html>
