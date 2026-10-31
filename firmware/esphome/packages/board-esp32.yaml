@@ -1,0 +1,11 @@
+# Classic ESP32 devkit: ESP32-D0WD-V3, 4 MB flash, no PSRAM, CP2102 USB-serial.
+# The dedicated Bluetooth nodes. Check a new board's flash before trusting the size:
+#   ESPHOME_DEVICE=/dev/ttyUSB0 tools/esphome.sh mac
+# Board notes: docs/devices/esp32-devkit.md
+
+esp32:
+  board: esp32dev
+  variant: esp32
+  flash_size: 4MB
+  framework:
+    type: esp-idf

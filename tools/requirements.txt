@@ -8,3 +8,6 @@ cryptography>=43
 fastapi>=0.115
 uvicorn>=0.32
 python-multipart>=0.0.9
+# tools/node_check.py: the ESPHome native API the nodes speak (bleak-esphome builds on it).
+# Tested: 46.3.0, the version ESPHome 2026.9.1 ships.
+aioesphomeapi>=46.3,<47
