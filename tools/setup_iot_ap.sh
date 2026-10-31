@@ -12,6 +12,8 @@
 #   sudo ./tools/setup_iot_ap.sh status
 #   sudo ./tools/setup_iot_ap.sh allow aa:bb:cc:dd:ee:ff
 #   sudo ./tools/setup_iot_ap.sh revoke aa:bb:cc:dd:ee:ff
+#   sudo ./tools/setup_iot_ap.sh reserve aa:bb:cc:dd:ee:ff 10.87.0.22
+#   sudo ./tools/setup_iot_ap.sh unreserve aa:bb:cc:dd:ee:ff
 #   sudo ./tools/setup_iot_ap.sh apply-channel
 set -euo pipefail
 
@@ -34,6 +36,9 @@ AP_CIDR=10.87.0.1/24
 AP_ADDR=10.87.0.1
 AP_NET=10.87.0.0/24
 DHCP_RANGE="10.87.0.50,10.87.0.200,255.255.255.0,12h"
+# Node reservations, below the dynamic range.
+NODE_FIRST=20
+NODE_LAST=49
 SSID_DEFAULT=tallow-iot
 
 ZONE=tallow-iot
@@ -53,14 +58,20 @@ Usage: setup_iot_ap.sh <command>
   status             show the AP, the accept list, and the latest advice
   allow MAC          add a station to the whitelist and reload hostapd
   revoke MAC         remove a station and reload hostapd
+  reserve MAC IP     give a node a fixed lease, 10.87.0.${NODE_FIRST}-${NODE_LAST}
+  unreserve MAC      drop a node's reservation
   apply-channel      copy the survey recommendation into the saved channel
                      and restart hostapd
 
-SSID, passphrase, saved channel, survey advice, and accept_macs live in
-secrets/iot-ap/ (directory 0700, files 0600). Re-running up does not rotate
+SSID, passphrase, saved channel, survey advice, accept_macs, and reservations
+live in secrets/iot-ap/ (directory 0700, files 0600). Re-running up does not rotate
 the passphrase. The survey timer only records advice.
 
 The accept list starts empty: the SSID is up and nothing can associate.
+
+up, reserve, and unreserve pin a permanent neighbor for each reservation
+whose MAC is associated on the AP, and remove that pin when the MAC is not
+associated or the address is no longer reserved.
 EOF
 }
 
@@ -245,6 +256,9 @@ ensure_credentials() {
   if [[ ! -f "${SECRET_DIR}/accept_macs" ]]; then
     printf '' | write_secret "${SECRET_DIR}/accept_macs"
   fi
+  if [[ ! -f "${SECRET_DIR}/reservations" ]]; then
+    printf '' | write_secret "${SECRET_DIR}/reservations"
+  fi
 }
 
 channel_is_set() {
@@ -295,6 +309,187 @@ publish_accept() {
   valid_macs "${SECRET_DIR}/accept_macs" >"$tmp"
   install -m 0640 -o root -g root "$tmp" "${ETC}/hostapd.accept"
   rm -f "$tmp"
+}
+
+norm_node_ip() {
+  local ip="$1" last
+  [[ "$ip" =~ ^10\.87\.0\.([0-9]{1,3})$ ]] || die "node address must be 10.87.0.${NODE_FIRST}-${NODE_LAST}"
+  last="${BASH_REMATCH[1]}"
+  [[ ! "$last" =~ ^0[0-9] ]] || die "node address must be 10.87.0.${NODE_FIRST}-${NODE_LAST}"
+  if ((last < NODE_FIRST || last > NODE_LAST)); then
+    die "node address must be 10.87.0.${NODE_FIRST}-${NODE_LAST}"
+  fi
+  printf '%s\n' "$ip"
+}
+
+# Lines are "mac,ip": dnsmasq dhcp-host syntax. Anything else is dropped.
+valid_reservations() {
+  local src="$1"
+  [[ -f "$src" ]] || return 0
+  awk -F, -v lo="$NODE_FIRST" -v hi="$NODE_LAST" 'BEGIN { IGNORECASE = 1 }
+    NF == 2 && $1 ~ /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/ && $2 ~ /^10\.87\.0\.[1-9][0-9]?$/ {
+      split($2, o, "."); if (o[4] + 0 >= lo && o[4] + 0 <= hi) print tolower($1) "," $2
+    }' "$src" | sort -u
+}
+
+# dnsmasq re-reads its dhcp-hostsfile on SIGHUP. A lease that already
+# disagrees with that file is a different matter: see reclaim_reserved_addresses.
+publish_reservations() {
+  [[ -d "$ETC" ]] || return 0
+  local tmp
+  tmp="$(mktemp)"
+  valid_reservations "${SECRET_DIR}/reservations" >"$tmp"
+  install -m 0644 -o root -g root "$tmp" "${ETC}/dnsmasq.hosts"
+  rm -f "$tmp"
+  ensure_dnsmasq_can_read_hosts
+}
+
+# dnsmasq reads dnsmasq.conf as root, drops to user dnsmasq, and only then
+# opens dhcp-hostsfile. A 0700 directory hides that file, so every reservation
+# is ignored and the node is handed a pool address. OTA to the reserved
+# address then times out. 0711 is traversable and not listable. hostapd.conf
+# stays 0600, so the passphrase stays private.
+ensure_dnsmasq_can_read_hosts() {
+  [[ -d "$ETC" ]] || return 0
+  chmod 0711 "$ETC"
+  [[ -f "${ETC}/dnsmasq.hosts" ]] || return 0
+  command -v runuser >/dev/null 2>&1 || die "missing command: runuser"
+  if ! runuser -u dnsmasq -- test -r "${ETC}/dnsmasq.hosts"; then
+    die "user dnsmasq cannot read ${ETC}/dnsmasq.hosts"
+  fi
+}
+
+# "mac reserved-ip" for each lease whose address is not its reservation.
+stale_reservation_macs() {
+  [[ -s "${ETC}/dnsmasq.hosts" && -s "${STATE}/dnsmasq.leases" ]] || return 0
+  awk 'BEGIN { IGNORECASE = 1 }
+    NR == FNR {
+      split($0, p, ",")
+      if (p[1] != "" && p[2] != "") res[tolower(p[1])] = p[2]
+      next
+    }
+    {
+      mac = tolower($2)
+      if ((mac in res) && res[mac] != $3) print mac, res[mac]
+    }' "${ETC}/dnsmasq.hosts" "${STATE}/dnsmasq.leases"
+}
+
+# Caller stops dnsmasq first. A clean stop rewrites this file from memory,
+# so editing it while dnsmasq is running does not stick.
+scrub_stale_leases() {
+  local tmp
+  [[ -f "${STATE}/dnsmasq.leases" ]] || return 0
+  tmp="$(mktemp)"
+  awk 'BEGIN { IGNORECASE = 1 }
+    NR == FNR {
+      split($0, p, ",")
+      if (p[1] != "" && p[2] != "") res[tolower(p[1])] = p[2]
+      next
+    }
+    {
+      mac = tolower($2)
+      if ((mac in res) && res[mac] != $3) next
+      print
+    }' "${ETC}/dnsmasq.hosts" "${STATE}/dnsmasq.leases" >"$tmp"
+  install -o dnsmasq -g dnsmasq -m 0640 "$tmp" "${STATE}/dnsmasq.leases"
+  rm -f "$tmp"
+}
+
+drop_station() {
+  local mac="$1" iface="$2" out
+  if ! command -v hostapd_cli >/dev/null 2>&1; then
+    log "${mac} is on the wrong address; power-cycle it so it takes its reservation"
+    return 0
+  fi
+  out="$(hostapd_cli -p /run/hostapd -i "$iface" deauthenticate "$mac" 2>&1 || true)"
+  case "$out" in
+    *OK*) log "dropped ${mac} so it takes its reserved address" ;;
+    *) log "could not drop ${mac} (${out:-no answer}); power-cycle it so it takes its reservation" ;;
+  esac
+}
+
+# toby-cam-1 answers DHCP and sends IP from its reserved address, and it does
+# not answer ARP for that address, so the host's neighbor entry dies and the
+# panel times out. Pin an associated station.
+pin_reservation_neighbors() {
+  local iface="$1" mac ip line token state last
+  [[ -n "$iface" && -d "/sys/class/net/${iface}" ]] || return 0
+  if [[ -s "${ETC}/dnsmasq.hosts" ]]; then
+    while IFS=, read -r mac ip; do
+      [[ -n "$mac" && -n "$ip" ]] || continue
+      mac="${mac,,}"
+      if iw dev "$iface" station get "$mac" >/dev/null 2>&1; then
+        line="$(ip -4 neigh show "$ip" dev "$iface" 2>/dev/null || true)"
+        if [[ "$line" != *"lladdr ${mac}"* || "$line" != *PERMANENT* ]]; then
+          ip neigh replace "$ip" lladdr "$mac" dev "$iface" nud permanent
+          log "pinned ${ip} to ${mac}"
+        fi
+      elif ip -4 neigh show "$ip" dev "$iface" 2>/dev/null | grep -q PERMANENT; then
+        ip neigh del "$ip" dev "$iface" || true
+        log "removed pin for ${ip}; it is not on the AP"
+      fi
+    done <"${ETC}/dnsmasq.hosts"
+  fi
+  while read -r ip token mac state; do
+    [[ "$token" == "lladdr" && "$state" == "PERMANENT" ]] || continue
+    [[ "$ip" =~ ^10\.87\.0\.([0-9]+)$ ]] || continue
+    last="${BASH_REMATCH[1]}"
+    ((last >= NODE_FIRST && last <= NODE_LAST)) || continue
+    if [[ ! -s "${ETC}/dnsmasq.hosts" ]] || ! grep -qi ",${ip}$" "${ETC}/dnsmasq.hosts"; then
+      ip neigh del "$ip" dev "$iface" || true
+      log "removed pin for ${ip}"
+    fi
+  done < <(ip -4 neigh show dev "$iface")
+}
+
+wait_for_reservation() {
+  local iface="$1" ip="$2" i
+  for ((i = 1; i <= 15; i++)); do
+    pin_reservation_neighbors "$iface"
+    if ping -c 1 -W 1 "$ip" >/dev/null 2>&1; then
+      log "${ip} is answering"
+      return 0
+    fi
+  done
+  log "${ip} is not answering yet"
+}
+
+# must=1 restarts dnsmasq even when every lease already matches. A clean
+# restart writes the lease file on the way down, so a disagreeing lease is
+# removed only after the stop.
+reclaim_reserved_addresses() {
+  local iface="$1" must="$2"
+  local -a stale=()
+  local line mac ip
+  mapfile -t stale < <(stale_reservation_macs)
+  if [[ "$must" -eq 0 && "${#stale[@]}" -eq 0 ]]; then
+    return 0
+  fi
+  if [[ "${#stale[@]}" -eq 0 ]]; then
+    if systemctl is-active --quiet tallow-iot-dnsmasq; then
+      systemctl restart tallow-iot-dnsmasq
+    else
+      systemctl start tallow-iot-dnsmasq
+    fi
+    return 0
+  fi
+  if systemctl is-active --quiet tallow-iot-dnsmasq; then
+    systemctl stop tallow-iot-dnsmasq
+  fi
+  mapfile -t stale < <(stale_reservation_macs)
+  if [[ "${#stale[@]}" -gt 0 ]]; then
+    scrub_stale_leases
+    log "cleared ${#stale[@]} lease(s) that disagreed with a reservation"
+  fi
+  systemctl start tallow-iot-dnsmasq
+  [[ -n "$iface" ]] || return 0
+  for line in "${stale[@]}"; do
+    [[ -n "$line" ]] || continue
+    mac="${line%% *}"
+    ip="${line#* }"
+    drop_station "$mac" "$iface"
+    wait_for_reservation "$iface" "$ip"
+  done
 }
 
 parse_scan() {
@@ -449,10 +644,13 @@ write_advice() {
 }
 
 unblock_wifi() {
-  local iface="$1" phy
+  local iface="$1" phy id
   phy="/sys/class/net/${iface}/phy80211/name"
   [[ -r "$phy" ]] || return 0
-  rfkill unblock "$(tr -d '[:space:]' <"$phy")" || true
+  # rfkill takes an index or a type, not a phy name.
+  id="$(rfkill -r -n -o ID,DEVICE | awk -v d="$(tr -d '[:space:]' <"$phy")" '$2 == d { print $1; exit }')"
+  [[ -n "$id" ]] || return 0
+  rfkill unblock "$id" || true
 }
 
 ensure_managed() {
@@ -615,11 +813,14 @@ render_tree() {
     printf '%s\n' 'filter-AAAA'
     printf '%s\n' 'domain-needed'
     printf '%s\n' 'bogus-priv'
+    printf 'dhcp-hostsfile=%s\n' "${ETC}/dnsmasq.hosts"
     printf 'dhcp-leasefile=%s\n' "${STATE}/dnsmasq.leases"
     printf '%s\n' 'user=dnsmasq'
     printf '%s\n' 'group=dnsmasq'
   } >"${dest}/dnsmasq.conf"
   chmod 0644 "${dest}/dnsmasq.conf"
+  valid_reservations "${SECRET_DIR}/reservations" >"${dest}/dnsmasq.hosts"
+  chmod 0644 "${dest}/dnsmasq.hosts"
 }
 
 files_match() {
@@ -637,11 +838,17 @@ stage_and_install() {
   files_match "${stage}/hostapd.conf" "${ETC}/hostapd.conf" || CONF_CHANGED=1
   files_match "${stage}/hostapd.accept" "${ETC}/hostapd.accept" || ACCEPT_CHANGED=1
   files_match "${stage}/dnsmasq.conf" "${ETC}/dnsmasq.conf" || DNS_CHANGED=1
-  install -d -m 0700 "$ETC"
+  files_match "${stage}/dnsmasq.hosts" "${ETC}/dnsmasq.hosts" || DNS_CHANGED=1
+  if [[ ! -d "$ETC" ]] || [[ "$(stat -c %a "$ETC")" != "711" ]]; then
+    DNS_CHANGED=1
+  fi
+  install -d -m 0711 "$ETC"
   install -m 0600 -o root -g root "${stage}/hostapd.conf" "${ETC}/hostapd.conf"
   install -m 0640 -o root -g root "${stage}/hostapd.accept" "${ETC}/hostapd.accept"
   install -m 0644 -o root -g root "${stage}/dnsmasq.conf" "${ETC}/dnsmasq.conf"
+  install -m 0644 -o root -g root "${stage}/dnsmasq.hosts" "${ETC}/dnsmasq.hosts"
   rm -rf "$stage"
+  ensure_dnsmasq_can_read_hosts
 }
 
 configure_iface() {
@@ -783,7 +990,7 @@ configure_firewall() {
   if [[ "$reload" -eq 1 ]]; then
     log "reloading firewalld so the IoT zone and policies become active"
     firewall-cmd --reload
-    install -d -m 0700 "$ETC"
+    install -d -m 0711 "$ETC"
     printf '%s\n' '-100' >"${ETC}/firewall.priority"
     chmod 0644 "${ETC}/firewall.priority"
   fi
@@ -1144,6 +1351,93 @@ cmd_revoke() {
   reload_hostapd_if_up
 }
 
+reserve_node() {
+  local mac="$1" ip="$2" held tmp
+  ensure_secret_dir
+  if [[ ! -f "${SECRET_DIR}/reservations" ]]; then
+    printf '' | write_secret "${SECRET_DIR}/reservations"
+  fi
+  held="$(valid_reservations "${SECRET_DIR}/reservations" | awk -F, -v ip="$ip" -v mac="$mac" '$2 == ip && $1 != mac { print $1 }')"
+  [[ -z "$held" ]] || die "${ip} is reserved for ${held}. unreserve it first."
+  if valid_reservations "${SECRET_DIR}/reservations" | grep -qx "${mac},${ip}"; then
+    publish_reservations
+    log "${mac} already holds ${ip}"
+    return 1
+  fi
+  tmp="$(mktemp)"
+  {
+    valid_reservations "${SECRET_DIR}/reservations" | awk -F, -v mac="$mac" '$1 != mac'
+    printf '%s,%s\n' "$mac" "$ip"
+  } | sort -u >"$tmp"
+  write_secret "${SECRET_DIR}/reservations" <"$tmp"
+  rm -f "$tmp"
+  publish_reservations
+  log "reserved ${ip} for ${mac}"
+}
+
+unreserve_node() {
+  local mac="$1" tmp
+  ensure_secret_dir
+  if ! valid_reservations "${SECRET_DIR}/reservations" | grep -q "^${mac},"; then
+    log "${mac} has no reservation"
+    return 1
+  fi
+  tmp="$(mktemp)"
+  valid_reservations "${SECRET_DIR}/reservations" | awk -F, -v mac="$mac" '$1 != mac' >"$tmp"
+  write_secret "${SECRET_DIR}/reservations" <"$tmp"
+  rm -f "$tmp"
+  publish_reservations
+  log "dropped the reservation for ${mac}"
+}
+
+reload_dnsmasq_if_up() {
+  if [[ ! -f "${ETC}/dnsmasq.conf" ]] || ! grep -q '^dhcp-hostsfile=' "${ETC}/dnsmasq.conf"; then
+    log "dnsmasq has no hosts file yet; run up once to add it"
+  elif systemctl is-active --quiet tallow-iot-dnsmasq; then
+    systemctl kill --signal=HUP tallow-iot-dnsmasq
+    log "dnsmasq re-read its reservations"
+  else
+    log "dnsmasq is not running; reservations are used on the next start"
+  fi
+}
+
+cmd_reserve() {
+  local mac ip changed=0
+  need_root
+  require_fedora
+  [[ "$#" -eq 2 ]] || die "usage: ${SCRIPT} reserve aa:bb:cc:dd:ee:ff 10.87.0.${NODE_FIRST}"
+  mac="$(norm_mac "$1")"
+  ip="$(norm_node_ip "$2")"
+  lock_secrets
+  reserve_node "$mac" "$ip" && changed=1
+  unlock_secrets
+  if [[ "$changed" -eq 1 ]]; then
+    if systemctl is-active --quiet tallow-iot-dnsmasq; then
+      reclaim_reserved_addresses "$(usb_net_iface "$AP_VID" "$AP_PID" || true)" 1
+    else
+      reload_dnsmasq_if_up
+    fi
+  fi
+  pin_reservation_neighbors "$(usb_net_iface "$AP_VID" "$AP_PID" || true)"
+  return 0
+}
+
+cmd_unreserve() {
+  local mac changed=0
+  need_root
+  require_fedora
+  [[ "$#" -eq 1 ]] || die "usage: ${SCRIPT} unreserve aa:bb:cc:dd:ee:ff"
+  mac="$(norm_mac "$1")"
+  lock_secrets
+  unreserve_node "$mac" && changed=1
+  unlock_secrets
+  if [[ "$changed" -eq 1 ]]; then
+    reload_dnsmasq_if_up
+    pin_reservation_neighbors "$(usb_net_iface "$AP_VID" "$AP_PID" || true)"
+  fi
+  return 0
+}
+
 cmd_apply_channel() {
   local rec cur
   need_root
@@ -1182,13 +1476,17 @@ install_hostapd() {
 }
 
 cmd_up() {
-  local iface restarted=0 c
+  local iface restarted=0 c dns_unreadable=0 must=0
   need_root
   require_fedora
   [[ "$#" -eq 0 ]] || die "up takes no arguments"
-  for c in iw firewall-cmd dnsmasq openssl systemctl rfkill busctl timeout install awk nmcli udevadm ip; do
+  for c in iw firewall-cmd dnsmasq openssl systemctl rfkill busctl timeout install awk nmcli udevadm ip runuser; do
     need_cmd "$c"
   done
+  if [[ -d "$ETC" && "$(stat -c %a "$ETC")" != "711" ]]; then
+    dns_unreadable=1
+    log "/etc/tallow is not traversable; dnsmasq cannot read reservations"
+  fi
   assign_usb_iface iface "$AP_VID" "$AP_PID" \
     "Kootech AP (USB ${AP_VID}:${AP_PID}) is not present. Leave it in the USB port it is in."
   refuse_lan "$iface"
@@ -1226,9 +1524,11 @@ cmd_up() {
     restarted=1
   fi
   systemctl enable tallow-iot-dnsmasq.service
-  if [[ "$restarted" -eq 1 || "$DNS_CHANGED" -eq 1 ]] || ! systemctl is-active --quiet tallow-iot-dnsmasq; then
-    systemctl restart tallow-iot-dnsmasq
+  if [[ "$restarted" -eq 1 || "$DNS_CHANGED" -eq 1 || "$dns_unreadable" -eq 1 ]] || ! systemctl is-active --quiet tallow-iot-dnsmasq; then
+    must=1
   fi
+  reclaim_reserved_addresses "$iface" "$must"
+  pin_reservation_neighbors "$iface"
   systemctl enable --now tallow-iot-survey.timer
   log "SSID $(tr -d '[:space:]' <"${SECRET_DIR}/ssid") on ${iface} channel $(current_channel) address ${AP_CIDR}"
   log "passphrase: ${SECRET_DIR}/passphrase"
@@ -1266,6 +1566,9 @@ cmd_status() {
   else
     printf 'accept list: missing\n'
   fi
+  n="$(valid_reservations "${SECRET_DIR}/reservations" | awk 'END { print NR + 0 }')"
+  printf 'node reservations (%s):\n' "$n"
+  valid_reservations "${SECRET_DIR}/reservations" | sed 's/,/ /; s/^/  /' || true
   if [[ -n "$hci" ]]; then
     soft="$(rfkill -r -n -o DEVICE,SOFT | awk -v h="$hci" '$1 == h { print $2; exit }')"
     powered="$(busctl get-property org.bluez "/org/bluez/${hci}" org.bluez.Adapter1 Powered 2>/dev/null || echo 'unknown')"
@@ -1307,6 +1610,8 @@ main() {
     status) cmd_status "$@" ;;
     allow) cmd_allow "$@" ;;
     revoke) cmd_revoke "$@" ;;
+    reserve) cmd_reserve "$@" ;;
+    unreserve) cmd_unreserve "$@" ;;
     apply-channel) cmd_apply_channel "$@" ;;
     prepare) cmd_prepare "$@" ;;
     combo-bt-off) cmd_combo_bt_off "$@" ;;

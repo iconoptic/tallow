@@ -54,19 +54,52 @@ The host Bluetooth seed is `tools/setup_iot_ble.sh`. It comes up only while this
 
 One 2.4 GHz SSID on the Kootech adapter (USB `0bda:b812`). The default name is `tallow-iot`. WPA2-PSK, HT20, station isolation. The access point is `10.87.0.1/24`. DHCP offers no default route. DNS on this host answers every name with `0.0.0.0`. Chrony serves time to `10.87.0.0/24`. Firewall zone `tallow-iot` accepts DHCP, DNS, and NTP from that subnet and drops the rest. There is no masquerade and no port forward, so the LAN, Docker, and libvirt have no path in.
 
-The accept list starts empty. The SSID is up, and nothing can associate until its MAC is allowed. SSID, passphrase, channel, survey advice, and the accept list live in `secrets/iot-ap/` (gitignored).
+The accept list starts empty. The SSID is up, and nothing can associate until its MAC is allowed. SSID, passphrase, channel, survey advice, the accept list, and node reservations live in `secrets/iot-ap/` (gitignored, directory `0700`, files `0600`).
 
 ```bash
 sudo ./tools/setup_iot_ap.sh
 sudo ./tools/setup_iot_ap.sh status
 sudo ./tools/setup_iot_ap.sh allow aa:bb:cc:dd:ee:ff
 sudo ./tools/setup_iot_ap.sh revoke aa:bb:cc:dd:ee:ff
+sudo ./tools/setup_iot_ap.sh reserve aa:bb:cc:dd:ee:ff 10.87.0.22
+sudo ./tools/setup_iot_ap.sh unreserve aa:bb:cc:dd:ee:ff
 sudo ./tools/setup_iot_ap.sh apply-channel
 ```
 
+Reservations are optional. An ESPHome node sets its own static address ([ESP32 nodes](#esp32-nodes)). `reserve` records `mac,ip` in `secrets/iot-ap/reservations` and publishes `/etc/tallow/dnsmasq.hosts` (`dhcp-hostsfile`). A node address is `10.87.0.20`–`10.87.0.49`. The dynamic pool stays `10.87.0.50`–`10.87.0.200`. `status` lists the reservations. `unreserve` drops a line, publishes the file, and signals dnsmasq to re-read it.
+
+dnsmasq reads `dnsmasq.conf` as root, drops to user `dnsmasq`, and only then opens the hosts file. The script sets `/etc/tallow` to mode `0711` (traversable, not listable) and checks that user `dnsmasq` can read `dnsmasq.hosts`. `hostapd.conf` stays `0600`. Mode `0700` hides the file: dnsmasq logs `cannot read /etc/tallow/dnsmasq.hosts: Permission denied` and offers a pool address.
+
+When a lease disagrees with a reservation, `up` stops dnsmasq, drops those leases, starts dnsmasq, deauthenticates those stations, and waits up to 15 seconds for the reserved address to answer. A changed `reserve` does the same while dnsmasq is running.
+
+`up`, `reserve`, and `unreserve` pin a permanent neighbor for each reservation whose MAC is associated on the AP (`ip neigh replace <ip> lladdr <mac> dev <iface> nud permanent`). The pin is removed when that MAC is not associated, or when the address is no longer reserved. A node with no reservation gets no pin.
+
 The Realtek combo (USB `0bda:d723`) is a survey radio. Its Bluetooth controller stays off. Every 30 minutes it scores channels 1, 6, and 11 and writes a recommendation next to the saved channel. That scan leaves hostapd running. `apply-channel` copies the recommendation into the saved channel and restarts the AP. If the combo is unplugged, the first `up` surveys once on the Kootech before hostapd starts, and later surveys record that the scanner is missing.
 
-ESP32 nodes join this SSID later. They are not a second AP on this machine.
+### ESP32 nodes
+
+ESPHome nodes join this SSID as stations and talk only to this host ([docs/01](01-bluetooth-server-hardware-and-proxies.md#tallow-nodes)). They are not a second AP on this machine. Mesh nodes do not join it at all ([Mesh nodes](#mesh-nodes)).
+
+| Address | Node | Config |
+| --- | --- | --- |
+| `10.87.0.20` | Bare `node-mb0200` | `node-mb0200.yaml` |
+| `10.87.0.21` | `toby-cam-1` | `toby-cam-1.yaml` |
+| `10.87.0.22` | `node-1`, on no board | `node-1.yaml` |
+| `10.87.0.23` | `toby-cam-0`, not flashed | `toby-cam-0.yaml` |
+
+Each node's YAML sets a static address (`manual_ip`) in `10.87.0.20`–`10.87.0.49`, outside the DHCP pool. `use_address` is where the host dials. A node's mDNS stays at ESPHome's default; the host does not use it. A station MAC goes on the accept list with `allow` before it can associate. Nodes do not depend on `reserve`. It is optional. A reservation still gives a board that asks for DHCP a fixed lease, and the neighbor pin reads it.
+
+This host opens every connection to a node: `6053` (ESPHome API), `3232` (OTA), and `8080` (a cam's stream). The zone opens nothing from its side. `ap_isolate=1` stops node-to-node Wi-Fi through the AP. On 2026-10-28 the first node joined: one MB0200, as `relay-mb0200` at `10.87.0.20` and then `toby-cam-1` at `10.87.0.21`. The host reached it on all three ports ([device note](devices/keyestudio-mb0200-s3-cam.md#on-the-board-2026-10-28)).
+
+`secrets/iot-ap/reservations` and `/etc/tallow/dnsmasq.hosts` list `10.87.0.21` for the MB0200 (`44:bd:8d:7a:51:60`) and `10.87.0.22` for the classic ESP32 (`70:4b:ca:04:21:64`, `node-1`). Both lines predate static addresses. They are optional now. `sudo ./tools/setup_iot_ap.sh` at 2026-10-30 20:34 set `/etc/tallow` to mode `0711`. dnsmasq could read the hosts file and DHCPACK'd the MB0200 as `10.87.0.21`. Both MACs are on the accept list. On 2026-10-31 neither board is on this SSID: the MB0200 is unreachable ([device note](devices/keyestudio-mb0200-s3-cam.md#where-it-is-2026-10-31)), and the classic ESP32 runs the mesh ([its note](devices/esp32-devkit.md#where-it-is-2026-10-31)). The second MB0200's MAC is unknown, so `toby-cam-0` cannot join until it is read and allowed ([device note](devices/keyestudio-mb0200-s3-cam.md#toby-cam-0)).
+
+### Mesh nodes
+
+Mesh nodes join no Wi-Fi. They take no address and no accept-list line, and nothing they do touches `tallow-iot`. They speak ESP-NOW to each other on channel 1, and the root reaches this host over USB serial ([docs/01](01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh)). There is no IP on the mesh, so it adds no route in or out.
+
+Every node shares one key, and that key is the whole membership list. It lives in gitignored `firmware/mesh/mesh.key` because `secrets/` is root-owned. `tools/mesh.sh key` writes it once, and every node is built with it. A build with no key stops, so joining is never open. A frame sealed with another key is rejected. There is no per-node revocation.
+
+A node offers nothing to pair with or connect to. It answers Classic inquiry only for 60 s after `D` on its own serial port, and it is never connectable.
 
 ## tuya-cloudcutter (OTA cloud cut + flash)
 
