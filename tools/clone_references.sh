@@ -85,7 +85,9 @@ mkdir -p \
   "${REF}/protocols-ble" \
   "${REF}/protocols-wifi" \
   "${REF}/firmware-liberation" \
-  "${REF}/re-tooling"
+  "${REF}/re-tooling" \
+  "${REF}/rust" \
+  "${REF}/presence"
 
 # --- BLE stack & proxy infrastructure ---
 clone_one "${REF}/ble-stack/bleak"            "https://github.com/hbldh/bleak.git"
@@ -134,6 +136,17 @@ clone_one "${REF}/re-tooling/rea"             "https://github.com/morluto/rea.gi
 # Fallbacks if REA MCP is unavailable in-session
 clone_one "${REF}/re-tooling/GhidraMCP"       "https://github.com/LaurieWired/GhidraMCP.git"
 clone_one "${REF}/re-tooling/jadx-ai-mcp"     "https://github.com/zinja-coder/jadx-ai-mcp.git"
+
+# --- Rust: the libraries the conversion builds on (docs/plans/2026-10-31-rust-conversion.md) ---
+# esp-idf-svc, esp-idf-hal, and esp-idf-sys, moved here from their archived repos.
+clone_one "${REF}/rust/esp-rs-esp-idf"        "https://github.com/esp-rs/esp-idf.git"
+# BlueZ from Rust, for the host's own radio.
+clone_one "${REF}/rust/bluer"                 "https://github.com/bluez/bluer.git"
+
+# --- Presence: prior art for rooms and rotating addresses ---
+clone_one "${REF}/presence/ESPresense"        "https://github.com/ESPresense/ESPresense.git"
+clone_one "${REF}/presence/bermuda"           "https://github.com/agittins/bermuda.git"
+clone_one "${REF}/presence/irk-capture"       "https://github.com/DerekSeaman/irk-capture.git"
 
 if [[ "${MODE}" == "check" ]]; then
   exit "${DRIFT}"

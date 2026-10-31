@@ -8,6 +8,8 @@
 !/references/protocols-wifi/
 !/references/firmware-liberation/
 !/references/re-tooling/
+!/references/rust/
+!/references/presence/
 /references/*/*
 !/references/*/.gitkeep
 
@@ -68,3 +70,15 @@ Thumbs.db
 led_discovery_*.json
 ble_capture_*.txt
 discovery*.json
+
+# ESPHome builds and toolchains (tools/esphome.sh)
+firmware/esphome/.esphome/
+
+# Rust mesh node builds, ESP-IDF, and the cargo cache (tools/mesh.sh)
+firmware/mesh/**/target/
+host/target/
+firmware/mesh/**/.embuild/
+firmware/mesh/.cache/
+firmware/mesh/**/sdkconfig
+firmware/mesh/**/sdkconfig.old
+firmware/mesh/mesh.key

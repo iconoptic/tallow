@@ -17,3 +17,8 @@ references/firmware-liberation/OpenBK7231T_App https://github.com/openshwproject
 references/re-tooling/rea https://github.com/morluto/rea.git 40b9c03f996270e944ff07cafb63be15ce903708
 references/re-tooling/GhidraMCP https://github.com/LaurieWired/GhidraMCP.git 1e980252087b2479a21b9ca6d82d5829538651a7
 references/re-tooling/jadx-ai-mcp https://github.com/zinja-coder/jadx-ai-mcp.git 9f4fce6f49902e95c62479c02d985d1eb0b3cbe1
+references/rust/esp-rs-esp-idf https://github.com/esp-rs/esp-idf.git 64f829959cfe2771b1168d2790939fcc050372ab
+references/rust/bluer https://github.com/bluez/bluer.git 57ec704503417a6476bca5d3bb01122686583709
+references/presence/ESPresense https://github.com/ESPresense/ESPresense.git 953f3b4a6b887f06ab039c6c01116fc7ee3b2379
+references/presence/bermuda https://github.com/agittins/bermuda.git cd46d17e8469b9a761ebdb49ce3b33da51b0b1f6
+references/presence/irk-capture https://github.com/DerekSeaman/irk-capture.git 109413e31282ea1845e33a2fc68a62a0c0f02b11
