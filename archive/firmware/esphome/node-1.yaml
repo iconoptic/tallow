@@ -1,0 +1,13 @@
+# A classic ESP32 as an ESPHome Bluetooth proxy, nothing else. The way back from the
+# Rust mesh in firmware/mesh/ on the board that mesh calls node-0.
+#   sudo ./tools/setup_iot_ap.sh allow 70:4b:ca:04:21:64
+#   ESPHOME_DEVICE=/dev/ttyUSB0 tools/esphome.sh run node-1.yaml --device /dev/ttyUSB0
+#   .venv/bin/python tools/node_check.py --address 10.87.0.22
+
+packages:
+  board: !include packages/board-esp32.yaml
+  node: !include
+    file: packages/node.yaml
+    vars:
+      node_name: node-1
+      node_address: 10.87.0.22

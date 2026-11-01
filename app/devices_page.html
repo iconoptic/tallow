@@ -29,7 +29,7 @@
     <p><strong>The map is not running.</strong></p>
     <p id="reason" class="note"></p>
     <p class="note">Find the root node's port with <code>tools/mesh.sh ports</code>, then start the map on it:</p>
-    <p><code>tools/mesh.sh host &lt;port&gt;</code></p>
+    <p><code>tools/mesh.sh daemon run &lt;port&gt; --out data/mesh/map.json</code></p>
     <p class="note">It writes <code>data/mesh/map.json</code> while it runs. This page reads that file every 5 s.</p>
   </div>
   <div id="live" hidden>
@@ -40,6 +40,13 @@
     <h2>Nodes</h2>
     <ul id="nodes" class="cards"></ul>
     <p id="no-nodes" class="note" hidden>No nodes in the map.</p>
+    <h2>Identities</h2>
+    <ul id="identities" class="cards"></ul>
+    <p id="no-identities" class="note" hidden>No named identities.</p>
+    <h2>Suggestions</h2>
+    <p class="note">These are suggestions. Nothing here accepts or merges them.</p>
+    <ul id="suggestions" class="cards"></ul>
+    <p id="no-suggestions" class="note" hidden>No suggestions.</p>
   </div>
 </main>
 <script>
@@ -66,6 +73,10 @@ const devicesEl = document.getElementById("devices");
 const noDevicesEl = document.getElementById("no-devices");
 const nodesEl = document.getElementById("nodes");
 const noNodesEl = document.getElementById("no-nodes");
+const identitiesEl = document.getElementById("identities");
+const noIdentitiesEl = document.getElementById("no-identities");
+const suggestionsEl = document.getElementById("suggestions");
+const noSuggestionsEl = document.getElementById("no-suggestions");
 
 function make(tag, className, text) {
   const node = document.createElement(tag);
@@ -138,6 +149,30 @@ function nodeCard(id, node, now) {
   return card;
 }
 
+function identityCard(name, identity) {
+  const card = make("li", "card");
+  card.append(make("h3", "", name));
+  const list = make("dl");
+  const add = (term, value) => list.append(make("dt", "", term), make("dd", "", value));
+  const keys = Array.isArray(identity.keys) ? identity.keys : [];
+  add("Type", identity.type || "unknown");
+  add("Addresses", keys.length ? keys.join("; ") : "none");
+  card.append(list);
+  return card;
+}
+
+function suggestionCard(suggestion) {
+  const card = make("li", "card");
+  card.append(make("h3", "", "Suggestion"));
+  const list = make("dl");
+  const add = (term, value) => list.append(make("dt", "", term), make("dd", "", value));
+  const keys = Array.isArray(suggestion.keys) ? suggestion.keys : [];
+  add("Addresses", keys.length ? keys.join("; ") : "none");
+  add("Reason", typeof suggestion.reason === "string" ? suggestion.reason : "");
+  card.append(list);
+  return card;
+}
+
 function showStale(doc) {
   liveEl.hidden = true;
   staleEl.hidden = false;
@@ -157,6 +192,12 @@ function showLive(doc) {
   const nodes = Object.entries(doc.nodes || {}).sort(([a], [b]) => a.localeCompare(b));
   nodesEl.replaceChildren(...nodes.map(([id, node]) => nodeCard(id, node, now)));
   noNodesEl.hidden = nodes.length > 0;
+  const identities = Object.entries(doc.identities || {}).sort(([a], [b]) => a.localeCompare(b));
+  identitiesEl.replaceChildren(...identities.map(([name, identity]) => identityCard(name, identity)));
+  noIdentitiesEl.hidden = identities.length > 0;
+  const suggestions = Array.isArray(doc.suggestions) ? doc.suggestions : [];
+  suggestionsEl.replaceChildren(...suggestions.map((suggestion) => suggestionCard(suggestion)));
+  noSuggestionsEl.hidden = suggestions.length > 0;
 }
 
 async function refresh() {

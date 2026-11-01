@@ -1,0 +1,14 @@
+# Toby's first cam. A node that also watches the dog.
+#   tools/esphome.sh run toby-cam-1.yaml
+
+packages:
+  board: !include packages/board-mb0200.yaml
+  node: !include
+    file: packages/node.yaml
+    vars:
+      node_name: toby-cam-1
+      node_address: 10.87.0.21
+  dogcam: !include
+    file: packages/dogcam.yaml
+    vars:
+      node_name: toby-cam-1
