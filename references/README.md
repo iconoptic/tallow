@@ -3,8 +3,12 @@
 This directory is populated by [`../tools/clone_references.sh`](../tools/clone_references.sh) and is **gitignored**.
 
 ```bash
-./tools/clone_references.sh
+./tools/clone_references.sh            # clone what is missing, at the revisions in tools/references.lock
+./tools/clone_references.sh --latest   # clone what is missing, at the newest revisions
+./tools/clone_references.sh --check    # report clones that are missing or differ from the lock
 ```
+
+[`../tools/references.lock`](../tools/references.lock) is tracked and pins each clone's revision. A fresh clone checks out the locked revision, so the docs that cite reference code read what they were written against. A repo with no lock entry takes its newest revision. A clone that already exists is skipped, so neither mode moves it. Both clone modes rewrite the lock from what is on disk, so `--latest` on a partly cloned tree records the new revisions it fetched.
 
 See the catalog in the root [README.md](../README.md).
 

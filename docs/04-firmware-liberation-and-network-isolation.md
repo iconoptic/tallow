@@ -99,7 +99,15 @@ Mesh nodes join no Wi-Fi. They take no address and no accept-list line, and noth
 
 Every node shares one key, and that key is the whole membership list. It lives in gitignored `firmware/mesh/mesh.key` because `secrets/` is root-owned. `tools/mesh.sh key` writes it once, and every node is built with it. A build with no key stops, so joining is never open. A frame sealed with another key is rejected. There is no per-node revocation.
 
-A node offers nothing to pair with or connect to. It answers Classic inquiry only for 60 s after `D` on its own serial port, and it is never connectable.
+The key sits in more places than `mesh.key`, so each one is kept private:
+
+- The build script writes `mesh_key.bin` into its output directory at mode `0600`, as private as the key file it came from.
+- The built ELF and image embed the key, and cargo makes them world-readable. After a build, `tools/mesh.sh build` and `tools/mesh.sh check` remove group and other access from `firmware/mesh/node/target`. `check --fast` builds nothing, so it does not touch it.
+- A mesh board's flash holds the key, so a backup does too. `tools/mesh.sh backup` writes `data/firmware-backups/` at mode `0700` and each file at `0600`. The three backups taken on 2026-10-31 were chmodded to match ([board note](devices/esp32-devkit.md#back-up)).
+
+Do not copy any of these out of the tree, and do not paste their contents anywhere.
+
+A node is never connectable, and it accepts no connection from any device. It answers Classic inquiry only for 60 s after `D` on its own serial port. Since the 2026-10-31 flash, its inquiry ends 200 ms early, so it pages no device that has no name in its EIR ([docs/01](01-bluetooth-server-hardware-and-proxies.md#flashed-2026-10-31-the-cross-check-build)). The GATT client, built and not flashed, opens connections only to addresses on its whitelist.
 
 ## tuya-cloudcutter (OTA cloud cut + flash)
 

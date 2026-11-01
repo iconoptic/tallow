@@ -67,13 +67,37 @@ DIY memory, music modes, and Kelvin are not on this page. The codec has them. Th
 .venv/bin/python app/h7020_panel.py
 .venv/bin/python app/h7020_panel.py --preview
 .venv/bin/python app/h7020_panel.py --preview --password-file /tmp/panel-preview-password
+.venv/bin/python app/h7020_panel.py --preview --data-dir /tmp/panel-data --agents-file /tmp/panel-agents.json
 ```
 
-The process prints `Panel http://<house-lan>:8765/`, the agent socket path, and the cam count. If the BLE connect fails at startup, it logs `Connect failed (...)`, keeps retrying as after a dropped link, and stays up; the light routes answer 503 `disconnected` until the box answers. It binds the default-route source when that address is outside `10.87.0.0/24`, and it refuses `0.0.0.0` and the IoT access point. `--preview` binds only `127.0.0.1` and does not open BLE. Closing it skips `stop_notify` when there is no BLE client. Its library is `data/panel-preview/` and its socket is `data/panel-preview/agent.sock`, so a click-through does not change the live patterns. The password is one line in `secrets/panel/password` (mode `0600`). `--password-file` reads a throwaway password instead, for contract tests, with the same one-line and `0600` checks. It works only with `--preview`: without it the process exits. `data/panel/` and `data/panel-preview/` are mode `0700`. The contract is `tools/tests/panel_contract.py`. Its header is the command.
+The process prints `Panel http://<house-lan>:8765/`, the agent socket path, and the cam count. If the BLE connect fails at startup, it logs `Connect failed (...)`, keeps retrying as after a dropped link, and stays up; the light routes answer 503 `disconnected` until the box answers. It binds the default-route source when that address is outside `10.87.0.0/24`, and it refuses `0.0.0.0` and the IoT access point. `--preview` binds only `127.0.0.1` and does not open BLE. Closing it skips `stop_notify` when there is no BLE client. Its library is `data/panel-preview/` and its socket is `data/panel-preview/agent.sock`, so a click-through does not change the live patterns. The password is one line in `secrets/panel/password` (mode `0600`). `--password-file` reads a throwaway password instead, for contract tests, with the same one-line and `0600` checks. `--data-dir DIR` uses `DIR` in place of `data/panel-preview/`: the library, `cams.json`, and `agent.sock` live there. `--agents-file FILE` names the file of agent token hashes. Its default is `agents.json` in the data directory. A preview never reads `secrets/panel/agents.json`, the live token hashes. All three work only with `--preview`: without it the process exits. `data/panel/` and `data/panel-preview/` are mode `0700`.
+
+The contract runs with `.venv/bin/python tools/tests/panel_contract.py`, and `tools/mesh.sh check` runs it. It starts its own panels on free ports: one for the checks, and a second that spends the rate limit. Each has a throwaway password, throwaway agent tokens, and a temporary data directory with one seeded cam at `10.87.0.254`, an address no device holds. It reads nothing under `secrets/`, `data/panel/`, or `data/panel-preview/`. `--panel-command` names the panel to start, before the flags above, so a port of it can pass the same file. The script no longer takes `--base-url`, `--password-file`, or `--unix-socket`. Its header lists what it skips.
+
+Bad input is answered, not crashed on. A non-ASCII password or cookie is a failed login, not a 500. Invalid UTF-8 in a JSON body is a 400 `body must be JSON`. A refused camera save answers `cameras: ...` and names no server path.
+
+The panel process that has been running on this host predates these changes. It was not restarted, so it still has the old behavior until it is.
 
 `GET /` without a cookie is 200 and the login form (`text/html; charset=utf-8`). `GET /lights`, `GET /cams`, and `GET /settings` without a cookie are 303 to `/login`. `GET /panel.css` is served without a cookie: 200, `text/css; charset=utf-8`, `cache-control: no-cache`. A correct `POST /login` is 303 to `/` and sets `tallow_panel`. The value is HMAC-SHA256, key the password, message `tallow-h7020-panel`. The cookie is HttpOnly, `Max-Age=2592000`, `Path=/`, `SameSite=strict`. `POST /logout`, with or without a cookie, is 303 to `/login` and clears `tallow_panel`. The clear header is `tallow_panel=""` with `Max-Age=0`, `Path=/`, `SameSite=lax`. Logout leaves the password file alone. Cam route statuses are in [keyestudio-mb0200-s3-cam.md](keyestudio-mb0200-s3-cam.md#routes).
 
 A catalogue scene, a paint, and a sequence have not been sent to this string from the page yet. Power, brightness, and the solid red frame above are the writes this unit has shown.
+
+### Rust panel (`tallowd panel`)
+
+`tallowd panel` without `--preview` holds the same BLE link as the Python page. `host/tallowd/src/panel/session.rs` has the rules: one write queue, a slider keeps its latest value while a write is in flight, a script goes out whole and in order, writes are paced 0.2 s apart, a power read goes out after 4 s idle, and a dropped link is dialled again after 2 s. `host/tallowd/src/panel/bluez.rs` is the BlueZ transport over `bluer`. It finds the UB500 by USB id `2357:0604` through `/sys/class/bluetooth`, never by `hci` number. Refusals and failure text match the Python.
+
+Only one of the two panels may hold the box. Stop `app/h7020_panel.py` before `tallowd panel`, and stop `tallowd` before the Python. Code done 2026-10-31. It has not run on this H7020 yet, so the first writes it has shown on the box are still the Python's: power, brightness, and the solid red frame.
+
+```bash
+tools/mesh.sh daemon build
+host/target/release/tallowd panel
+```
+
+It takes the Python panel's flags (`host/tallowd/src/panel/setup.rs` lists them). The real panel reads `secrets/panel/password`, as the Python does. Its log prints `Connected ...` on a link, or `Connect failed (...)` and then `Reconnect failed (...)` while the box is out of reach.
+
+### Rust codec (`tallow-govee`)
+
+`host/tallow-govee` is the H7020 codec in Rust. Its default build has no Bluetooth code. The `ble` feature adds the transport contract that `tallowd` uses for its BlueZ link. `tests/vectors.rs` checks all 395 vectors in `host/tallow-govee/tests/vectors.json` against the codec, refusals included, and it fails on any unknown kind. `tools/dump_h7020_vectors.py` writes that file. The crate has 5 unit tests and 2 vector tests.
 
 ### Agent socket
 
@@ -90,6 +114,8 @@ The guest does not receive the socket file, the token, the house-LAN panel, or `
 Without `--secret-file`, the command prints a bearer once. With it, the secret is written to that path at mode `0600` and stdout stays empty. Either way the sha256 is stored in `secrets/panel/agents.json` (mode `0600`). The same name replaces the stored hash. Scopes are `read` (state and lists), `control` (power, brightness, color, scene, paint, and apply), `library` (save and delete patterns), and `schedule` (save and delete schedules). The Hermes token is `read` and `control`. The browser cookie has all four. There is no scope that mints tokens or sends raw frames. `GET /api/manifest` on the socket is the tool schema: scene names, pattern and schedule fields, bulb count, and the absences (DIY, music, Kelvin, raw frames). On the house LAN it is 404 `{"detail":"not found"}`. On the socket without a bearer it is 401 `{"detail":"login"}`. Agent calls are appended to `data/panel/audit.jsonl` with the token name, not the secret.
 
 State and the manifest include `"device": "h7020"`.
+
+The Rust broker is `host/tallow-broker`. It is not deployed. The live broker is still `tools/panel_broker.py`, under `tools/tallow-panel-broker.service`. `tools/tallow-panel-broker-rust.service` is written and not installed. Its 27 tests in `host/tallow-broker/tests/panel_broker.rs` cover the same rules. Its deviations from the Python are all tighter, and they are listed in [T3.8](../plans/rust-conversion/p3-panel.md#t38-agent-broker).
 
 ## Wi-Fi
 

@@ -45,6 +45,8 @@ Reporting a blocker is a good result. A guess in firmware costs a physical trip 
 - Never make a mesh node join Wi-Fi or open a socket. See `.cursor/rules/iot-network-isolation.mdc`.
 - Never add `use` of `EspNow::take()`. It turns off modem sleep, which ESP-IDF forbids while Bluetooth runs.
 - Never use `esp-idf-svc`'s `EspGap` events for a remote name or a pairing result. They run `from_utf8_unchecked` on bytes off the air, which is undefined behaviour. T1.4 replaces them.
+- Never call `PropData::prop()`. It reads RSSI and class of device from the pointer rather than through it, and builds a `&str` from off-air bytes. `read_props` in `bluetooth.rs` is the way.
+- Never let a node page a device that is not on a whitelist. `cut_inquiry` in `bluetooth.rs` stops the name requests that would follow an inquiry. Do not remove it.
 - Never change system configuration directly. Write a script under `tools/` and tell the user the command, per `.cursor/rules/host-config-scripts.mdc`.
 
 ## Rust rules
@@ -55,7 +57,7 @@ Reporting a blocker is a good result. A guess in firmware costs a physical trip 
 - `unsafe` is allowed only in `firmware/mesh/node/src/radio.rs`, `bluetooth.rs`, `main.rs`, and files a task names. Each block gets a comment saying why it is sound.
 - A delay in firmware is `FreeRtos::delay_ms`. `std::thread::sleep` below one tick busy-waits and trips the watchdog.
 - Callbacks on the Wi-Fi or Bluetooth task copy data and return. No blocking, no serial writes.
-- A change to bytes on the air bumps `VERSION` in `wire.rs` and updates the golden frames. Until OTA exists, every board must then be flashed together.
+- A change to bytes on the air bumps `VERSION` in `wire.rs`, updates the golden frames, and updates `core/README.md`. Until OTA exists, every board must then be flashed together.
 - New tests are named as sentences, like the ones in `firmware/mesh/core/tests/sim.rs`.
 
 ## Commands
@@ -63,8 +65,8 @@ Reporting a blocker is a good result. A guess in firmware costs a physical trip 
 `tools/mesh.sh --help` is the source of truth. The ones you will use:
 
 ```bash
-tools/mesh.sh check --fast      # fmt, clippy, tests for core and host, Python tests
-tools/mesh.sh check             # the same, plus the firmware build
+tools/mesh.sh check --fast      # fmt, clippy, tests for core and host, Python tests, panel contract
+tools/mesh.sh check             # the same, plus the node and cam firmware builds
 tools/mesh.sh fmt               # format all Rust
 tools/mesh.sh daemon check      # host/ only
 tools/mesh.sh size              # image against the 1.8 MB OTA slot
@@ -81,7 +83,7 @@ The first firmware build after a clean takes about 5 minutes. Later ones take un
 - Opening a CP2102 port resets that board, so anything sent straight after opening is lost. Wait 4 s.
 - Both CP2102s report serial `0001`. Tell them apart by USB path. `firmware/mesh/boards.tsv` has them.
 - `/dev/ttyUSB0` numbers can swap. Run `tools/mesh.sh ports` first.
-- Just opening an S3 cam's USB port drops it into download mode, and it falls off the network. `tools/mesh.sh` refuses those ports. Read cams over the network.
+- Just opening an S3 cam's USB port drops it into download mode, and it falls off the network. `tools/mesh.sh` refuses those ports, and any port `boards.tsv` does not list as `esp32`. Read cams over the network.
 - The `secrets/` directory is root-owned, so an agent cannot write there. `tools/mesh.sh key` keeps the mesh key beside the firmware.
 - `esp-idf-svc`, `esp-idf-hal`, and `esp-idf-sys` moved to `esp-rs/esp-idf`, cloned at `references/rust/esp-rs-esp-idf`. The exact versions in use are unpacked in `firmware/mesh/.cache/registry/src/`.
 - ESP-IDF's own docs and sources are in `firmware/mesh/node/.embuild/espressif/esp-idf/v5.5.5/`. See `docs/en/api-guides/coexist.rst` and `docs/en/api-reference/network/esp_now.rst`.

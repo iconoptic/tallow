@@ -21,7 +21,7 @@ Numbering starts at 0 from here on. The mesh's `node-0` is the first board, so `
 
 Both CP2102s report serial `0001`. Identify them by USB path, not serial. A port is `/dev/ttyUSB0` when one is attached (`root:dialout 0660`; the wrappers add the group). Numbers can swap: `tools/mesh.sh ports` names each attached board from `firmware/mesh/boards.tsv`, and it opens no port.
 
-Full 4 MB flash backups of both boards are in gitignored `data/firmware-backups/`: `209ba9991e54-before-rust.bin` and `704bca042164-before-rust.bin`.
+Full 4 MB flash backups are in gitignored `data/firmware-backups/`: `209ba9991e54-before-rust.bin` and `704bca042164-before-rust.bin`, one per board, and `209ba9991e54-2026-10-31.bin`, a later one of `node-1`. They are mode `0600` in a `0700` directory ([Back up](#back-up)).
 
 `70:4b:ca:04:21:64` is still on the AP accept list, and an optional reservation for `10.87.0.22` is in `secrets/iot-ap/reservations`. A mesh node needs neither.
 
@@ -37,7 +37,7 @@ ESPHOME_DEVICE=/dev/ttyUSB0 tools/esphome.sh mac
 
 ## Flash
 
-`tools/mesh.sh`'s header has the usage lines. `tools/mesh.sh key` writes the key once, and every node is built with it. The image goes on over USB. OTA over the mesh is not built. `flash` tries 3 times and refuses any port but `/dev/ttyUSB*`.
+`tools/mesh.sh`'s header has the usage lines. `tools/mesh.sh key` writes the key once, and every node is built with it. The image goes on over USB. OTA over the mesh is not built. `flash` tries 3 times. It, `monitor`, `backup`, `host`, `bench`, and `daemon run` open only a `/dev/ttyUSB*` port whose USB path `firmware/mesh/boards.tsv` lists with chip `esp32`. A board that is not listed is refused until its row is added: read its MAC and chip with `tools/esphome.sh mac` ([Other boards](#other-boards)), then add a row (name, Wi-Fi MAC, chip, USB path, notes). The name `ttyUSB` alone is not enough, because the MB0200 cam's CH340 port is also a `ttyUSB`.
 
 ```bash
 tools/mesh.sh ports
@@ -59,7 +59,9 @@ A classic ESP32 has no watchdog reset. esptool falls back to an RTS reset, which
 tools/mesh.sh backup /dev/ttyUSB0
 ```
 
-This saves the board's whole flash to gitignored `data/firmware-backups/<mac>-<date>.bin`. It tries 460800 baud, then 115200, and refuses to overwrite a file. Opening the port reboots the board, and it refuses any port but `/dev/ttyUSB*`. A real run took 1m55s.
+This saves the board's whole flash to gitignored `data/firmware-backups/<mac>-<date>.bin`. It tries 460800 baud, then 115200, and refuses to overwrite a file. Opening the port reboots the board. It opens only a listed classic board's port, as `flash` does ([Flash](#flash)). A real run took 1m55s.
+
+A mesh board's flash holds the mesh key, so a backup is as private as `firmware/mesh/mesh.key`. The command makes `data/firmware-backups/` mode `0700` and writes each file at `0600`. The three backups already there were chmodded to match on 2026-10-31. Do not copy one out of the tree ([docs/04](../04-firmware-liberation-and-network-isolation.md#mesh-nodes)).
 
 ## Back to ESPHome
 
@@ -80,18 +82,24 @@ ESPHOME_DEVICE=/dev/ttyUSB0 tools/esphome.sh run node-1.yaml --device /dev/ttyUS
 
 Both boards run the Rust mesh. `node-0` was the root and `node-1` the leaf during tests. The root moved between them with no configuration by moving the host to the other port. Neither board joins `tallow-iot`, and no ESPHome image is on either.
 
+Both boards were flashed with the cross-check build on 2026-10-31. That build fixes Classic RSSI and class of device, stops inquiry before the name requests that paged nameless Classic devices, checks the source of each beacon, and counts parent changes once per change ([list](../01-bluetooth-server-hardware-and-proxies.md#flashed-2026-10-31-the-cross-check-build)). Nobody has read the boards back since, so those fixes are confirmed by source and tests only.
+
+- Classic RSSI, class of device, and `nearest` for a Classic device from before that flash are wrong. Hit counts and names are fine.
+
+**The boards and the source are on different frame versions.** The boards run frame version `0xA1`. The source is at `0xA6`, with the work from T1.2 to T1.10 in [docs/01](../01-bluetooth-server-hardware-and-proxies.md#source-ahead-of-the-boards-frame-version-0xa6). Frames between the two versions are refused, so a board on the new image and one on the old cannot talk. **Flash every board in one pass**, with `tools/mesh.sh build` and `tools/mesh.sh flash <port>` on each. That includes the third classic board that T1.8 needs. It is not attached.
+
 Proven:
 
 - The mesh image on both boards, in 10-minute soaks with 0 resets ([results](../01-bluetooth-server-hardware-and-proxies.md#measured-2026-10-31)).
 - Delivery from leaf to root over one hop, and commands from root to leaf.
-- Classic inquiry finding `node-1` from `node-0` with `D` bench visibility.
+- Classic inquiry finding `node-1` from `node-0` with `D` bench visibility. The hit is proven. Its RSSI was wrong before the flash, and has not been checked since.
 
 Not proven:
 
 - More than one physical hop. Only these two boards were on the air.
 - Reroute around a dead board on real hardware.
 - The other boards in the pack.
-- GATT. The mesh firmware has none, and no GATT was tested through an ESPHome build on these boards.
+- GATT. The GATT client is built and not flashed. No GATT was tested through these boards, or through an ESPHome build.
 
 ### History
 

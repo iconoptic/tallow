@@ -2,7 +2,15 @@
 
 Move tallow's firmware and host runtime to Rust, and finish the mesh on the way. Work is split into small tasks that a cheaper model can do from the task text alone.
 
-**Status (2026-10-31):** Phase 0 is done. The mesh runs on two classic ESP32s over one physical hop, and `tools/mesh.sh check` passes. Results are in [docs/01](../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh). T1.1, the golden frames, is done. T2.1, the serial link, is done. T3.1, the panel HTTP contract, is done. The rest of phase 1 has not started. T2.2 onward are not done. T3.2 onward are not done. T4.1, the S3 cam build, is done and is not flashed. T4.2 onward are not done. Phase 5 has not started.
+**Status (2026-10-31):** "Code done" means the code is in the tree and has not run on hardware. Frame version is `0xA6` in the source and `0xA1` on the boards, so flash every board together ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#source-ahead-of-the-boards-frame-version-0xa6)).
+- Phase 0: done. The mesh ran on two classic ESP32s over one physical hop ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh)).
+- Phase 1: done or code done: T1.1 to T1.7, T1.8b, T1.9a, T1.10. Waiting on the user: T1.8 (a third board), T1.9 (needs T1.8), T1.11, T1.12, and the hardware checks named in the phase file.
+- Phase 2: done or code done: T2.1 to T2.7. Waiting on the user: the T2.7 trial and service check.
+- Phase 3: done or code done: T3.1 to T3.9. Waiting on the user: the T3.7 light check, T3.10, and the hardware checks named in the phase file.
+- Phase 4: done or code done: T4.1, T4.2. Waiting on the user: T4.0, T4.3 to T4.5, and the hardware checks named in the phase file.
+- Phase 5: not started.
+
+**Cross-check (2026-10-31):** five reviewers read phases 0 to 4 against the code. The fixes are in the tree, and the tasks here were rewritten to match. Both boards run that build. The tasks done since are ahead of the boards: see the note at the top of [p1-mesh.md](rust-conversion/p1-mesh.md).
 
 **Agents start at [rust-conversion/agent-brief.md](rust-conversion/agent-brief.md).** It has the rules, the tiers, and the stop conditions.
 
@@ -49,8 +57,8 @@ Each phase can ship alone. Stop after any of them and the system still works.
 | 0 | [p0-foundation.md](rust-conversion/p0-foundation.md) | Toolchain, gates, baseline. **Done** | |
 | 1 | [p1-mesh.md](rust-conversion/p1-mesh.md) | True multi-hop proven, Classic by address, replay fix, OTA, GATT control | 0, a third classic board for T1.8 |
 | 2 | [p2-host.md](rust-conversion/p2-host.md) | `tallowd`: map, rooms, identities, service | 0. Can run alongside phase 1 |
-| 3 | [p3-panel.md](rust-conversion/p3-panel.md) | Panel, H7020, and broker in Rust, and the device map on the panel | 2 |
-| 4 | [p4-cams.md](rust-conversion/p4-cams.md) | Cam firmware in Rust | `toby-cam-0` running ESPHome as the known good |
+| 3 | [p3-panel.md](rust-conversion/p3-panel.md) | Panel, H7020, and broker in Rust, and the device map on the panel | 0. Only T3.9 needs phase 2 |
+| 4 | [p4-cams.md](rust-conversion/p4-cams.md) | Cam firmware in Rust | T4.0, `toby-cam-0` running ESPHome as the known good. T4.4 needs T1.9a, not the rest of phase 1 |
 | 5 | [p5-retire.md](rust-conversion/p5-retire.md) | ESPHome and Python removed | 1 to 4, and the user's say-so |
 
 ## Order

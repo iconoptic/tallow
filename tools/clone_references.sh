@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Shallow-clone curated smart-light reverse-engineering reference repos.
 # Idempotent: skips directories that already exist.
-# Records each clone's HEAD in tools/references.lock (tracked) so docs that cite
-# reference code can be tied to a revision.
+# tools/references.lock (tracked) pins each clone's revision, so docs that cite
+# reference code stay tied to what they read.
 #
-# Usage: clone_references.sh          clone missing repos, rewrite the lock
-#        clone_references.sh --check  report clones that are missing or differ from the lock
+# Usage: clone_references.sh           clone missing repos at their locked revisions
+#        clone_references.sh --latest  clone missing repos at their newest revisions
+#        clone_references.sh --check   report clones that are missing or differ from the lock
+#
+# A repo with no lock entry takes its newest revision. Both clone modes rewrite the
+# lock from what is on disk.
 #
 # clone_one dest url [ref]
 #   ref is a branch or tag. Omit it to clone the remote's default branch.
@@ -24,10 +28,11 @@ MODE="record"
 case "${1:-}" in
   "") ;;
   --check) MODE="check" ;;
-  *) echo "Usage: $0 [--check]" >&2; exit 1 ;;
+  --latest) MODE="latest" ;;
+  *) echo "Usage: $0 [--latest|--check]" >&2; exit 1 ;;
 esac
 
-if [[ "${MODE}" == "record" ]]; then
+if [[ "${MODE}" != "check" ]]; then
   NEW_LOCK="$(mktemp)"
   trap 'rm -f "${NEW_LOCK}"' EXIT
   echo "# <path> <url> <HEAD sha> [ref] — written by tools/clone_references.sh" >"${NEW_LOCK}"
@@ -70,6 +75,14 @@ clone_one() {
     else
       echo "clone ${rel}"
       git clone --depth 1 --single-branch "${url}" "${dest}"
+    fi
+    if [[ "${MODE}" == "record" ]]; then
+      local locked
+      locked="$(awk -v p="${rel}" '$1 == p {print $3}' "${LOCK}" 2>/dev/null || true)"
+      if [[ -n "${locked}" ]]; then
+        git -C "${dest}" fetch --quiet --depth 1 origin "${locked}"
+        git -C "${dest}" checkout --quiet --detach "${locked}"
+      fi
     fi
   fi
   sha="$(git -C "${dest}" rev-parse HEAD)"

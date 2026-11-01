@@ -14,7 +14,7 @@ Read `docs/plans/rust-conversion/agent-brief.md` before working here. Do one tas
 - Never weaken a test or a pass mark to get green. Stop and report.
 - `firmware/mesh/core` stays `no_std`, with no heap and no OS calls. Use `wrapping_sub` for clock maths.
 - Every frame stays authenticated. Mesh nodes never join Wi-Fi or open a socket.
-- Never use `EspNow::take()`, and never use `EspGap` remote-name or pairing events.
+- Never use `EspNow::take()`, `PropData::prop()`, or `EspGap` remote-name or pairing events. Keep `cut_inquiry`: nodes page only whitelisted devices.
 - `unsafe` lives only in the files the task names, each block with a comment saying why it is sound.
 - A change to bytes on the air bumps `VERSION` in `wire.rs` and updates the golden frames.
 

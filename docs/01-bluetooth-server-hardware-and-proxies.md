@@ -32,7 +32,7 @@ sudo ./tools/setup_iot_ble.sh revoke aa:bb:cc:dd:ee:ff
 
 This is the target for control. `habluetooth` and `bleak-esphome` are not wired, and the [mesh](#multi-hop-mesh) uses neither: `tools/mesh_host.py` reads the root's serial port.
 
-The [Rust conversion plan](plans/2026-10-31-rust-conversion.md) replaces this stack: `tallowd` on axum for FastAPI, `bluer` for the host's own radio, GATT over the mesh for proxies, and ESPHome retired in its phase 5. None of that is built yet.
+The [Rust conversion plan](plans/2026-10-31-rust-conversion.md) replaces this stack: `tallowd` on axum for FastAPI, `bluer` for the host's own radio, GATT over the mesh for proxies, and ESPHome retired in its phase 5. Code exists for the first two. `tallowd panel` serves the panel routes, and its H7020 link runs on `bluer`. Neither has run on the box, and the Python panel is still what runs. The GATT client over the mesh is in the node source and is not flashed. ESPHome is not retired.
 
 ```
 Web UI  →  FastAPI backend  →  habluetooth / bleak
@@ -136,7 +136,7 @@ Performance tips from HA docs:
 
 The goal is central control of the house's Bluetooth devices. There are two kinds of node:
 
-- A **mesh node** is a classic ESP32 running the Rust firmware in `firmware/mesh/`. It joins no Wi-Fi, and it reaches the host through other nodes. Both classic boards run this as of 2026-10-31 ([Multi-hop mesh](#multi-hop-mesh)).
+- A **mesh node** is a classic ESP32 running the Rust firmware in `firmware/mesh/`. It joins no Wi-Fi, and it reaches the host through other nodes. Both classic boards run this. They were flashed on 2026-10-31 with the cross-check build, and the source has moved on since ([Multi-hop mesh](#multi-hop-mesh), [Flashed 2026-10-31](#flashed-2026-10-31-the-cross-check-build), [Source ahead of the boards](#source-ahead-of-the-boards-frame-version-0xa6)).
 - An **ESPHome node** runs `bluetooth_proxy`, joins `tallow-iot`, and talks only to the host over Wi-Fi. The cams are built this way. A Rust image in `firmware/cam` builds and is not flashed ([device note](devices/keyestudio-mb0200-s3-cam.md#rust-image)). Picking a node per device with habluetooth and bleak-esphome is not wired.
 
 The rest of this section is the ESPHome nodes. Their names are separate from the mesh's: `firmware/esphome/node-1.yaml` targets the first board, which the mesh calls `node-0`.
@@ -172,13 +172,13 @@ On 2026-10-28 one MB0200 ran `relay-mb0200`, then `toby-cam-1`. The standalone r
 
 On 2026-10-30 `relay_check.py --address 10.87.0.21` found `toby-cam-1` up (built 2026-10-29 05:11:41 UTC), scan-only flags, 13 BLE addresses in 10 s, H7020 not heard, and "Wi-Fi signal not reported by this build". That image predates the sensor. The same day the earlier `relay-1` image passed `config` and `compile`. A later OTA of `toby-cam-1` to `10.87.0.21:3232` timed out. The board held `10.87.0.21` and did not answer ARP, so the panel could not open the stream ([device note](devices/keyestudio-mb0200-s3-cam.md#where-it-is-2026-10-30)).
 
-On 2026-10-31 no ESPHome node is up. `toby-cam-1` is unreachable at `10.87.0.21` and not recovered, after an [esphome-mesh](#esphome-mesh-removed) build crash-looped. Its build without esphome-mesh is compiled and not flashed. `toby-cam-0` is compiled and not flashed ([device note](devices/keyestudio-mb0200-s3-cam.md#where-it-is-2026-10-31)). Both classic ESP32 boards now run the Rust mesh ([device note](devices/esp32-devkit.md#where-it-is-2026-10-31)).
+On 2026-10-31 no ESPHome node is up. `toby-cam-1` is unreachable at `10.87.0.21` and not recovered, after an [esphome-mesh](#esphome-mesh-removed) build crash-looped. Its build without esphome-mesh is compiled and not flashed. `toby-cam-0` is compiled and not flashed ([device note](devices/keyestudio-mb0200-s3-cam.md#where-it-is-2026-10-31)). Both classic ESP32 boards run the Rust mesh ([device note](devices/esp32-devkit.md#where-it-is-2026-10-31)).
 
 The MB0200 is a Wi-Fi ESP32, rank 2 above. Board, pins, and first flash: [devices/keyestudio-mb0200-s3-cam.md](devices/keyestudio-mb0200-s3-cam.md). The mesh boards are classic ESP32 devkits: [devices/esp32-devkit.md](devices/esp32-devkit.md).
 
 ### Multi-hop mesh
 
-Classic ESP32 boards listen to Bluetooth near them and pass what they hear to this host through each other. The link is ESP-NOW on channel 1, the cleanest in the 2026-10-31 survey and separate from `tallow-iot` on 6. A mesh node joins no Wi-Fi and opens no socket. It listens and reports. Control is not built, and neither is OTA over the mesh. `bleak-esphome` and `habluetooth` remain unwired, and this mesh uses neither.
+Classic ESP32 boards listen to Bluetooth near them and pass what they hear to this host through each other. The link is ESP-NOW on channel 1, the cleanest in the 2026-10-31 survey and separate from `tallow-iot` on 6. A mesh node joins no Wi-Fi and opens no socket. It listens and reports. The source also pages known Classic addresses and makes GATT requests to whitelisted devices. Both are built and not flashed ([Source ahead of the boards](#source-ahead-of-the-boards-frame-version-0xa6)). Control is not built, and neither is OTA over the mesh. `bleak-esphome` and `habluetooth` remain unwired, and this mesh uses neither.
 
 | Path | Role |
 | --- | --- |
@@ -189,11 +189,11 @@ Classic ESP32 boards listen to Bluetooth near them and pass what they hear to th
 | `tools/tests/test_mesh_host.py` | What the host decodes and keeps |
 | `tools/mesh_monitor.py` | Prints a board's serial output. Runs through `tools/mesh.sh monitor` |
 | `firmware/mesh/boards.tsv` | Known boards by USB path. `tools/mesh.sh ports` reads it |
-| `host/` | Cargo workspace. `host/tallowd` prints a banner and shares `tallow-mesh-core`. `src/link.rs` yields `@` lines and parses `@U`. `Link::open` waits for T2.3 (`tallowd run`). `tools/mesh_host.py` is still the host end |
+| `host/` | Cargo workspace. `host/tallowd` shares `tallow-mesh-core`. `tallowd run` is the host end: the same job as `tools/mesh_host.py`, with `--trial`, `--watch`, and `--set`. `src/link.rs` is its serial link. It caps its line buffer at 2 KB and refuses any port but `/dev/ttyUSB*`. `tallowd panel` is the Rust LAN panel ([govee-h7020](devices/govee-h7020.md#rust-panel-tallowd-panel)). `host/tallow-govee` is the H7020 codec, and `host/tallow-broker` is the agent broker, not deployed. `tools/mesh_host.py` stays as the fallback |
 
 ```bash
-tools/mesh.sh check                # every offline gate
-tools/mesh.sh check --fast         # the same, skipping the firmware build
+tools/mesh.sh check                # every offline gate, with the node and cam builds
+tools/mesh.sh check --fast         # the same, skipping those two builds
 tools/mesh.sh fmt                  # format all Rust in place
 tools/mesh.sh test                 # mesh core tests, on this machine
 tools/mesh.sh daemon check         # fmt, clippy, and tests for host/
@@ -201,34 +201,81 @@ tools/mesh.sh daemon build         # release build of tallowd
 tools/mesh.sh key                  # write the gitignored firmware/mesh/mesh.key once
 tools/mesh.sh build                # release image for a classic ESP32
 tools/mesh.sh size                 # image size against the OTA slot
+tools/mesh.sh cam-build            # release image for an ESP32-S3 cam
+tools/mesh.sh cam-size             # cam image size against its OTA slot
 tools/mesh.sh ports                # list attached boards; opens no port, resets nothing
 tools/mesh.sh flash /dev/ttyUSB0
 tools/mesh.sh monitor /dev/ttyUSB0 30    # 20 s if no time is given
 tools/mesh.sh backup /dev/ttyUSB0        # whole flash to data/firmware-backups/
 tools/mesh.sh host /dev/ttyUSB0 --seconds 120
 tools/mesh.sh host /dev/ttyUSB0 --trial
+tools/mesh.sh host /dev/ttyUSB0 --watch <classic-address>...   # page these Classic addresses (up to 16)
+tools/mesh.sh daemon run /dev/ttyUSB0 --out data/mesh/map.json   # tallowd run on the root's port
+tools/mesh.sh bench /dev/ttyUSB0 --deny <id-hex> --seconds 900   # hold the port, refuse a root, print @ lines
+tools/mesh.sh ota-key              # write ota.key (private) and ota.pub once each. Not run yet
 .venv/bin/python -m unittest tools/tests/test_mesh_host.py    # pytest is not installed
 ```
 
-Every command exits non-zero when its step fails. `flash`, `monitor`, `backup`, and `host` refuse any port but `/dev/ttyUSB*`: the mesh image must not land on an S3 cam, and just opening a cam's port drops it into download mode. `flash` tries 3 times. Port numbers can swap, so run `ports` first. Opening a CP2102 port resets that board, so those four all reboot it. `backup` is described in the [board note](devices/esp32-devkit.md#back-up).
+Every command exits non-zero when its step fails. `check` runs every offline gate, in this order:
+
+1. Core: fmt, clippy, and tests.
+2. Daemon: fmt, clippy, and tests for `host/`. The image is built locally from `tools/rust-host.Dockerfile` on first use, and that needs apt network access.
+3. The host tool's unit tests: `test_mesh_host`, `test_mesh_bench`, and `test_map_fixture`.
+4. The panel's unit tests: `test_h7020_panel`, `test_h7020_library`, `test_cams`, `test_cams_page`, `test_panel_broker`, `test_library_fixture`, and `test_devices_page`. Then the HTTP contract, `tools/tests/panel_contract.py`, against the Python.
+5. `cargo fmt --check` on the node and the cam.
+6. Without `--fast`: the node firmware build, the cam firmware build, the `tallowd` release build, and the contract again with `--rust-only` against `tallowd panel --preview`. It needs `firmware/mesh/mesh.key`.
+
+`flash`, `monitor`, `backup`, `host`, `bench`, and `daemon run` open only a `/dev/ttyUSB*` port whose USB path `firmware/mesh/boards.tsv` lists with chip `esp32`. A board that is not listed is refused until its row is added: read it with `tools/esphome.sh mac` first. The name alone proves nothing, because the MB0200 cam's CH340 port is also a `ttyUSB`, and opening an S3 cam's port can drop it into download mode. `flash` tries 3 times. Port numbers can swap, so run `ports` first. Opening a CP2102 port resets that board, so all six reboot it. `backup` is described in the [board note](devices/esp32-devkit.md#back-up).
 
 `tools/mesh.sh host` also takes `--set WINDOW INTERVAL PERIOD LENGTH`, which sets scan settings for every node. A run without it sends `DEFAULT_SCAN` from `tools/mesh_host.py`, so `--set` lasts until the next run. `--trial` steps through `TRIAL` in `tools/mesh_host.py`, counts delivery at each setting, and sends `DEFAULT_SCAN` when it ends. It exits non-zero if any setting delivers under `--pass-mark` percent (default 95).
+
+Delivery is counted by `delivery` in `tools/mesh_host.py`. The expected count for a node is the larger of the sequence span and 90% of the hold time times the probe rate. A node that reported stats over the air but sent no probes counts as 0%. So a node that stops partway, or sends nothing, fails `--trial`. The root's own probes never cross the air, so it is not counted. The percentages under [Measured](#measured-2026-10-31) used the span alone, before this change, and are left as they were. Under that count a node that stopped partway still scored 100%. `tallowd run` takes `--port`, `--out`, `--seconds`, `--irks`, `--devices`, `--rooms`, `--set`, and `--watch`. With `--trial` it also takes `--hold`, `--hz`, `--size`, and `--pass-mark`. `tallowd run --trial` counts the same way (`host/tallowd/src/trial.rs`). Whether it matches the Python within 3 points is the T2.7 check, not yet run.
 
 How it works:
 
 - **Root.** Every board runs the same image. The board that hears the host's heartbeat on serial is the root, so any board can be one. It stops being root 5 s after the last heartbeat.
-- **Routes.** Each node sends a beacon every 2 s and picks its own parent from its neighbours' beacons. Cost counts hops, missed beacons, and a penalty below -85 dBm. A neighbour unheard for 11 s is gone. Four failed unicasts in a row drop a parent sooner.
+- **Routes.** Each node sends a beacon every 2 s and picks its own parent from its neighbours' beacons. Cost counts hops, missed beacons, and a penalty below -85 dBm. A neighbour unheard for 11 s is gone. Four failed unicasts in a row drop a parent sooner. In the source, each real change of parent is one `Event::Parent`, counted in `parent_changes` and printed on the node's serial port as `@P <id>`. A loss with no replacement is a change and prints `@P 00000000`, whether the parent went quiet or failed its acks. A neighbour that is not the parent expiring is not. The boards print this form since the 2026-10-31 flash ([Flashed 2026-10-31](#flashed-2026-10-31-the-cross-check-build)).
 - **Up.** Reports (every 5 s), names, stats (every 10 s), and delivery probes go hop by hop as ESP-NOW unicast, one frame on the air at a time.
-- **Down.** Scan settings flood the mesh, and the root sends each one three times. Settings are all the downlink carries: BLE window and interval, inquiry period and length, probe rate and size.
-- **Frames.** At most 250 bytes, 218 of payload. Header and payload layouts are in [`firmware/mesh/core/README.md`](../firmware/mesh/core/README.md). Sealed with ChaCha20-Poly1305 under one shared key baked in at build ([docs/04](04-firmware-liberation-and-network-isolation.md#mesh-nodes)). TTL and hops change at each forwarder, so they are not authenticated. Replay protection is per origin and per boot, with a window of 64 frames. A frame carrying a different boot id counts as new, so it does not stop a frame captured in an earlier boot.
-- **Hearing.** BLE scan 30 ms in every 100 ms, and one 5 s Classic inquiry every 60 s. A node keeps 128 sightings and drops the one heard longest ago when full. Name, maker, and class of device go up once and again after 5 minutes. The node offers nothing to pair with or connect to. `D` on a board's own serial port makes it visible to inquiry for 60 s, not connectable, so a bench test has something to find.
-- **Map.** `tools/mesh.sh host` writes `data/mesh/map.json` (gitignored) only while it runs: nodes with their stats, and devices with who heard them and the nearest node. It holds addresses as heard and sends nothing to any device.
+- **Down.** The root floods two kinds of list to every node, and sends each three times. One is scan settings (BLE window and interval, inquiry period and length, probe rate and size). The other is the Classic addresses to page (Watch, up to 16). Ping and GATT frames go to one node and need a route. Routed downlink (T1.8b) and the GATT client (T1.10) are built and not flashed, so the boards carry only the floods.
+- **Frames.** At most 250 bytes, 218 of payload. Header and payload layouts are in [`firmware/mesh/core/README.md`](../firmware/mesh/core/README.md). Sealed with ChaCha20-Poly1305 under one shared key baked in at build ([docs/04](04-firmware-liberation-and-network-isolation.md#mesh-nodes)). TTL and hops change at each forwarder, so they are not authenticated. Replay protection is per origin, with a window of 64 frames within a boot. The replay fix across reboots ([T1.6](plans/rust-conversion/p1-mesh.md#t16-replay-protection-across-reboots)) is built and not flashed. Its limits are under [Source ahead of the boards](#source-ahead-of-the-boards-frame-version-0xa6). Beacons are never forwarded, so `receive` in `firmware/mesh/core/src/mesh.rs` drops a beacon unless its source address matches its origin. A recorded beacon sent from another radio can no longer repoint a parent. That check was flashed on 2026-10-31.
+- **Hearing.** BLE scan 30 ms in every 100 ms, and one 5 s Classic inquiry every 60 s. A node keeps 128 sightings and drops the one heard longest ago when full. A name goes up once and again after 5 minutes, with the maker and the class of device that came with it. `names.rs` drops an offer with no name, so a device whose adverts carry only a maker never reports one, and a Classic class of device goes up only with a name. A Classic device with no name in its EIR reports no name until Watch paging ([T1.5](plans/rust-conversion/p1-mesh.md#t15-find-classic-devices-by-address)) is flashed. The node accepts no connection. Its GATT client, built and not flashed, opens connections only to whitelisted addresses. `D` on a board's own serial port makes it visible to inquiry for 60 s, not connectable, so a bench test has something to find.
+- **Inquiry.** In the source, `cut_inquiry` in `firmware/mesh/node/src/bluetooth.rs` cancels discovery 200 ms before the window closes, so a node pages nobody. Left to finish, Bluedroid follows an inquiry with a Remote Name Request to every device that has no name in its EIR. That pages a stranger, and it breaks the rule that a node connects only to whitelisted devices. The boards have run the fixed image since the 2026-10-31 flash ([Flashed 2026-10-31](#flashed-2026-10-31-the-cross-check-build)).
+- **Map.** `tools/mesh.sh host` writes `data/mesh/map.json` (gitignored) only while it runs: nodes with their stats, and devices with who heard them and the nearest node. It holds addresses as heard and sends nothing to any device. Classic RSSI, and so `nearest` for a Classic device, were wrong in every map written before the 2026-10-31 flash ([Flashed 2026-10-31](#flashed-2026-10-31-the-cross-check-build)). No map written since has been checked on the boards.
+
+#### Flashed 2026-10-31: the cross-check build
+
+A cross-check on 2026-10-31 found five faults in the node firmware and its core. Both boards were flashed with the fixed image that day, frame version `0xA1`. Nobody has read them back since, so the fixes are confirmed by source and tests only. None of the fixes changes bytes on the air, so this image talks to the one before it.
+
+- **Classic RSSI and class of device were wrong.** `PropData::prop()` in `esp-idf-svc` reads them from the pointer `val` instead of through it. So every Classic RSSI and class of device recorded so far is the low bits of an address. BLE RSSI came from another path and was fine. `read_props` in `firmware/mesh/node/src/bluetooth.rs` reads through the pointer. Classic RSSI and class of device recorded before that flash are meaningless, and so is any `nearest` for a Classic device in a map written before it. Counts of Classic hits and names are unaffected. Readings since the flash have not been checked.
+- **A Classic inquiry paged strangers.** After the window closed, Bluedroid sent a Remote Name Request to every device with no name in its EIR. That broke the rule that a node connects only to whitelisted devices. `cut_inquiry` now cancels discovery 200 ms before the window closes, so nodes page nobody. A Classic device with no name in its EIR reports no name until Watch paging ([T1.5](plans/rust-conversion/p1-mesh.md#t15-find-classic-devices-by-address)) is flashed.
+- **A beacon from the wrong radio was accepted.** A neighbour's address comes from the frame's source, which the seal does not cover. `receive` now drops a beacon unless its source matches its origin, and counts it in `rx_bad`.
+- **Parent events were wrong.** `Event::Parent` now fires once per real change, including a loss with no replacement, and `parent_changes` counts each. A non-parent neighbour expiring no longer prints a false `@P 00000000`. A parent lost to failed acks now prints it.
+- **A late sighting read as 255 s old.** A sighting stamped after the main loop read its clock now reports age 0.
+
+**You:** Read each board back before trusting any Classic RSSI. Run `tools/mesh.sh monitor <port>` and a `D` on one board, then check `data/mesh/map.json` for a Classic RSSI between -100 and -20, which is the T1.4 check. Nothing in the repo prints a board's frame version, so the flash itself is the only proof that it took.
+
+#### Source ahead of the boards (frame version 0xA6)
+
+`VERSION` in `firmware/mesh/core/src/wire.rs` is `0xA6`. The boards run `0xA1`. A board refuses any frame whose version byte is not its own, so the two versions cannot hear each other. **Flash every board in one pass.** Until then a board on the new image and one on the old cannot talk. `tallowd` built from this source prints `0xa6` in its banner. That is the source's version, not a board's.
+
+Built and not flashed, all in the `0xA6` source:
+
+- **Route frames (T1.2).** `FrameKind::Route` (7). Each parent change goes up with its time, the old and new parent, and its reason. A node with no parent keeps the last 4 changes and sends them when it regains one.
+- **Bench deny list (T1.3).** `X <id>` on a node's serial port refuses a root id, up to 4 of them. `tools/mesh.sh bench` sends those lines and prints the `@` lines.
+- **Raw GAP callback (T1.4).** A raw Classic callback (`on_gap` in `firmware/mesh/node/src/bluetooth.rs`) replaces `EspGap`. Its Classic RSSI check is the T1.4 hardware check.
+- **Watch paging (T1.5).** The root floods up to 16 Classic addresses. Each node pages them in turn, no faster than one page every 5 s, and gives up on a page after 6 s.
+- **Replay across reboots (T1.6).** A boot id is a 20-bit counter kept in NVS, plus 12 random bits. Limits: the origin table is RAM only. A board that has just rebooted accepts one recorded frame per origin until that origin's next real frame, about 2 s for a neighbour's beacon. An origin silent for 10 minutes can be replayed once. A board with erased NVS starts from a random counter, and neighbours that hold a higher counter refuse it for up to 10 minutes.
+- **Stagger (T1.7).** Nodes given a Watch list each wait `id mod 5 s` before their first page, so they do not all page at once.
+- **Downward routing (T1.8b).** Each node learns the next hop toward each origin from upward traffic. The table has 32 entries, each good for 60 s. A frame down to one node goes hop by hop as unicast.
+- **GATT client (T1.10).** The root sends requests to one node, and the node runs them against a whitelist of up to 8 addresses: connect, read, write, subscribe, disconnect. Answers and notifications come back up.
+
+Size: `Mesh`, the sightings table, and the GATT client come to 8,608 bytes in the x86-64 sim test, against a 12 KB budget. The budget was 8 KB before T1.8b. The node image is 1,452,864 of 1,835,008 bytes (79.17%).
 
 #### Measured (2026-10-31)
 
-Two boards on the air, `node-0` as root and `node-1` as leaf ([boards](devices/esp32-devkit.md#boards)).
+Two boards on the air, `node-0` as root and `node-1` as leaf ([boards](devices/esp32-devkit.md#boards)). The sizes, delivery, and soak results below were measured on the image from before the fixes above.
 
-Tests: 13 core unit, 13 golden, and 15 simulated-radio. The simulated-radio tests cover four hops, reroute around a dead board, a replay window, forged-frame rejection, and clock wrap. `tools/mesh.sh check --fast` on 2026-10-31 also ran 6 daemon tests (the banner and the serial link), and the host unittest passed. 11 Python tests in `tools/tests/test_mesh_host.py`.
+Where the tests are: unit tests in `firmware/mesh/core/src/`; `core/tests/golden.rs` for frame bytes and decoding; `core/tests/routing.rs` for parent changes one node at a time; `core/tests/sim.rs` on a simulated radio (four hops, reroute around a dead board, a replay window, forged-frame rejection, clock wrap); the banner and the serial link in `host/tallowd`; and what the host decodes, keeps, and counts as delivered in `tools/tests/test_mesh_host.py`. At the 2026-10-31 cross-check that was 15 core unit, 26 golden, 7 routing, 15 simulated-radio, 15 daemon, and 16 Python host tests. In source now: core 45 unit, 41 golden, 10 routing, and 71 simulated-radio; `tallowd` 225; `tallow-broker` 27; `tallow-govee` 5 unit and 2 vector. `tools/mesh.sh check` runs all of them.
 
 | Size | Value |
 | --- | --- |
@@ -238,7 +285,9 @@ Tests: 13 core unit, 13 golden, and 15 simulated-radio. The simulated-radio test
 | IRAM | Overflowed by 2,628 bytes until `CONFIG_ESP_WIFI_RX_IRAM_OPT=n` |
 | Heap | About 114 KB free, lowest seen 106,480 bytes across soaks, against a 40 KB pass mark |
 
-Delivery from leaf to root at 10 frames/s of 200 bytes, 45 s per setting. The pass mark was 95%.
+The table above is the cross-check build's history. The current source, same day, has `Mesh` 6,064 bytes, `Sightings<128>` 2,064, and the GATT `Client` 480, which is 8,608 bytes in the sim test. The node image is 1,452,864 of 1,835,008 bytes (79.17%), per `tools/mesh.sh size`.
+
+Delivery from leaf to root at 10 frames/s of 200 bytes, 45 s per setting. The pass mark was 95%. These counts used the sequence span as the expected count. `--trial` counts differently now (see the `delivery` paragraph above), so a new run is not comparable row for row. The last row includes the airtime of the name requests the old image sent after each inquiry.
 
 | Setting | Delivered |
 | --- | --- |
@@ -251,15 +300,17 @@ Delivery from leaf to root at 10 frames/s of 200 bytes, 45 s per setting. The pa
 - Soaks: 10-minute runs had 0 resets, 0 `rx_bad`, every inquiry completed, and up to 22 devices with 20 heard by both nodes.
 - Root: it moved between boards with no configuration by moving the host to the other port.
 - Downlink: commands are proven over the air. The leaf took an 8 s inquiry period.
-- Parent stability: a clean 285 s default run had 1 parent change (the initial join at 2.6 s) and 1 drop. A 10-minute run straight after a root handover showed 5 changes and 36 drops. Those were not timestamped, so the cause is unconfirmed, though the handover is suspected. An earlier run with an 8 s inquiry period showed 9 changes.
-- Classic: inquiry found `node-1` from `node-0` (5 hits) with `D` bench visibility, and found a real Klipsch Flexus Core 100 at classic address `23:00:00:11:A0:38`. Its BLE address is `DC:00:00:11:A0:38`.
+- Parent stability: a clean 285 s default run had 1 parent change (the initial join at 2.6 s) and 1 drop. A 10-minute run straight after a root handover showed 5 changes and 36 drops. Those were not timestamped, so the cause is unconfirmed, though the handover is suspected. An earlier run with an 8 s inquiry period showed 9 changes. These counts were made under the old counting, before the 2026-10-31 cross-check changed it (see [Flashed 2026-10-31](#flashed-2026-10-31-the-cross-check-build)). The old code printed a false `@P 00000000` when a non-parent neighbour expired, and printed nothing for a parent lost to failed acks. The boards have counted the new way since the 2026-10-31 flash.
+- Classic: inquiry found `node-1` from `node-0` (5 hits) with `D` bench visibility, and found a real Klipsch Flexus Core 100 at classic address `23:00:00:11:A0:38`. Its BLE address is `DC:00:00:11:A0:38`. The hits and the names stand. Any Classic RSSI or class of device from these runs does not (2026-10-31: the old image read them from an address, see [Flashed 2026-10-31](#flashed-2026-10-31-the-cross-check-build)).
 - BLE: named devices included an LG webOS TV and Sony WF-1000XM5 earbuds. The earbuds appeared under three rotating addresses (`53:DA:B1:35:6A:12`, `62:E8:55:65:83:8E`, `46:EE:BB:F5:85:80`), which proves the rotating-address limit.
-- Inquiry against BLE: Classic inquiry cuts BLE adverts heard, 39 adverts in 21 s with inquiry every 8 s against 168 in 21 s without. That is why the default is one 5 s inquiry every 60 s.
+- Inquiry against BLE: Classic inquiry cuts BLE adverts heard, 39 adverts in 21 s with inquiry every 8 s against 168 in 21 s without. That is why the default is one 5 s inquiry every 60 s. The old image also paged every nameless Classic device after each inquiry, so those 39 adverts include that airtime. The number is as measured. The same run with `cut_inquiry` flashed has not been done.
 
 #### Found on hardware or in source
 
 - `EspNow::take()` calls `esp_wifi_set_ps(0)`, which conflicts with Bluetooth. So `firmware/mesh/node/src/radio.rs` uses raw `esp_now_*` calls.
 - `esp-idf-svc`'s Classic name readers run `from_utf8_unchecked` on over-the-air bytes. So EIR goes through the checked parser in `firmware/mesh/core/src/ad.rs`.
+- `esp-idf-svc`'s `PropData::prop()` reads Classic RSSI and class of device from the pointer `val` rather than through it. So `read_props` in `firmware/mesh/node/src/bluetooth.rs` reads the raw properties itself. Found 2026-10-31, after the first Classic readings had been taken ([Flashed 2026-10-31](#flashed-2026-10-31-the-cross-check-build)).
+- Bluedroid follows a finished inquiry with a Remote Name Request to every device that has no name in its EIR. That is a page to a stranger. So `cut_inquiry` cancels discovery 200 ms early.
 - `esp-idf-svc` fails to compile with GATTS/GATTC off.
 - std sleep below a tick busy-waits and trips the task watchdog. Hence `CONFIG_FREERTOS_HZ=1000` and `FreeRtos::delay_ms`.
 - Opening a CP2102 serial port resets the board. So `tools/mesh_host.py` waits 4 s and then always sends scan settings. Each run of the host tool therefore reboots the root. The other nodes keep their last settings across that reset.
@@ -272,14 +323,14 @@ Delivery from leaf to root at 10 frames/s of 200 bytes, 45 s per setting. The pa
 
 #### Not built
 
-- Control. The downlink sets scan settings and nothing else.
-- OTA over the mesh. Nodes flash over USB.
-- Paging known Classic addresses. A paired speaker that is not discoverable stays invisible on Classic.
-- IRK resolution. A rotating address looks like a new device.
-- The map on the panel. No service runs `tools/mesh.sh host`, so `data/mesh/map.json` updates only during a manual run.
-- Rooms. The map has node ids, not rooms.
+- Control. On the boards the downlink sets scan settings and nothing else. Routed GATT control is built and not flashed ([Source ahead](#source-ahead-of-the-boards-frame-version-0xa6)), and no H7020 has been driven over the mesh (T1.11).
+- OTA over the mesh. Nodes flash over USB. The signed-image check (T1.9a) is in `core`, and the node does not use it yet.
+- Paging known Classic addresses (Watch) is built and not flashed. A paired speaker that is not discoverable stays invisible until then.
+- IRK resolution in `tallowd` (T2.4) is built, but it resolves nothing until a real IRK exists. Getting one needs the user's go-ahead. Until then a rotating address looks like a new device.
+- The map on the panel. The Python panel does not show it. The Rust panel serves `/devices` and `GET /api/mesh/map` in code, and it is not cut over (T3.10). No service runs the host yet: `tools/tallowd.service` and `tools/setup_mesh_host.sh` are written and not run.
+- Rooms are in `tallowd` (T2.6). They appear on the map only when a `rooms.toml` is given.
 
-The [Rust conversion plan](plans/2026-10-31-rust-conversion.md) says what comes next. [Phase 1](plans/rust-conversion/p1-mesh.md) proves multi-hop on real radios, then adds Classic paging, the replay fix, OTA, and GATT control. [Phase 2](plans/rust-conversion/p2-host.md) moves the host end to `tallowd` and adds identities and rooms. [T3.9](plans/rust-conversion/p3-panel.md#t39-the-map-on-the-panel) puts the map on the panel.
+The [Rust conversion plan](plans/2026-10-31-rust-conversion.md) says what comes next. [Phase 1](plans/rust-conversion/p1-mesh.md) proves multi-hop on real radios, then adds Classic paging, the replay fix, routing down to one node, a signed-image check, OTA, and GATT control. [Phase 2](plans/rust-conversion/p2-host.md) moves the host end to `tallowd` and adds identities and rooms. [T3.9](plans/rust-conversion/p3-panel.md#t39-the-map-on-the-panel) puts the map on the panel.
 
 #### esphome-mesh (removed)
 

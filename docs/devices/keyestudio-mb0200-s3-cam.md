@@ -30,11 +30,11 @@ tools/mesh.sh cam-build    # release image
 tools/mesh.sh cam-size     # size against the OTA slot
 ```
 
-`tools/mesh.sh fmt` formats this crate. `tools/mesh.sh check` covers the mesh crates and the host. This image is `cam-build`. The build does not read `firmware/mesh/mesh.key`. `target/`, `.embuild/`, and `sdkconfig` under `firmware/cam/` are gitignored.
+`tools/mesh.sh fmt` formats this crate. `tools/mesh.sh check` runs `cargo fmt --check` on it and, without `--fast`, builds it after the node firmware, so a break here shows there. `check --fast` skips the build. The same command covers the mesh, the host daemon, and the panel's tests ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh)). A single build is `cam-build`. The build does not read `firmware/mesh/mesh.key`. `target/`, `.embuild/`, and `sdkconfig` under `firmware/cam/` are gitignored.
 
-Octal PSRAM at 80 MHz, 16 MB DIO flash at 80 MHz, Bluetooth off. The partition table is the ESPHome OTA layout on this board: `app0` and `app1` are each `0x7C0000` bytes. The image joins no network. `boot` prints free internal heap and free PSRAM on the USB Serial/JTAG port (`boot heap … psram …`), then idles.
+Octal PSRAM at 80 MHz, 16 MB DIO flash at 80 MHz, Bluetooth off. The partition table is the ESPHome OTA layout on this board: `app0` and `app1` are each `0x7C0000` bytes. The image joins no network. `boot` prints free internal heap and free PSRAM on the USB Serial/JTAG port (`boot heap … psram …`). It then starts the camera, which is esp32-camera 2.1.7 through the `camera.rs` driver, and prints `frame WxH jpeg N bytes` every 5 s. If the sensor does not start, it prints `camera init failed`.
 
-On 2026-10-31 `tools/mesh.sh cam-size` printed `App/part. size: 367,392/8,126,464 bytes, 4.52%`. The image is not flashed. `toby-cam-1` was not touched.
+On 2026-10-31 `tools/mesh.sh cam-size` printed `App/part. size: 464,400/8,126,464 bytes, 5.71%`, with the camera driver in. Before the driver the image was 367,392 bytes (4.52%). The image is not flashed. `toby-cam-1` was not touched.
 
 ## Pins
 
@@ -111,7 +111,7 @@ Not proven:
 
 ## Cams page
 
-The panel at `/` is a menu (`app/menu_page.html`): Lights at `/lights`, the cameras app at `/cams`, and Settings at `/settings`. The cameras tile, the `/cams` heading, and that page's title are the inventory `title`. The inventory is `data/panel/cams.json` (`data/panel-preview/cams.json` under `--preview`). `data/` is gitignored local state, so the file is not part of the repo. On 2026-10-28 it held one cam and no title. The running inventory now has a title, and the preview inventory does too. A document looks like:
+The panel at `/` is a menu (`app/menu_page.html`): Lights at `/lights`, the cameras app at `/cams`, and Settings at `/settings`. The cameras tile, the `/cams` heading, and that page's title are the inventory `title`. The inventory is `data/panel/cams.json` (`data/panel-preview/cams.json` under `--preview`, or `cams.json` in the `--data-dir` of a preview). `data/` is gitignored local state, so the file is not part of the repo. On 2026-10-28 it held one cam and no title. The running inventory now has a title, and the preview inventory does too. A document looks like:
 
 ```json
 {"title": "Toby", "cams": [{"id": "toby-cam-1", "name": "Cam 1", "address": "10.87.0.21"}]}
@@ -131,7 +131,7 @@ The panel re-reads `cams.json` whenever its mtime changes. Adding, renaming, or 
 
 `GET /api/settings/cameras` returns `{"title", "cams": [{id, name, address}], "error"}`. That is the browser call that includes addresses. `GET /api/cams` still returns id and name only.
 
-PUT uses the same checks as load, then replaces the file in `save_inventory`: a temporary file next to `cams.json`, then a rename. A rejected document is 400 and the file stays as it was. A missing title is stored as `Cameras`.
+PUT uses the same checks as load, then replaces the file in `save_inventory`: a temporary file next to `cams.json`, then a rename. A rejected document is 400 and the file stays as it was. The message starts with `cameras:` and names no path on the server, because it answers a browser. A missing title is stored as `Cameras`.
 
 The same page has Log out. `POST /logout` clears the `tallow_panel` cookie and redirects to `/login`. It does not change the password. The cookie header, and that logout runs without a cookie, are in [govee-h7020.md](govee-h7020.md#lan-page). The password stays one line in `secrets/panel/password`.
 
