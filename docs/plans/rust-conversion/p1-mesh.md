@@ -6,6 +6,8 @@ Files live in `firmware/mesh/`. Read `core/src/mesh.rs` and `core/tests/sim.rs` 
 
 ## T1.1 Golden frames
 
+**Done (2026-10-31).**
+
 - **Tier:** Grok. **Needs:** nothing.
 - **Files:** new `firmware/mesh/core/tests/golden.rs`, `firmware/mesh/core/README.md`.
 - **Do:** Seal one frame of each `FrameKind` with key `[7; 32]`, fixed origin, boot, and seq, and assert the exact hex bytes. Add one test per `Command` field position. In the README, list every frame kind and its payload bytes, using `wire.rs`, `sightings.rs`, and `names.rs` as the source. Stats layout comes from `node/src/main.rs`.
