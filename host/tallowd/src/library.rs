@@ -10,6 +10,8 @@ use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use chrono::{DateTime, Datelike, FixedOffset, SecondsFormat, TimeDelta, TimeZone, Timelike};
 use serde::ser::SerializeMap;
@@ -482,15 +484,24 @@ fn action(value: Option<&Value>, patterns: &[Pattern]) -> Result<Action, Error> 
     }
 }
 
-/// The JSON files under one directory.
+/// Makes each temp file's name unique, so two writers never share one.
+static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// The JSON files under one directory. Clones share one write lock. The panel's
+/// handlers run at once on a thread pool, and a save reads the whole file, changes
+/// a row, and writes it back. Readers need no lock: a write lands by rename.
 #[derive(Debug, Clone)]
 pub struct Library {
     root: PathBuf,
+    writes: Arc<Mutex<()>>,
 }
 
 impl Library {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self {
+            root: root.into(),
+            writes: Arc::new(Mutex::new(())),
+        }
     }
 
     fn ensure(&self) -> Result<(), Error> {
@@ -523,15 +534,26 @@ impl Library {
     fn write<T: Document>(&self, items: &[T]) -> Result<(), Error> {
         self.ensure()?;
         let text = format!("{}\n", to_json(&Wrapped { key: T::KEY, items })?);
-        let mut temp_name = T::FILE.to_owned();
-        temp_name.push_str(".tmp");
-        let temp = self.root.join(temp_name);
-        let mut file = fs::File::create(&temp)?;
-        file.write_all(text.as_bytes())?;
-        file.sync_all()?;
-        drop(file);
-        fs::rename(&temp, self.root.join(T::FILE))?;
-        Ok(())
+        let seq = TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
+        let temp = self
+            .root
+            .join(format!("{}.{}.{seq}.tmp", T::FILE, std::process::id()));
+        let written = (|| {
+            let mut file = fs::File::create(&temp)?;
+            file.write_all(text.as_bytes())?;
+            file.sync_all()?;
+            drop(file);
+            fs::rename(&temp, self.root.join(T::FILE))
+        })();
+        if written.is_err() {
+            let _ = fs::remove_file(&temp);
+        }
+        Ok(written?)
+    }
+
+    /// Held across each read, change, and write of a file.
+    fn turn(&self) -> MutexGuard<'_, ()> {
+        self.writes.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn get<T: Document>(&self, id: &str) -> Result<Option<T>, Error> {
@@ -539,6 +561,7 @@ impl Library {
     }
 
     fn save<T: Document>(&self, doc: &T, create: bool) -> Result<(), Error> {
+        let _turn = self.turn();
         let mut items: Vec<T> = self.read()?;
         let found = items.iter().position(|item| item.id() == doc.id());
         match found {
@@ -551,6 +574,7 @@ impl Library {
     }
 
     fn delete<T: Document>(&self, id: &str) -> Result<(), Error> {
+        let _turn = self.turn();
         let items: Vec<T> = self.read()?;
         let before = items.len();
         let kept: Vec<T> = items.into_iter().filter(|item| item.id() != id).collect();
@@ -986,6 +1010,42 @@ mod tests {
             fs::read_to_string(root.join("patterns.json")).expect("read"),
             FIXTURE_PATTERNS
         );
+    }
+
+    #[test]
+    fn concurrent_saves_keep_every_pattern() {
+        let (_dir, catalog) = temp_library("concurrent");
+        let writers: Vec<_> = (0..8)
+            .map(|writer| {
+                let catalog = catalog.clone();
+                std::thread::spawn(move || {
+                    for number in 0..10 {
+                        let id = format!("p{writer}-{number}");
+                        let doc = json!({"id": id, "name": "Any", "kind": "scene", "scene": {"name": "Sunset Glow"}});
+                        catalog
+                            .save_pattern(&pattern(doc), true)
+                            .expect("a save during other saves");
+                    }
+                })
+            })
+            .collect();
+        for writer in writers {
+            writer.join().expect("a writer");
+        }
+        assert_eq!(catalog.list_patterns().expect("list").len(), 80);
+    }
+
+    #[test]
+    fn a_save_leaves_no_temp_file_behind() {
+        let (dir, catalog) = temp_library("no-temp");
+        let doc =
+            json!({"id": "one", "name": "Any", "kind": "scene", "scene": {"name": "Sunset Glow"}});
+        catalog.save_pattern(&pattern(doc), true).expect("save");
+        let names: Vec<_> = fs::read_dir(dir.path())
+            .expect("list")
+            .map(|entry| entry.expect("entry").file_name())
+            .collect();
+        assert_eq!(names, [std::ffi::OsString::from("patterns.json")]);
     }
 
     fn temp_library(label: &str) -> (TempDir, Library) {

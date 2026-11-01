@@ -20,7 +20,7 @@
 use chacha20poly1305::aead::{AeadInPlace, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce, Tag};
 
-pub const VERSION: u8 = 0xA6;
+pub const VERSION: u8 = 0xA8;
 pub const HEADER: usize = 16;
 pub const TAG: usize = 16;
 /// ESP-NOW v1 limit. Staying here keeps airtime short on a shared radio.
@@ -40,12 +40,16 @@ pub enum FrameKind {
     Route = 7,
     /// The Classic addresses to page, flooded from the root. See `Watch`.
     Watch = 8,
-    /// A test frame sent down to one node. See `mesh::is_down`.
-    Ping = 11,
+    /// An OTA transfer sent down to one node. See `ota::decode_down`.
+    Ota = 9,
     /// A GATT request sent down to one node. See `gatt::parse`.
     Gatt = 10,
+    /// A test frame sent down to one node. See `mesh::is_down`.
+    Ping = 11,
     /// A GATT answer, notification, or closed link, sent up. See `gatt::Reply`.
     GattUp = 12,
+    /// An OTA status or result, sent up. See `ota::decode_up`.
+    OtaUp = 13,
 }
 
 impl FrameKind {
@@ -59,9 +63,11 @@ impl FrameKind {
             6 => Self::Command,
             7 => Self::Route,
             8 => Self::Watch,
+            9 => Self::Ota,
             10 => Self::Gatt,
             11 => Self::Ping,
             12 => Self::GattUp,
+            13 => Self::OtaUp,
             _ => return None,
         })
     }

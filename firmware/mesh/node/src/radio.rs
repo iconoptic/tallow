@@ -111,13 +111,15 @@ pub fn ensure_peer(mac: [u8; 6]) -> Result<(), EspError> {
         if esp_now_is_peer_exist(mac.as_ptr()) {
             return Ok(());
         }
-        let mut peer = esp_now_peer_info_t::default();
-        peer.peer_addr = mac;
-        peer.channel = 0;
-        peer.ifidx = wifi_interface_t_WIFI_IF_STA;
         // Frames are sealed by the mesh, so the 7-peer limit on ESP-NOW's own
         // encryption does not apply.
-        peer.encrypt = false;
+        let peer = esp_now_peer_info_t {
+            peer_addr: mac,
+            channel: 0,
+            ifidx: wifi_interface_t_WIFI_IF_STA,
+            encrypt: false,
+            ..Default::default()
+        };
         check(esp_now_add_peer(&peer))
     }
 }

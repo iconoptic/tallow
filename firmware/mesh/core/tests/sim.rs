@@ -1,11 +1,16 @@
 //! The mesh on a simulated radio: virtual time, lossy links, boards that die.
 
+use ed25519_compact::{KeyPair, Seed};
 use tallow_mesh_core::gatt::{
     Act, Client, Done, Reply, Status, CONNECT_MS, NOTIFY_MAX, REQUEST_MS, VALUE_MAX,
 };
 use tallow_mesh_core::mesh::{
     counter_of, next_boot, Reason, BEACON_MS, MAX_RANK, NEIGHBOUR_TIMEOUT_MS, ORIGIN_SILENCE_MS,
     PARENT_FAILURES, SEEN, TX_RETRIES,
+};
+use tallow_mesh_core::ota::{
+    self, Action, Code, Down, Receiver, Up, BEGIN, CHUNK, DIGEST, PRODUCT_CAM0, PRODUCT_NODE, SLOT,
+    WINDOW_BYTES,
 };
 use tallow_mesh_core::wire::{Command, Frame, Sealer, Watch, MAX_FRAME, VERSION, WATCH_MAX};
 use tallow_mesh_core::{Dest, Event, FrameKind, Mesh, Sightings, NO_RANK};
@@ -479,6 +484,97 @@ fn a_replay_is_dropped_right_away_and_long_after() {
     assert_eq!(late, 0);
 }
 
+fn sealed(kind: FrameKind, origin: u32, seq: u32, payload: &[u8]) -> Vec<u8> {
+    let head = Frame {
+        kind,
+        ttl: 4,
+        hops: 0,
+        origin,
+        boot: 1 << 12,
+        seq,
+    };
+    let mut out = [0u8; MAX_FRAME];
+    let size = Sealer::new(&KEY)
+        .seal(&head, payload, &mut out)
+        .expect("fits");
+    out[..size].to_vec()
+}
+
+const REPLAY_ORIGIN: u32 = 0x0101_0101;
+
+/// A GATT write for `node`, recorded as `seq` from one origin.
+fn recorded_write(node: &Mesh, seq: u32) -> Vec<u8> {
+    let mut body = node.id.to_le_bytes().to_vec();
+    body.extend_from_slice(&write_request(9, 0x21, &[1]));
+    sealed(FrameKind::Gatt, REPLAY_ORIGIN, seq, &body)
+}
+
+/// Delivers `frame` and returns how many downward events it produced.
+fn downs(node: &mut Mesh, frame: &[u8]) -> u32 {
+    let mut count = 0;
+    node.receive(1, mac(2), -50, frame, &mut |event| {
+        if matches!(event, Event::Down { .. }) {
+            count += 1;
+        }
+    });
+    count
+}
+
+/// Pushes every print out of the shared ring with another origin's frames, so
+/// only the per-origin bitmap can still refuse a replay.
+fn turn_the_seen_ring(node: &mut Mesh) {
+    for number in 0..SEEN as u32 {
+        let filler = sealed(FrameKind::Command, 0x0505_0505, number + 1, &[0; 3]);
+        node.receive(2, mac(3), -50, &filler, &mut quiet);
+        while node.next_tx().is_some() {
+            node.tx_done(2, true, &mut quiet);
+        }
+    }
+}
+
+#[test]
+fn a_frame_replayed_after_the_seen_ring_has_turned_is_delivered_once() {
+    let mut node = Mesh::new(mac(1), &KEY, 2);
+    let frame = recorded_write(&node, 1);
+    assert_eq!(downs(&mut node, &frame), 1);
+    turn_the_seen_ring(&mut node);
+    assert_eq!(downs(&mut node, &frame), 0, "the write ran twice");
+}
+
+#[test]
+fn a_sequence_number_arriving_late_inside_the_window_is_accepted_once() {
+    let mut node = Mesh::new(mac(1), &KEY, 2);
+    let early = recorded_write(&node, 1);
+    let later = recorded_write(&node, 2);
+    assert_eq!(downs(&mut node, &later), 1);
+    assert_eq!(downs(&mut node, &early), 1, "late, and still new");
+    turn_the_seen_ring(&mut node);
+    assert_eq!(downs(&mut node, &early), 0);
+    assert_eq!(downs(&mut node, &later), 0);
+}
+
+#[test]
+fn a_frame_seen_before_the_newest_moved_is_still_refused_after_it() {
+    let mut node = Mesh::new(mac(1), &KEY, 2);
+    let early = recorded_write(&node, 1);
+    let later = recorded_write(&node, 2);
+    assert_eq!(downs(&mut node, &early), 1);
+    assert_eq!(downs(&mut node, &later), 1);
+    turn_the_seen_ring(&mut node);
+    assert_eq!(downs(&mut node, &early), 0);
+}
+
+#[test]
+fn a_frame_a_whole_window_behind_the_newest_is_refused() {
+    let mut node = Mesh::new(mac(1), &KEY, 2);
+    let newest = recorded_write(&node, 100);
+    let inside = recorded_write(&node, 37);
+    let outside = recorded_write(&node, 36);
+    assert_eq!(downs(&mut node, &newest), 1);
+    assert_eq!(downs(&mut node, &inside), 1, "63 behind");
+    assert_eq!(downs(&mut node, &outside), 0, "64 behind");
+}
+
 #[test]
 fn garbage_off_the_air_never_panics() {
     let mut rng = Rng(99);
@@ -577,17 +673,19 @@ fn a_full_deny_list_ignores_a_new_id_and_clearing_frees_it() {
 
 /// A budget, not a physical limit. Boards had about 106 KB of free heap in the
 /// 2026-10-31 soaks, and the plan's floor is 60 KB. It went from 8 KB to 12 KB when
-/// the route table arrived in T1.8b. The GATT client's state counts too.
+/// the route table arrived in T1.8b. The GATT client and the OTA receiver count too.
 #[test]
 fn a_node_fits_in_twelve_kilobytes() {
     let size = core::mem::size_of::<Mesh>()
         + core::mem::size_of::<Sightings<128>>()
-        + core::mem::size_of::<Client>();
+        + core::mem::size_of::<Client>()
+        + core::mem::size_of::<Receiver>();
     println!(
-        "Mesh {} + Sightings<128> {} + Client {} = {size} bytes",
+        "Mesh {} + Sightings<128> {} + Client {} + Receiver {} = {size} bytes",
         core::mem::size_of::<Mesh>(),
         core::mem::size_of::<Sightings<128>>(),
-        core::mem::size_of::<Client>()
+        core::mem::size_of::<Client>(),
+        core::mem::size_of::<Receiver>()
     );
     assert!(size <= 12 * 1024, "{size} bytes");
 }
@@ -1427,6 +1525,52 @@ fn a_late_result_for_a_timed_out_request_is_ignored() {
 }
 
 #[test]
+fn an_open_that_lands_after_the_cancel_was_confirmed_is_closed() {
+    let mut client = listed_client();
+    assert!(client.request(0, &connect_request(2, LISTED, 0)).is_none());
+    assert_eq!(
+        client.take_act(),
+        Some(Act::Open {
+            address: LISTED,
+            address_kind: 0
+        })
+    );
+    // A replacement list drops the address while the open is in flight.
+    assert_eq!(
+        answered(client.request(1, &whitelist_request(3, &[]))),
+        (3, Status::Ok)
+    );
+    client.take_act();
+    client.done(2, Done::Closed);
+    assert!(!client.link_busy(), "the cancel looked final");
+    assert!(client.done(3, Done::Opened(true)).is_none());
+    assert_eq!(
+        client.take_act(),
+        Some(Act::Close),
+        "the late link is closed"
+    );
+    assert!(client.link_busy(), "the radio stays quiet until it closes");
+    client.done(4, Done::Closed);
+    assert!(!client.link_busy());
+}
+
+#[test]
+fn an_open_that_lands_after_closing_timed_out_is_closed() {
+    let mut client = listed_client();
+    assert!(client.request(0, &connect_request(2, LISTED, 0)).is_none());
+    client.take_act();
+    assert_eq!(
+        answered(client.request(1, &whitelist_request(3, &[]))),
+        (3, Status::Ok)
+    );
+    client.take_act();
+    assert!(client.tick(1 + REQUEST_MS).is_none());
+    assert!(!client.link_busy(), "closing gave up");
+    assert!(client.done(2 + REQUEST_MS, Done::Opened(true)).is_none());
+    assert_eq!(client.take_act(), Some(Act::Close));
+}
+
+#[test]
 fn a_closing_link_the_radio_never_confirms_goes_idle_after_a_timeout() {
     let mut client = listed_client();
     open_link(&mut client, 0, 2);
@@ -1638,4 +1782,1025 @@ fn only_the_root_sends_gatt_requests_and_an_answer_kind_is_never_sent_down() {
     assert!(!sim.nodes[1].send_down(now, target, FrameKind::Gatt, &[0; 3]));
     assert!(!sim.nodes[0].send_down(now, target, FrameKind::GattUp, &[0; 3]));
     assert!(sim.nodes[0].send_down(now, target, FrameKind::Gatt, &[0; 3]));
+}
+
+const OTA_SEED: [u8; 32] = [0x42; 32];
+
+const OTA_VERSION: u32 = 7;
+
+fn sign_digest(product: u8, version: u32, digest: &[u8; DIGEST]) -> [u8; 64] {
+    let pair = KeyPair::from_seed(Seed::new(OTA_SEED));
+    *pair
+        .sk
+        .sign(ota::signed_message(product, version, digest), None)
+}
+
+fn sign_image(image: &[u8]) -> ([u8; DIGEST], [u8; 64], [u8; 32]) {
+    let mut hash = ota::ImageHash::new();
+    hash.update(image);
+    let digest = hash.finish();
+    let pair = KeyPair::from_seed(Seed::new(OTA_SEED));
+    let signature = sign_digest(PRODUCT_NODE, OTA_VERSION, &digest);
+    (digest, signature, *pair.pk)
+}
+
+fn new_receiver() -> Receiver {
+    Receiver::new(PRODUCT_NODE, 0)
+}
+
+fn image_of(size: usize) -> Vec<u8> {
+    (0..size)
+        .map(|index| (index.wrapping_mul(3) + 1) as u8)
+        .collect()
+}
+
+fn down_bytes(message: &Down) -> Vec<u8> {
+    let mut out = [0u8; 214];
+    let length = ota::encode_down(message, &mut out).expect("the message fits");
+    out[..length].to_vec()
+}
+
+fn chunk_at(image: &[u8], offset: usize) -> Down {
+    let end = (offset + CHUNK).min(image.len());
+    let mut data = [0u8; CHUNK];
+    let len = end - offset;
+    data[..len].copy_from_slice(&image[offset..end]);
+    Down::Chunk {
+        offset: offset as u32,
+        len: len as u8,
+        data,
+    }
+}
+
+fn feed(receiver: &mut Receiver, payload: &[u8], key: &[u8; 32]) -> (Option<Up>, Vec<Action>) {
+    let up = receiver.push(payload, key);
+    let mut actions = Vec::new();
+    while let Some(action) = receiver.take_action() {
+        actions.push(action);
+    }
+    (up, actions)
+}
+
+/// A chain of three with a route to the leaf, so a downward frame crosses two links.
+fn routed_leaf() -> (Sim, u32) {
+    let mut sim = Sim::new(3, &chain(3), 100);
+    sim.run_ms(20_000);
+    assert!(sim.report(2, 1));
+    sim.run_ms(1_000);
+    let target = sim.id(2);
+    (sim, target)
+}
+
+/// Sends one OTA body down to `target` and returns the copies that reached it.
+fn cross(sim: &mut Sim, target: u32, body: &[u8]) -> Vec<(u8, Vec<u8>)> {
+    let seen = sim.arrivals.len();
+    let now = sim.now;
+    assert!(sim.nodes[0].send_down(now, target, FrameKind::Ota, body));
+    sim.run_ms(1_000);
+    sim.arrivals[seen..]
+        .iter()
+        .filter(|entry| entry.kind == FrameKind::Ota)
+        .map(|entry| (entry.hops, entry.payload.clone()))
+        .collect()
+}
+
+fn begin_for(image: &[u8], digest: [u8; DIGEST], signature: [u8; 64]) -> Vec<u8> {
+    down_bytes(&Down::Begin {
+        size: image.len() as u32,
+        product: PRODUCT_NODE,
+        version: OTA_VERSION,
+        digest,
+        signature,
+    })
+}
+
+#[test]
+fn a_full_image_crosses_two_hops_and_finishes() {
+    let (mut sim, target) = routed_leaf();
+    let now = sim.now;
+    assert!(
+        !sim.nodes[1].send_down(now, target, FrameKind::Ota, &[1]),
+        "a node that is not the root cannot send downward"
+    );
+    assert!(
+        !sim.nodes[0].send_down(now, target, FrameKind::OtaUp, &[2, 0]),
+        "a result is not a downward kind"
+    );
+    let image = image_of(400);
+    let (digest, signature, public) = sign_image(&image);
+    let mut receiver = new_receiver();
+    let arrived = cross(&mut sim, target, &begin_for(&image, digest, signature));
+    assert_eq!(arrived.len(), 1);
+    assert_eq!(arrived[0].0, 1, "one forward across two links");
+    let (up, actions) = feed(&mut receiver, &arrived[0].1, &public);
+    assert!(up.is_none());
+    assert_eq!(actions, vec![Action::Begin { size: 400 }]);
+
+    for offset in (0..image.len()).step_by(CHUNK) {
+        let arrived = cross(&mut sim, target, &down_bytes(&chunk_at(&image, offset)));
+        assert_eq!(arrived.len(), 1, "the chunk at {offset} arrived once");
+        let (up, actions) = feed(&mut receiver, &arrived[0].1, &public);
+        assert!(up.is_none());
+        assert!(
+            matches!(actions.as_slice(), [Action::Write { offset: at, .. }] if *at == offset as u32),
+            "write the chunk at {offset}"
+        );
+    }
+    let arrived = cross(&mut sim, target, &down_bytes(&Down::Commit));
+    let (up, actions) = feed(&mut receiver, &arrived[0].1, &public);
+    assert_eq!(up, Some(Up::Result { code: Code::Ok }));
+    assert_eq!(
+        actions,
+        vec![Action::Finish {
+            version: OTA_VERSION
+        }]
+    );
+
+    let mut result = [0u8; 8];
+    let length = ota::encode_up(&up.expect("a result"), &mut result).expect("fits");
+    let now = sim.now;
+    assert!(sim.nodes[2].send_up(FrameKind::OtaUp, &result[..length], now, &mut quiet));
+    sim.run_ms(1_000);
+    let back = sim
+        .arrivals
+        .iter()
+        .find(|entry| entry.kind == FrameKind::OtaUp)
+        .expect("the result reached the root");
+    assert_eq!(back.payload, &result[..length]);
+    assert_eq!(back.origin, target);
+}
+
+#[test]
+fn a_lost_chunk_is_named_by_status_and_a_resend_finishes() {
+    let (mut sim, target) = routed_leaf();
+    let image = image_of(400);
+    let (digest, signature, public) = sign_image(&image);
+    let mut receiver = new_receiver();
+    let arrived = cross(&mut sim, target, &begin_for(&image, digest, signature));
+    feed(&mut receiver, &arrived[0].1, &public);
+
+    let first = down_bytes(&chunk_at(&image, 0));
+    let arrived = cross(&mut sim, target, &first);
+    let (_, actions) = feed(&mut receiver, &arrived[0].1, &public);
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::Write { offset: 0, .. }]
+    ));
+    let arrived = cross(&mut sim, target, &first);
+    let (_, actions) = feed(&mut receiver, &arrived[0].1, &public);
+    assert!(actions.is_empty(), "a chunk already written is harmless");
+
+    // The middle chunk never arrives. The last one is early, so it is not kept.
+    let arrived = cross(&mut sim, target, &down_bytes(&chunk_at(&image, 340)));
+    let (_, actions) = feed(&mut receiver, &arrived[0].1, &public);
+    assert!(
+        actions.is_empty(),
+        "a chunk ahead of the cursor is not stored"
+    );
+
+    let arrived = cross(&mut sim, target, &down_bytes(&Down::Query { window: 0 }));
+    let (up, actions) = feed(&mut receiver, &arrived[0].1, &public);
+    assert!(actions.is_empty());
+    let Some(Up::Status { window: 0, missing }) = up else {
+        panic!("query returns a status, got {up:?}");
+    };
+    assert_eq!(missing[0] & 0b111, 0b110, "chunks 1 and 2 are the hole");
+    assert_eq!(&missing[1..], &[0u8; WINDOW_BYTES - 1]);
+
+    let mut body = [0u8; 40];
+    let length = ota::encode_up(&up.expect("status"), &mut body).expect("fits");
+    let now = sim.now;
+    assert!(sim.nodes[2].send_up(FrameKind::OtaUp, &body[..length], now, &mut quiet));
+    sim.run_ms(1_000);
+    let back = sim
+        .arrivals
+        .iter()
+        .rev()
+        .find(|entry| entry.kind == FrameKind::OtaUp)
+        .expect("the status reached the root");
+    assert_eq!(
+        ota::decode_up(&back.payload),
+        Some(Up::Status { window: 0, missing })
+    );
+
+    for offset in [170, 340] {
+        let arrived = cross(&mut sim, target, &down_bytes(&chunk_at(&image, offset)));
+        let (_, actions) = feed(&mut receiver, &arrived[0].1, &public);
+        assert!(
+            matches!(actions.as_slice(), [Action::Write { offset: at, .. }] if *at == offset as u32)
+        );
+    }
+    let arrived = cross(&mut sim, target, &down_bytes(&Down::Commit));
+    let (up, actions) = feed(&mut receiver, &arrived[0].1, &public);
+    assert_eq!(up, Some(Up::Result { code: Code::Ok }));
+    assert_eq!(
+        actions,
+        vec![Action::Finish {
+            version: OTA_VERSION
+        }]
+    );
+}
+
+#[test]
+fn a_bad_signature_is_refused_at_begin_before_any_flash_action() {
+    let image = image_of(170);
+    let (digest, mut signature, public) = sign_image(&image);
+    signature[0] ^= 0x01;
+    let mut receiver = new_receiver();
+    let (up, actions) = feed(
+        &mut receiver,
+        &begin_for(&image, digest, signature),
+        &public,
+    );
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::BadSignature
+        })
+    );
+    assert!(actions.is_empty(), "nothing may erase flash for this image");
+    let (up, actions) = feed(&mut receiver, &down_bytes(&chunk_at(&image, 0)), &public);
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::Refused
+        })
+    );
+    assert!(actions.is_empty());
+    let (up, actions) = feed(&mut receiver, &down_bytes(&Down::Commit), &public);
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::Refused
+        })
+    );
+    assert!(actions.is_empty());
+}
+
+#[test]
+fn a_signature_that_fails_at_commit_does_not_finish() {
+    // Commit checks again, so a key that changed under the transfer cannot pass.
+    let image = image_of(170);
+    let (digest, signature, public) = sign_image(&image);
+    let other = *KeyPair::from_seed(Seed::new([0x43; 32])).pk;
+    let mut receiver = new_receiver();
+    let (up, _) = feed(
+        &mut receiver,
+        &begin_for(&image, digest, signature),
+        &public,
+    );
+    assert!(up.is_none());
+    feed(&mut receiver, &down_bytes(&chunk_at(&image, 0)), &public);
+    let (up, actions) = feed(&mut receiver, &down_bytes(&Down::Commit), &other);
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::BadSignature
+        })
+    );
+    assert_eq!(actions, vec![Action::Abort]);
+}
+
+#[test]
+fn an_image_for_another_product_is_refused_with_no_flash_action() {
+    let image = image_of(170);
+    let (digest, _, public) = sign_image(&image);
+    let mut receiver = new_receiver();
+    let begin = down_bytes(&Down::Begin {
+        size: 170,
+        product: PRODUCT_CAM0,
+        version: OTA_VERSION,
+        digest,
+        signature: sign_digest(PRODUCT_CAM0, OTA_VERSION, &digest),
+    });
+    let (up, actions) = feed(&mut receiver, &begin, &public);
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::WrongProduct
+        })
+    );
+    assert!(actions.is_empty());
+}
+
+#[test]
+fn an_image_below_the_floor_is_refused_and_an_equal_one_is_a_retry() {
+    let image = image_of(170);
+    let (digest, _, public) = sign_image(&image);
+    let begin_at = |version: u32| {
+        down_bytes(&Down::Begin {
+            size: 170,
+            product: PRODUCT_NODE,
+            version,
+            digest,
+            signature: sign_digest(PRODUCT_NODE, version, &digest),
+        })
+    };
+    let mut receiver = Receiver::new(PRODUCT_NODE, 5);
+    let (up, actions) = feed(&mut receiver, &begin_at(4), &public);
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::Downgrade
+        })
+    );
+    assert!(actions.is_empty());
+    let (up, actions) = feed(&mut receiver, &begin_at(5), &public);
+    assert!(up.is_none());
+    assert_eq!(actions, vec![Action::Begin { size: 170 }]);
+    let (up, actions) = feed(&mut receiver, &begin_at(6), &public);
+    assert!(up.is_none());
+    assert_eq!(actions, vec![Action::Abort, Action::Begin { size: 170 }]);
+}
+
+#[test]
+fn finish_carries_the_version_that_was_signed() {
+    let image = image_of(170);
+    let (digest, _, public) = sign_image(&image);
+    let mut receiver = Receiver::new(PRODUCT_NODE, 3);
+    let begin = down_bytes(&Down::Begin {
+        size: 170,
+        product: PRODUCT_NODE,
+        version: 9,
+        digest,
+        signature: sign_digest(PRODUCT_NODE, 9, &digest),
+    });
+    feed(&mut receiver, &begin, &public);
+    feed(&mut receiver, &down_bytes(&chunk_at(&image, 0)), &public);
+    let (_, actions) = feed(&mut receiver, &down_bytes(&Down::Commit), &public);
+    assert_eq!(actions, vec![Action::Finish { version: 9 }]);
+}
+
+#[test]
+fn a_refused_begin_leaves_the_image_in_progress_alone() {
+    let image = image_of(170);
+    let (digest, signature, public) = sign_image(&image);
+    let mut receiver = new_receiver();
+    feed(
+        &mut receiver,
+        &begin_for(&image, digest, signature),
+        &public,
+    );
+    let mut bad = signature;
+    bad[0] ^= 1;
+    let (_, actions) = feed(&mut receiver, &begin_for(&image, digest, bad), &public);
+    assert!(actions.is_empty(), "a forged begin cannot abort the write");
+    feed(&mut receiver, &down_bytes(&chunk_at(&image, 0)), &public);
+    let (up, actions) = feed(&mut receiver, &down_bytes(&Down::Commit), &public);
+    assert_eq!(up, Some(Up::Result { code: Code::Ok }));
+    assert_eq!(
+        actions,
+        vec![Action::Finish {
+            version: OTA_VERSION
+        }]
+    );
+}
+
+#[test]
+fn the_writes_reassemble_to_exactly_the_image() {
+    let image = image_of(CHUNK * 2 + 37);
+    let (digest, signature, public) = sign_image(&image);
+    let mut receiver = new_receiver();
+    feed(
+        &mut receiver,
+        &begin_for(&image, digest, signature),
+        &public,
+    );
+    let mut flash = vec![0xffu8; image.len()];
+    for offset in (0..image.len()).step_by(CHUNK) {
+        let (_, actions) = feed(
+            &mut receiver,
+            &down_bytes(&chunk_at(&image, offset)),
+            &public,
+        );
+        assert_eq!(actions.len(), 1);
+        let Action::Write {
+            offset: at,
+            len,
+            data,
+        } = actions[0]
+        else {
+            panic!("a chunk writes");
+        };
+        let at = at as usize;
+        flash[at..at + usize::from(len)].copy_from_slice(&data[..usize::from(len)]);
+    }
+    assert_eq!(flash, image);
+}
+
+#[test]
+fn a_zero_size_begin_is_refused_with_no_flash_action() {
+    let image = image_of(1);
+    let (digest, _, public) = sign_image(&image);
+    let mut receiver = new_receiver();
+    let begin = down_bytes(&Down::Begin {
+        size: 0,
+        product: PRODUCT_NODE,
+        version: OTA_VERSION,
+        digest,
+        signature: sign_digest(PRODUCT_NODE, OTA_VERSION, &digest),
+    });
+    let (up, actions) = feed(&mut receiver, &begin, &public);
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::Refused
+        })
+    );
+    assert!(actions.is_empty());
+}
+
+#[test]
+fn a_begin_of_exactly_the_slot_is_accepted_and_one_more_byte_is_not() {
+    let (digest, _, public) = sign_image(&[1]);
+    let begin_of = |size: u32| {
+        down_bytes(&Down::Begin {
+            size,
+            product: PRODUCT_NODE,
+            version: OTA_VERSION,
+            digest,
+            signature: sign_digest(PRODUCT_NODE, OTA_VERSION, &digest),
+        })
+    };
+    let mut receiver = new_receiver();
+    let (up, actions) = feed(&mut receiver, &begin_of(SLOT), &public);
+    assert!(up.is_none());
+    assert_eq!(actions, vec![Action::Begin { size: SLOT }]);
+    let mut receiver = new_receiver();
+    let (up, actions) = feed(&mut receiver, &begin_of(SLOT + 1), &public);
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::Refused
+        })
+    );
+    assert!(actions.is_empty());
+}
+
+#[test]
+fn a_full_chunk_past_the_end_of_the_image_is_not_written() {
+    // 100 bytes: a whole 170-byte chunk at offset 0 ends past the image.
+    let image = image_of(100);
+    let (digest, signature, public) = sign_image(&image);
+    let mut receiver = new_receiver();
+    feed(
+        &mut receiver,
+        &begin_for(&image, digest, signature),
+        &public,
+    );
+    let chunk = down_bytes(&Down::Chunk {
+        offset: 0,
+        len: CHUNK as u8,
+        data: [9; CHUNK],
+    });
+    let (up, actions) = feed(&mut receiver, &chunk, &public);
+    assert!(up.is_none());
+    assert!(actions.is_empty());
+}
+
+#[test]
+fn a_short_chunk_in_the_middle_of_the_image_is_not_written() {
+    let image = image_of(CHUNK * 2);
+    let (digest, signature, public) = sign_image(&image);
+    let mut receiver = new_receiver();
+    feed(
+        &mut receiver,
+        &begin_for(&image, digest, signature),
+        &public,
+    );
+    let chunk = down_bytes(&Down::Chunk {
+        offset: 0,
+        len: 10,
+        data: [9; CHUNK],
+    });
+    let (up, actions) = feed(&mut receiver, &chunk, &public);
+    assert!(up.is_none());
+    assert!(actions.is_empty());
+}
+
+#[test]
+fn a_begin_of_the_wrong_length_does_not_decode() {
+    let (digest, signature, _) = sign_image(&[1]);
+    let begin = begin_for(&[1], digest, signature);
+    assert_eq!(begin.len(), BEGIN);
+    assert!(ota::decode_down(&begin).is_some());
+    assert!(ota::decode_down(&begin[..BEGIN - 1]).is_none());
+    let mut long = begin.clone();
+    long.push(0);
+    assert!(ota::decode_down(&long).is_none());
+}
+
+#[test]
+fn a_chunk_longer_than_chunk_bytes_does_not_decode() {
+    let mut body = vec![2u8, 0, 0, 0, 0];
+    body.extend_from_slice(&[7; CHUNK]);
+    assert!(ota::decode_down(&body).is_some());
+    body.push(7);
+    assert!(ota::decode_down(&body).is_none());
+}
+
+#[test]
+fn a_commit_with_nothing_active_is_refused() {
+    let (_, _, public) = sign_image(&[1]);
+    let mut receiver = new_receiver();
+    let (up, actions) = feed(&mut receiver, &down_bytes(&Down::Commit), &public);
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::Refused
+        })
+    );
+    assert!(actions.is_empty());
+}
+
+#[test]
+fn a_second_commit_is_refused_and_does_not_finish_again() {
+    let image = image_of(170);
+    let (digest, signature, public) = sign_image(&image);
+    let mut receiver = new_receiver();
+    feed(
+        &mut receiver,
+        &begin_for(&image, digest, signature),
+        &public,
+    );
+    feed(&mut receiver, &down_bytes(&chunk_at(&image, 0)), &public);
+    let (up, actions) = feed(&mut receiver, &down_bytes(&Down::Commit), &public);
+    assert_eq!(up, Some(Up::Result { code: Code::Ok }));
+    assert_eq!(actions.len(), 1);
+    let (up, actions) = feed(&mut receiver, &down_bytes(&Down::Commit), &public);
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::Refused
+        })
+    );
+    assert!(actions.is_empty());
+}
+
+#[test]
+fn a_bad_hash_does_not_finish() {
+    let image = image_of(170);
+    let (digest, signature, public) = sign_image(b"not the bytes that were written");
+    let mut receiver = new_receiver();
+    feed(
+        &mut receiver,
+        &begin_for(&image, digest, signature),
+        &public,
+    );
+    feed(&mut receiver, &down_bytes(&chunk_at(&image, 0)), &public);
+    let (up, actions) = feed(&mut receiver, &down_bytes(&Down::Commit), &public);
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::BadHash
+        })
+    );
+    assert_eq!(actions, vec![Action::Abort]);
+}
+
+#[test]
+fn an_oversized_image_is_refused_and_leaves_the_one_in_progress() {
+    let image = image_of(170);
+    let (digest, signature, public) = sign_image(&image);
+    let mut receiver = new_receiver();
+    let (up, actions) = feed(
+        &mut receiver,
+        &down_bytes(&Down::Begin {
+            size: SLOT + 1,
+            product: PRODUCT_NODE,
+            version: OTA_VERSION,
+            digest,
+            signature,
+        }),
+        &public,
+    );
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::Refused
+        })
+    );
+    assert!(actions.is_empty());
+
+    feed(
+        &mut receiver,
+        &begin_for(&image, digest, signature),
+        &public,
+    );
+    let (up, actions) = feed(
+        &mut receiver,
+        &down_bytes(&Down::Begin {
+            size: SLOT + 1,
+            product: PRODUCT_NODE,
+            version: OTA_VERSION,
+            digest,
+            signature,
+        }),
+        &public,
+    );
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::Refused
+        })
+    );
+    assert!(
+        actions.is_empty(),
+        "a refused begin does not abort the image already started"
+    );
+    feed(&mut receiver, &down_bytes(&chunk_at(&image, 0)), &public);
+    let (up, actions) = feed(&mut receiver, &down_bytes(&Down::Commit), &public);
+    assert_eq!(up, Some(Up::Result { code: Code::Ok }));
+    assert_eq!(
+        actions,
+        vec![Action::Finish {
+            version: OTA_VERSION
+        }]
+    );
+}
+
+#[test]
+fn a_chunk_before_begin_is_refused() {
+    let image = image_of(1);
+    let (_, _, public) = sign_image(&image);
+    let mut receiver = new_receiver();
+    let (up, actions) = feed(&mut receiver, &down_bytes(&chunk_at(&image, 0)), &public);
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::Refused
+        })
+    );
+    assert!(actions.is_empty());
+}
+
+#[test]
+fn a_commit_with_a_chunk_missing_does_not_finish() {
+    let image = image_of(400);
+    let (digest, signature, public) = sign_image(&image);
+    let mut receiver = new_receiver();
+    feed(
+        &mut receiver,
+        &begin_for(&image, digest, signature),
+        &public,
+    );
+    feed(&mut receiver, &down_bytes(&chunk_at(&image, 0)), &public);
+    let (up, actions) = feed(&mut receiver, &down_bytes(&Down::Commit), &public);
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::Missing
+        })
+    );
+    assert_eq!(actions, vec![Action::Abort]);
+}
+
+#[test]
+fn a_chunk_off_a_boundary_or_past_the_end_is_not_written() {
+    let image = image_of(170);
+    let (digest, signature, public) = sign_image(&image);
+    let mut receiver = new_receiver();
+    feed(
+        &mut receiver,
+        &begin_for(&image, digest, signature),
+        &public,
+    );
+    let mut early = [0u8; CHUNK];
+    early[0] = 1;
+    let off = down_bytes(&Down::Chunk {
+        offset: 1,
+        len: 1,
+        data: early,
+    });
+    let (up, actions) = feed(&mut receiver, &off, &public);
+    assert!(up.is_none());
+    assert!(actions.is_empty());
+    let past = down_bytes(&Down::Chunk {
+        offset: 170,
+        len: 1,
+        data: early,
+    });
+    let (up, actions) = feed(&mut receiver, &past, &public);
+    assert!(up.is_none());
+    assert!(actions.is_empty());
+    feed(&mut receiver, &down_bytes(&chunk_at(&image, 0)), &public);
+    let (up, actions) = feed(&mut receiver, &down_bytes(&Down::Commit), &public);
+    assert_eq!(up, Some(Up::Result { code: Code::Ok }));
+    assert_eq!(
+        actions,
+        vec![Action::Finish {
+            version: OTA_VERSION
+        }]
+    );
+}
+
+#[test]
+fn a_second_begin_restarts_and_the_old_bytes_are_not_in_the_hash() {
+    let first = image_of(170);
+    let second = image_of(1);
+    let (first_digest, first_sig, public) = sign_image(&first);
+    let (second_digest, second_sig, _) = sign_image(&second);
+    let mut receiver = new_receiver();
+    feed(
+        &mut receiver,
+        &begin_for(&first, first_digest, first_sig),
+        &public,
+    );
+    feed(&mut receiver, &down_bytes(&chunk_at(&first, 0)), &public);
+    let (up, actions) = feed(
+        &mut receiver,
+        &begin_for(&second, second_digest, second_sig),
+        &public,
+    );
+    assert!(up.is_none());
+    assert_eq!(
+        actions,
+        vec![Action::Abort, Action::Begin { size: 1 }],
+        "the first write is dropped before the new one starts"
+    );
+    feed(&mut receiver, &down_bytes(&chunk_at(&second, 0)), &public);
+    let (up, actions) = feed(&mut receiver, &down_bytes(&Down::Commit), &public);
+    assert_eq!(up, Some(Up::Result { code: Code::Ok }));
+    assert_eq!(
+        actions,
+        vec![Action::Finish {
+            version: OTA_VERSION
+        }]
+    );
+}
+
+const CLEAN: u32 = ota::HEAP_FLOOR;
+
+/// A good Begin for `image`, and the key that verifies it.
+fn signed_begin(image: &[u8]) -> (Vec<u8>, [u8; 32]) {
+    let (digest, signature, public) = sign_image(image);
+    let begin = down_bytes(&Down::Begin {
+        size: image.len() as u32,
+        product: PRODUCT_NODE,
+        version: OTA_VERSION,
+        digest,
+        signature,
+    });
+    (begin, public)
+}
+
+/// A healthy leaf at `now_ms`, with `acked` frames acknowledged.
+fn leaf(now_ms: u32, acked: u32) -> ota::Sample {
+    ota::Sample {
+        now_ms,
+        rooted: false,
+        has_parent: true,
+        acked,
+        heap_free: CLEAN,
+        heap_min: CLEAN,
+    }
+}
+
+/// Feeds readings every ten seconds from `start` to `end` inclusive, and returns
+/// the first time one earned the mark.
+fn soak(
+    health: &mut ota::Health,
+    start: u32,
+    end: u32,
+    reading: impl Fn(u32) -> ota::Sample,
+) -> Option<u32> {
+    let mut now = start;
+    while now <= end {
+        if health.sample(&reading(now)) {
+            return Some(now);
+        }
+        now += 10_000;
+    }
+    None
+}
+
+#[test]
+fn a_leaf_is_healthy_only_after_five_minutes_with_a_parent_and_an_ack() {
+    let mut health = ota::Health::new();
+    let first = soak(&mut health, 0, 400_000, |now| leaf(now, now / 10_000));
+    assert_eq!(first, Some(ota::CONFIRM_AFTER_MS));
+}
+
+#[test]
+fn a_leaf_with_a_parent_but_no_acks_is_never_healthy() {
+    let mut health = ota::Health::new();
+    assert_eq!(soak(&mut health, 0, 900_000, |now| leaf(now, 7)), None);
+}
+
+#[test]
+fn losing_the_parent_once_starts_the_five_minutes_again() {
+    let mut health = ota::Health::new();
+    assert_eq!(soak(&mut health, 0, 200_000, |now| leaf(now, now)), None);
+    let mut gone = leaf(210_000, 210_000);
+    gone.has_parent = false;
+    assert!(!health.sample(&gone));
+    let first = soak(&mut health, 220_000, 900_000, |now| leaf(now, now));
+    assert_eq!(first, Some(220_000 + ota::CONFIRM_AFTER_MS));
+}
+
+#[test]
+fn a_heap_below_the_floor_is_never_healthy() {
+    let mut low_free = ota::Health::new();
+    let free = soak(&mut low_free, 0, 900_000, |now| ota::Sample {
+        heap_free: CLEAN - 1,
+        ..leaf(now, now)
+    });
+    assert_eq!(free, None);
+    let mut low_mark = ota::Health::new();
+    let mark = soak(&mut low_mark, 0, 900_000, |now| ota::Sample {
+        heap_min: CLEAN - 1,
+        ..leaf(now, now)
+    });
+    assert_eq!(mark, None);
+}
+
+#[test]
+fn the_root_needs_no_ack_to_be_healthy() {
+    let mut health = ota::Health::new();
+    let first = soak(&mut health, 0, 400_000, |now| ota::Sample {
+        rooted: true,
+        has_parent: false,
+        ..leaf(now, 0)
+    });
+    assert_eq!(first, Some(ota::CONFIRM_AFTER_MS));
+}
+
+#[test]
+fn a_board_with_no_route_is_never_healthy() {
+    let mut health = ota::Health::new();
+    let first = soak(&mut health, 0, 900_000, |now| ota::Sample {
+        has_parent: false,
+        ..leaf(now, now)
+    });
+    assert_eq!(first, None);
+}
+
+#[test]
+fn health_holds_across_the_clock_wrapping() {
+    let mut health = ota::Health::new();
+    let start = u32::MAX - 100_000;
+    assert!(!health.sample(&leaf(start, 1)));
+    let later = start.wrapping_add(ota::CONFIRM_AFTER_MS);
+    assert!(health.sample(&leaf(later, 2)));
+}
+
+#[test]
+fn a_silent_transfer_is_dropped_and_its_commit_refused() {
+    let image = image_of(500);
+    let (begin, public) = signed_begin(&image);
+    let mut receiver = new_receiver();
+    let (_, actions) = feed(&mut receiver, &begin, &public);
+    assert_eq!(actions, vec![Action::Begin { size: 500 }]);
+    assert!(receiver.in_progress());
+
+    assert!(!receiver.expire(ota::SILENCE_MS - 1, 0), "too soon");
+    assert!(receiver.in_progress());
+    assert!(receiver.take_action().is_none());
+
+    assert!(receiver.expire(ota::SILENCE_MS, 0));
+    assert!(!receiver.in_progress());
+    assert_eq!(receiver.take_action(), Some(Action::Abort));
+    assert_eq!(receiver.take_action(), None);
+    assert!(!receiver.expire(u32::MAX, 0), "nothing left to drop");
+
+    let (up, actions) = feed(&mut receiver, &down_bytes(&Down::Commit), &public);
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::Refused
+        })
+    );
+    assert!(actions.is_empty());
+}
+
+#[test]
+fn silence_is_measured_across_the_clock_wrapping() {
+    let image = image_of(500);
+    let (begin, public) = signed_begin(&image);
+    let mut receiver = new_receiver();
+    feed(&mut receiver, &begin, &public);
+    let last = u32::MAX - 10;
+    assert!(!receiver.expire(last.wrapping_add(100), last));
+    assert!(receiver.expire(last.wrapping_add(ota::SILENCE_MS), last));
+}
+
+/// Lays the writes into a blank slot. True if a Finish came after them.
+fn lay(flash: &mut [u8], actions: &[Action]) -> bool {
+    let mut finished = false;
+    for action in actions {
+        match action {
+            Action::Write { offset, len, data } => {
+                let at = *offset as usize;
+                let len = usize::from(*len);
+                flash[at..at + len].copy_from_slice(&data[..len]);
+            }
+            Action::Finish { .. } => finished = true,
+            _ => {}
+        }
+    }
+    finished
+}
+
+#[test]
+fn a_push_before_the_actions_are_taken_drops_no_write() {
+    let image = image_of(300);
+    let (begin, public) = signed_begin(&image);
+    let mut receiver = new_receiver();
+    feed(&mut receiver, &begin, &public);
+    let mut flash = vec![0u8; image.len()];
+    let mut taken = Vec::new();
+
+    // Nothing is taken between these, so the second chunk and the Commit must
+    // not move the hash past what flash will get.
+    for offset in [0, CHUNK] {
+        let _ = receiver.push(&down_bytes(&chunk_at(&image, offset)), &public);
+    }
+    let up = receiver.push(&down_bytes(&Down::Commit), &public);
+    while let Some(action) = receiver.take_action() {
+        taken.push(action);
+    }
+    let finished = lay(&mut flash, &taken);
+    assert!(
+        !finished || flash == image,
+        "a Finish over bytes that were never written: {up:?} {taken:?}"
+    );
+    assert_ne!(up, Some(Up::Result { code: Code::Ok }));
+
+    // Taken in step, the rest lands and the image finishes.
+    let (_, actions) = feed(
+        &mut receiver,
+        &down_bytes(&chunk_at(&image, CHUNK)),
+        &public,
+    );
+    lay(&mut flash, &actions);
+    let (up, actions) = feed(&mut receiver, &down_bytes(&Down::Commit), &public);
+    assert_eq!(up, Some(Up::Result { code: Code::Ok }));
+    assert!(lay(&mut flash, &actions));
+    assert_eq!(flash, image);
+}
+
+#[test]
+fn a_begin_before_the_finish_is_taken_keeps_the_finish() {
+    let image = image_of(100);
+    let (begin, public) = signed_begin(&image);
+    let mut receiver = new_receiver();
+    feed(&mut receiver, &begin, &public);
+    feed(&mut receiver, &down_bytes(&chunk_at(&image, 0)), &public);
+    let up = receiver.push(&down_bytes(&Down::Commit), &public);
+    assert_eq!(up, Some(Up::Result { code: Code::Ok }));
+
+    // The host was told Ok, so the Finish must still reach flash.
+    assert_eq!(receiver.push(&begin, &public), None);
+    assert_eq!(
+        receiver.take_action(),
+        Some(Action::Finish {
+            version: OTA_VERSION
+        })
+    );
+    assert_eq!(receiver.take_action(), None);
+    assert!(!receiver.in_progress());
+}
+
+#[test]
+fn abandoning_with_no_transfer_queues_nothing() {
+    let mut receiver = new_receiver();
+    receiver.abandon();
+    assert_eq!(receiver.take_action(), None);
+}
+
+#[test]
+fn a_raised_floor_refuses_the_next_lower_image_and_never_goes_down() {
+    let image = image_of(500);
+    let (begin, public) = signed_begin(&image);
+    let mut receiver = Receiver::new(PRODUCT_NODE, 1);
+    receiver.raise_floor(OTA_VERSION + 1);
+    receiver.raise_floor(2);
+    let (up, actions) = feed(&mut receiver, &begin, &public);
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::Downgrade
+        })
+    );
+    assert!(actions.is_empty());
+}
+
+#[test]
+fn a_floor_raised_during_a_transfer_refuses_its_commit() {
+    let image = image_of(170);
+    let (begin, public) = signed_begin(&image);
+    let mut receiver = Receiver::new(PRODUCT_NODE, OTA_VERSION);
+    let (up, _) = feed(&mut receiver, &begin, &public);
+    assert_eq!(up, None, "a version equal to the floor is a retry");
+    feed(&mut receiver, &down_bytes(&chunk_at(&image, 0)), &public);
+    receiver.raise_floor(OTA_VERSION + 1);
+    let (up, actions) = feed(&mut receiver, &down_bytes(&Down::Commit), &public);
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::Downgrade
+        })
+    );
+    assert_eq!(actions, vec![Action::Abort], "no Finish below the floor");
+    assert!(!receiver.in_progress());
 }

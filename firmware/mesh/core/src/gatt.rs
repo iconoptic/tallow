@@ -63,6 +63,22 @@ pub enum Status {
     Malformed = 6,
 }
 
+impl Status {
+    /// The status byte of an answer. Anything else is not a status this build knows.
+    pub fn from_u8(code: u8) -> Option<Self> {
+        Some(match code {
+            0 => Self::Ok,
+            1 => Self::Refused,
+            2 => Self::Busy,
+            3 => Self::NotConnected,
+            4 => Self::TimedOut,
+            5 => Self::Failed,
+            6 => Self::Malformed,
+            _ => return None,
+        })
+    }
+}
+
 /// A request, decoded. The id is returned beside it by `parse`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Request {
@@ -201,6 +217,46 @@ impl Reply {
             }
         }
     }
+
+    /// Reads a payload [`encode`] wrote. A short buffer, an unknown kind, an
+    /// unknown status, or a value longer than the kind allows is `None`.
+    pub fn decode(data: &[u8]) -> Option<Self> {
+        let id = u16_at(data, 0)?;
+        match *data.get(2)? {
+            KIND_ANSWER => {
+                let status = Status::from_u8(*data.get(3)?)?;
+                let bytes = data.get(4..)?;
+                if bytes.len() > VALUE_MAX {
+                    return None;
+                }
+                let mut value = [0u8; VALUE_MAX];
+                value[..bytes.len()].copy_from_slice(bytes);
+                Some(Self::Answer {
+                    id,
+                    status,
+                    len: bytes.len() as u8,
+                    value,
+                })
+            }
+            KIND_NOTIFY => {
+                let handle = u16_at(data, 3)?;
+                let bytes = data.get(5..)?;
+                if bytes.len() > NOTIFY_MAX {
+                    return None;
+                }
+                let mut value = [0u8; NOTIFY_MAX];
+                value[..bytes.len()].copy_from_slice(bytes);
+                Some(Self::Notify {
+                    link: id,
+                    handle,
+                    len: bytes.len() as u8,
+                    value,
+                })
+            }
+            KIND_CLOSED => (data.len() == 3).then_some(Self::Closed { link: id }),
+            _ => None,
+        }
+    }
 }
 
 fn u16_at(data: &[u8], at: usize) -> Option<u16> {
@@ -275,6 +331,65 @@ pub fn parse(data: &[u8]) -> Option<(u16, Request)> {
         _ => return None,
     };
     Some((id, request))
+}
+
+/// Writes a request in the layout [`parse`] reads. Returns `None` when the
+/// request is not one `parse` accepts, or when `out` is too short for it.
+pub fn encode(id: u16, request: &Request, out: &mut [u8]) -> Option<usize> {
+    if out.len() < 3 {
+        return None;
+    }
+    out[..2].copy_from_slice(&id.to_le_bytes());
+    let (op, length) = write_body(request, &mut out[3..])?;
+    out[2] = op;
+    Some(3 + length)
+}
+
+/// The operation byte and how many body bytes were written.
+fn write_body(request: &Request, out: &mut [u8]) -> Option<(u8, usize)> {
+    match *request {
+        Request::Connect {
+            address,
+            address_kind,
+        } => {
+            if address_kind > 1 || out.len() < 7 {
+                return None;
+            }
+            out[..6].copy_from_slice(&address);
+            out[6] = address_kind;
+            Some((OP_CONNECT, 7))
+        }
+        Request::Write { handle, len, value } => {
+            let len = usize::from(len);
+            if len > VALUE_MAX || out.len() < 2 + len {
+                return None;
+            }
+            out[..2].copy_from_slice(&handle.to_le_bytes());
+            out[2..2 + len].copy_from_slice(value.get(..len)?);
+            Some((OP_WRITE, 2 + len))
+        }
+        Request::Read { handle } => {
+            out.get_mut(..2)?.copy_from_slice(&handle.to_le_bytes());
+            Some((OP_READ, 2))
+        }
+        Request::Subscribe { handle } => {
+            out.get_mut(..2)?.copy_from_slice(&handle.to_le_bytes());
+            Some((OP_SUBSCRIBE, 2))
+        }
+        Request::Disconnect => Some((OP_DISCONNECT, 0)),
+        Request::Whitelist { count, addresses } => {
+            let count = usize::from(count);
+            if count > WHITELIST || out.len() < 1 + 6 * count {
+                return None;
+            }
+            out[0] = count as u8;
+            for (slot, address) in addresses.iter().take(count).enumerate() {
+                let at = 1 + 6 * slot;
+                out[at..at + 6].copy_from_slice(address);
+            }
+            Some((OP_WHITELIST, 1 + 6 * count))
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -566,6 +681,15 @@ impl Client {
                 self.link = Link::Idle;
                 None
             }
+            (Done::Opened(true), Link::Idle, _) => {
+                // Opened after the cancel was confirmed, or after a close the
+                // radio never answered. Nothing else closes this link, and its
+                // address may be off the whitelist by now.
+                self.link = Link::Closing;
+                self.closing_since = now;
+                self.act = Some(Act::Close);
+                None
+            }
             (Done::Mtu(ok), Link::Setup, Some(pending)) if pending.waiting == Waiting::Mtu => {
                 if ok {
                     self.advance(pending, Waiting::Searched, Act::Search);
@@ -662,5 +786,118 @@ impl Client {
             self.drop_link(now);
         }
         Some(self.answer(pending.id, Status::TimedOut))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn round_trip(request: Request) -> (u16, Request) {
+        let mut out = [0u8; MAX_PAYLOAD];
+        let length = encode(0x0102, &request, &mut out).expect("encodes");
+        parse(&out[..length]).expect("parses")
+    }
+
+    #[test]
+    fn each_request_encodes_to_bytes_parse_reads_back() {
+        let mut full = [0xabu8; VALUE_MAX];
+        full[169] = 0xcd;
+        let mut eight = [[0u8; 6]; WHITELIST];
+        for (index, address) in eight.iter_mut().enumerate() {
+            *address = [index as u8; 6];
+        }
+        let requests = [
+            Request::Connect {
+                address: [0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff],
+                address_kind: 1,
+            },
+            Request::Write {
+                handle: 0x0021,
+                len: 170,
+                value: full,
+            },
+            Request::Read { handle: 0x0021 },
+            Request::Subscribe { handle: 0x0012 },
+            Request::Disconnect,
+            Request::Whitelist {
+                count: 8,
+                addresses: eight,
+            },
+            Request::Whitelist {
+                count: 0,
+                addresses: [[0; 6]; WHITELIST],
+            },
+        ];
+        for request in requests {
+            assert_eq!(round_trip(request), (0x0102, request));
+        }
+    }
+
+    #[test]
+    fn a_request_parse_would_refuse_does_not_encode() {
+        let mut out = [0u8; MAX_PAYLOAD];
+        assert!(encode(
+            1,
+            &Request::Connect {
+                address: [0; 6],
+                address_kind: 2,
+            },
+            &mut out,
+        )
+        .is_none());
+        assert!(encode(
+            1,
+            &Request::Write {
+                handle: 1,
+                len: 171,
+                value: [0; VALUE_MAX],
+            },
+            &mut out,
+        )
+        .is_none());
+        assert!(encode(
+            1,
+            &Request::Whitelist {
+                count: 9,
+                addresses: [[0; 6]; WHITELIST],
+            },
+            &mut out,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn each_reply_decodes_to_what_encode_wrote() {
+        let mut value = [0u8; VALUE_MAX];
+        value[..2].copy_from_slice(&[0xde, 0xad]);
+        let mut notify = [0u8; NOTIFY_MAX];
+        notify[..3].copy_from_slice(&[0xff, 0x00, 0x80]);
+        let replies = [
+            Reply::Answer {
+                id: 3,
+                status: Status::Refused,
+                len: 2,
+                value,
+            },
+            Reply::Notify {
+                link: 2,
+                handle: 0x21,
+                len: 3,
+                value: notify,
+            },
+            Reply::Closed { link: 2 },
+        ];
+        for reply in replies {
+            let mut out = [0u8; MAX_PAYLOAD];
+            let length = reply.encode(&mut out);
+            assert_eq!(Reply::decode(&out[..length]), Some(reply));
+        }
+        assert!(Reply::decode(&[0, 0, 9]).is_none(), "unknown kind");
+        assert!(Reply::decode(&[0, 0, 1, 7]).is_none(), "unknown status");
+        assert!(
+            Reply::decode(&[0, 0, 3, 0]).is_none(),
+            "closed has no extra byte"
+        );
     }
 }

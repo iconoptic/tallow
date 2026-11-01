@@ -13,10 +13,17 @@
 //! and `X` alone clears the list. Both are kept in RAM and only work from this
 //! board's own serial port. `G id hex` sends a GATT request, in hex, down to the
 //! board with that id. A send the root cannot route prints `@G refused`. Answers
-//! come back up as `@U 12` lines.
+//! come back up as `@U 12` lines. `O id hex` sends an OTA payload, in hex, down
+//! to the board with that id. A send the root cannot route prints `@O refused`.
+//! A downward OTA frame is written to the inactive slot from this loop. Only a
+//! finished image is set to boot, and the board restarts into it. A line longer
+//! than `LINE_MAX` is dropped whole.
+
+#![warn(clippy::undocumented_unsafe_blocks)]
 
 mod bluetooth;
 mod gatt;
+mod ota;
 mod radio;
 
 use core::fmt::Write as _;
@@ -34,6 +41,7 @@ use esp_idf_svc::sys;
 use esp_idf_svc::wifi::{ClientConfiguration, Configuration, WifiDriver};
 use tallow_mesh_core::gatt::{Client, Done, Reply};
 use tallow_mesh_core::mesh::next_boot;
+use tallow_mesh_core::ota::{Code, Down, Health, Receiver, Sample, Up, PRODUCT_NODE};
 use tallow_mesh_core::stats::Stats;
 use tallow_mesh_core::wire::{Command, WATCH_MAX};
 use tallow_mesh_core::{Dest, Event, FrameKind, Mesh, MAX_PAYLOAD};
@@ -55,6 +63,16 @@ const PAGE_RETRY_MS: u32 = 250;
 const LINE_MAX: usize = 400;
 /// Requests that came down and wait for the GATT client. A request past this is dropped.
 const DOWN_QUEUE: usize = 4;
+/// Serial input held while the loop is busy. A full `G` or `O` line is 31 ms of
+/// serial, so this rides out a stall of about 90 ms.
+const SERIAL_RX: usize = 1024;
+/// How often the two stack watermarks are logged.
+const WATERMARK_MS: u32 = 60_000;
+/// After a good Result the board restarts once its queue is empty, but not before
+/// this, so the root's serial line gets out.
+const RESTART_MIN_MS: u32 = 200;
+/// The longest a restart waits for that queue.
+const RESTART_MAX_MS: u32 = 2_000;
 
 const DEFAULTS: Command = Command {
     id: 0,
@@ -92,6 +110,7 @@ fn on_event(
     command: &mut Option<Command>,
     watch: &mut Option<(u8, [[u8; 6]; WATCH_MAX])>,
     downs: &mut Vec<Vec<u8>>,
+    ota_downs: &mut Vec<Vec<u8>>,
     event: Event,
 ) {
     line.clear();
@@ -117,10 +136,14 @@ fn on_event(
             print(uart, line);
         }
         // A GATT request is queued for the client, which runs it after this frame.
-        // Ping is for tests only, and nothing reads it.
+        // An OTA payload is queued the same way: flash writes happen after
+        // `receive` returns, never from the radio callback. Ping is for tests
+        // only, and nothing reads it.
         Event::Down { frame, payload } => {
             if frame.kind == FrameKind::Gatt && downs.len() < DOWN_QUEUE {
                 downs.push(payload.to_vec());
+            } else if frame.kind == FrameKind::Ota && ota_downs.len() < DOWN_QUEUE {
+                ota_downs.push(payload.to_vec());
             }
         }
     }
@@ -135,12 +158,13 @@ fn send_gatt_reply(mesh: &mut Mesh, reply: &Reply, now: u32, on_event: &mut dyn 
 
 /// Runs the GATT client's radio work until neither the radio nor the client has
 /// anything left, and sends each reply up. Inquiry and paging pause while a link
-/// is held. Scanning starts again once none is.
+/// is held, or while `writing` an image. Scanning starts again once no link is.
 fn gatt_pump(
     client: &mut Client,
     link: &mut gatt::Link,
     bt: &Bluetooth,
     mesh: &mut Mesh,
+    writing: bool,
     now: u32,
     on_event: &mut dyn FnMut(Event),
 ) {
@@ -170,7 +194,7 @@ fn gatt_pump(
             break;
         }
     }
-    bt.set_link_busy(client.link_busy());
+    bt.set_link_busy(client.link_busy() || writing);
     if !client.link_busy() {
         bt.resume_scan();
     }
@@ -213,13 +237,27 @@ fn parse_watch(line: &str) -> Option<(u8, [[u8; 6]; WATCH_MAX])> {
 /// The request is the bytes `tallow_mesh_core::gatt` reads, in hex, and it may be
 /// empty. A bad digit or an odd count is `None` and sends nothing.
 fn parse_gatt(line: &str) -> Option<(u32, [u8; MAX_PAYLOAD - 4], usize)> {
+    parse_down(line, "G")
+}
+
+/// `O <hex id> <hex payload>` sends an OTA payload down to the board with that id.
+/// The payload is the bytes `tallow_mesh_core::ota` reads, in hex. A bad digit or
+/// an odd count is `None` and sends nothing.
+fn parse_ota(line: &str) -> Option<(u32, [u8; MAX_PAYLOAD - 4], usize)> {
+    parse_down(line, "O")
+}
+
+fn parse_down(line: &str, word: &str) -> Option<(u32, [u8; MAX_PAYLOAD - 4], usize)> {
     let mut words = line.split_ascii_whitespace();
-    if words.next()? != "G" {
+    if words.next()? != word {
         return None;
     }
     let target = u32::from_str_radix(words.next()?, 16).ok()?;
     let digits = words.next().unwrap_or("");
-    if words.next().is_some() || digits.len() % 2 != 0 || digits.len() / 2 > MAX_PAYLOAD - 4 {
+    if words.next().is_some()
+        || !digits.len().is_multiple_of(2)
+        || digits.len() / 2 > MAX_PAYLOAD - 4
+    {
         return None;
     }
     let mut body = [0u8; MAX_PAYLOAD - 4];
@@ -282,6 +320,21 @@ fn boot_id(nvs: EspDefaultNvsPartition, random: u32) -> u32 {
     }
 }
 
+/// The fewest bytes each task has had free: this one, then Bluedroid's. Bluedroid's
+/// is 0 if that task is not found.
+fn stack_left() -> (u32, u32) {
+    // SAFETY: a null handle means the calling task, which is running.
+    let main_left = unsafe { sys::uxTaskGetStackHighWaterMark(core::ptr::null_mut()) };
+    // SAFETY: the name is a C string that lives for the call. The call only reads it.
+    let btc = unsafe { sys::xTaskGetHandle(c"BTC_TASK".as_ptr()) };
+    if btc.is_null() {
+        return (main_left, 0);
+    }
+    // SAFETY: `btc` is non-null, and Bluedroid's task is never deleted while this
+    // firmware runs, since nothing here disables Bluetooth.
+    (main_left, unsafe { sys::uxTaskGetStackHighWaterMark(btc) })
+}
+
 fn main() -> Result<(), sys::EspError> {
     sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
@@ -289,8 +342,12 @@ fn main() -> Result<(), sys::EspError> {
     let peripherals = Peripherals::take()?;
     let sysloop = EspSystemEventLoop::take()?;
     let nvs = EspDefaultNvsPartition::take()?;
+    // First, so a new image that hangs anywhere below still rolls back.
+    let mut slot = ota::Slot::open(nvs.clone());
 
-    let config = Config::new().baudrate(Hertz(115_200));
+    let config = Config::new()
+        .baudrate(Hertz(115_200))
+        .rx_fifo_size(SERIAL_RX);
     let uart = UartDriver::new(
         peripherals.uart0,
         peripherals.pins.gpio1,
@@ -321,14 +378,20 @@ fn main() -> Result<(), sys::EspError> {
     gatt::start()?;
     let mut client = Client::new();
     let mut link = gatt::Link::default();
+    // The receiver is about 1.7 KB, and it lives on the heap to keep it out of the
+    // main task's stack, which `tools/tests/stack_budget.py` checks.
+    let mut receiver = Box::new(Receiver::new(PRODUCT_NODE, slot.floor()));
+    let mut health = Health::new();
 
     let mut line = String::with_capacity(600);
     let mut input = [0u8; 64];
     let mut typed = String::with_capacity(LINE_MAX);
+    let mut overflowed = false;
     let mut pending: Option<Command> = Some(DEFAULTS);
     let mut pending_watch: Option<(u8, [[u8; 6]; WATCH_MAX])> = None;
     let mut settings = DEFAULTS;
     let mut in_flight: Option<u32> = None;
+    let mut in_flight_unicast = false;
     let mut last_peer: Option<[u8; 6]> = None;
     let mut next_report = now_ms() + REPORT_MS;
     let mut next_stats = now_ms() + 1_000;
@@ -338,8 +401,13 @@ fn main() -> Result<(), sys::EspError> {
     let mut probe_seq = 0u32;
     let mut tx_ok = 0u32;
     let mut tx_failed = 0u32;
+    let mut unicast_acked = 0u32;
+    let mut next_watermark = now_ms().wrapping_add(WATERMARK_MS);
+    let mut last_ota = 0u32;
+    let mut restart_from: Option<u32> = None;
     let mut visible_until: Option<u32> = None;
     let mut downs: Vec<Vec<u8>> = Vec::new();
+    let mut ota_downs: Vec<Vec<u8>> = Vec::new();
 
     let _ = writeln!(line, "@B {:08x} {}", mesh.id, boot);
     print(&uart, &line);
@@ -355,6 +423,7 @@ fn main() -> Result<(), sys::EspError> {
                         &mut pending,
                         &mut pending_watch,
                         &mut downs,
+                        &mut ota_downs,
                         event,
                     )
                 }
@@ -367,10 +436,15 @@ fn main() -> Result<(), sys::EspError> {
             if byte != b'\n' {
                 if typed.len() < LINE_MAX {
                     typed.push(byte as char);
+                } else {
+                    overflowed = true;
                 }
                 continue;
             }
-            if typed.starts_with('H') {
+            if overflowed {
+                // Part of a line must not run as a shorter command.
+                overflowed = false;
+            } else if typed.starts_with('H') {
                 mesh.host_heartbeat(now);
             } else if typed.starts_with('D') {
                 if bt.set_visible(true).is_ok() {
@@ -400,6 +474,12 @@ fn main() -> Result<(), sys::EspError> {
                         print(&uart, "@G refused\n");
                     }
                 }
+            } else if typed.starts_with('O') {
+                if let Some((target, body, length)) = parse_ota(&typed) {
+                    if !mesh.send_down(now, target, FrameKind::Ota, &body[..length]) {
+                        print(&uart, "@O refused\n");
+                    }
+                }
             }
             typed.clear();
         }
@@ -416,6 +496,35 @@ fn main() -> Result<(), sys::EspError> {
         }
         mesh.tick(now, events!());
 
+        // OTA payloads that came down to this board. The receiver's actions are
+        // performed here, and a status or result goes back up.
+        for body in std::mem::take(&mut ota_downs) {
+            // A stored image waits for the restart. A new Begin would pick the same
+            // slot, since the choice follows the running partition, and erase it.
+            if restart_from.is_some() {
+                continue;
+            }
+            last_ota = now;
+            // Flash writes delay the main loop, and with it `cut_inquiry`. Nothing
+            // here may follow an inquiry into paging devices off the whitelist.
+            if matches!(
+                tallow_mesh_core::ota::decode_down(&body),
+                Some(Down::Begin { .. })
+            ) {
+                bt.stop_inquiry();
+            }
+            if let Some(up) = ota::apply(&mut receiver, &mut slot, &body) {
+                if matches!(up, Up::Result { code: Code::Ok }) {
+                    restart_from = Some(now);
+                }
+                let mut encoded = [0u8; MAX_PAYLOAD];
+                if let Some(length) = tallow_mesh_core::ota::encode_up(&up, &mut encoded) {
+                    mesh.send_up(FrameKind::OtaUp, &encoded[..length], now, events!());
+                }
+            }
+        }
+        ota::expire(&mut receiver, &mut slot, now, last_ota);
+
         // Requests that came down to this board go to the GATT client, and its
         // timeouts and radio results follow.
         for body in std::mem::take(&mut downs) {
@@ -426,7 +535,16 @@ fn main() -> Result<(), sys::EspError> {
         if let Some(reply) = client.tick(now) {
             send_gatt_reply(&mut mesh, &reply, now, events!());
         }
-        gatt_pump(&mut client, &mut link, &bt, &mut mesh, now, events!());
+        let writing = receiver.in_progress();
+        gatt_pump(
+            &mut client,
+            &mut link,
+            &bt,
+            &mut mesh,
+            writing,
+            now,
+            events!(),
+        );
 
         // One frame on the air at a time, so ordering and acks stay simple.
         if let Some(started) = in_flight {
@@ -435,6 +553,9 @@ fn main() -> Result<(), sys::EspError> {
                 let acked = outcome.unwrap_or(false);
                 if acked {
                     tx_ok = tx_ok.wrapping_add(1);
+                    if in_flight_unicast {
+                        unicast_acked = unicast_acked.wrapping_add(1);
+                    }
                 } else {
                     tx_failed = tx_failed.wrapping_add(1);
                 }
@@ -453,13 +574,28 @@ fn main() -> Result<(), sys::EspError> {
                         radio::drop_peer(old);
                     }
                 }
+                let unicast = tx.dest != Dest::Broadcast;
                 match radio::send(target, tx.bytes()) {
-                    Ok(()) => in_flight = Some(now),
+                    Ok(()) => {
+                        in_flight = Some(now);
+                        in_flight_unicast = unicast;
+                    }
                     Err(_) => {
                         tx_failed = tx_failed.wrapping_add(1);
                         mesh.tx_done(now, false, events!());
                     }
                 }
+            }
+        }
+
+        // A stored image takes over once its Result is on its way, or the wait is up.
+        if let Some(from) = restart_from {
+            let waited = now.wrapping_sub(from);
+            let sent = mesh.queued() == 0 && in_flight.is_none();
+            if waited >= RESTART_MAX_MS || (sent && waited >= RESTART_MIN_MS) {
+                // SAFETY: takes no arguments and does not return. Nothing is being
+                // written: the image is finished, and its slot is selected.
+                unsafe { sys::esp_restart() };
             }
         }
 
@@ -560,7 +696,25 @@ fn main() -> Result<(), sys::EspError> {
                 parent_rssi: mesh.parent().map_or(0, |parent| parent.rssi),
                 parent_quality: mesh.parent().map_or(0, |parent| parent.quality() as u8),
             };
+            let ready = health.sample(&Sample {
+                now_ms: now,
+                rooted: mesh.is_root(now),
+                has_parent: mesh.parent().is_some(),
+                acked: unicast_acked,
+                heap_free: free,
+                heap_min: least,
+            });
+            if let Some(floor) = slot.confirm_if_ready(ready) {
+                receiver.raise_floor(floor);
+            }
             mesh.send_up(FrameKind::Stats, &stats.encode(), now, events!());
+        }
+
+        // Warn level, because the build compiles out anything quieter.
+        if (now.wrapping_sub(next_watermark) as i32) >= 0 {
+            next_watermark = now.wrapping_add(WATERMARK_MS);
+            let (main_left, btc_left) = stack_left();
+            log::warn!("stack left: main {main_left}, btc {btc_left}");
         }
 
         // Delivery test.

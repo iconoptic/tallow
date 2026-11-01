@@ -6,8 +6,10 @@ use std::convert::Infallible;
 use std::future::Future;
 use std::io;
 use std::path::Path;
+use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio::time::timeout;
 
 use crate::config::{load_token, Config};
 use crate::http::{build_upstream, classify, parse_request, read_message, respond, status_of};
@@ -39,6 +41,28 @@ pub async fn handle_connection<S>(
 ) where
     S: AsyncRead + AsyncWrite + Unpin,
 {
+    handle_within(
+        conn,
+        token,
+        sock_path,
+        allowed_cid,
+        peer_cid,
+        REQUEST_TIMEOUT,
+    )
+    .await;
+}
+
+/// [`handle_connection`] with its write deadline named, so a test can shorten it.
+pub async fn handle_within<S>(
+    conn: &mut S,
+    token: &str,
+    sock_path: &Path,
+    allowed_cid: u32,
+    peer_cid: u32,
+    write_timeout: Duration,
+) where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     if peer_cid != allowed_cid {
         eprintln!("broker refused peer {peer_cid}");
         return;
@@ -50,7 +74,7 @@ pub async fn handle_connection<S>(
     let status = match answer(conn, token, sock_path, &mut seen).await {
         Ok(response) => {
             let status = status_of(&response);
-            if conn.write_all(&response).await.is_err() {
+            if send(conn, &response, write_timeout).await.is_err() {
                 502
             } else {
                 status
@@ -58,13 +82,26 @@ pub async fn handle_connection<S>(
         }
         Err(Failure::Status { status, detail }) => {
             // The Python ignores a failed write here and keeps the status.
-            let _ = conn.write_all(&respond(status, detail)).await;
+            let _ = send(conn, &respond(status, detail), write_timeout).await;
             status
         }
         // A read or socket error gets no answer. The Python closes with no bytes.
         Err(Failure::Io(_)) => 502,
     };
     eprintln!("broker {peer_cid} {} {:?} {status}", seen.method, seen.path);
+}
+
+/// Writes one answer, or gives up at the deadline. The accept loop takes one
+/// connection at a time, so a guest that stops reading must not hold it. The
+/// Python's `settimeout` covers `sendall` the same way.
+async fn send<S>(conn: &mut S, bytes: &[u8], limit: Duration) -> io::Result<()>
+where
+    S: AsyncWrite + Unpin,
+{
+    match timeout(limit, conn.write_all(bytes)).await {
+        Ok(written) => written,
+        Err(_) => Err(io::ErrorKind::TimedOut.into()),
+    }
 }
 
 /// The request path: read, parse, allowlist, then forward. Returns the bytes to send.
@@ -117,7 +154,12 @@ where
             }
             Err(error) => {
                 eprintln!("broker: {error:#}");
-                let _ = conn.write_all(&respond(503, "token unreadable")).await;
+                let _ = send(
+                    &mut conn,
+                    &respond(503, "token unreadable"),
+                    REQUEST_TIMEOUT,
+                )
+                .await;
             }
         }
     }

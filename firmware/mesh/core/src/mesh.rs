@@ -24,7 +24,9 @@ pub const ROOT_TIMEOUT_MS: u32 = 5_000;
 pub const MAX_NEIGHBOURS: usize = 12;
 pub const TX_QUEUE: usize = 16;
 pub const SEEN: usize = 96;
-/// A frame this far behind its origin's newest, in the same boot, is a replay.
+/// A frame this far behind its origin's newest, or further, in the same boot, is
+/// a replay. Inside this window each sequence number is accepted once, tracked by
+/// a bitmap per origin, so a recorded frame cannot run again when `SEEN` wraps.
 pub const REPLAY_WINDOW: u32 = 64;
 /// An origin with no accepted frame for this long is forgotten, so a board whose
 /// NVS was erased can rejoin. A replay of such a board is accepted once.
@@ -102,10 +104,10 @@ pub enum Event<'a> {
 }
 
 /// Frames that travel from the root to one node. Each hop unicasts them to the
-/// next hop in the route table. `Ota` joins this list when it exists. `GattUp`
-/// does not: its answers travel up like any report.
+/// next hop in the route table. `OtaUp` does not: its status and result travel
+/// up like any report. `GattUp` does not either.
 pub fn is_down(kind: FrameKind) -> bool {
-    matches!(kind, FrameKind::Ping | FrameKind::Gatt)
+    matches!(kind, FrameKind::Ping | FrameKind::Gatt | FrameKind::Ota)
 }
 
 /// Why a parent changed. The code is the value sent in a Route frame.
@@ -167,6 +169,8 @@ struct Origin {
     id: u32,
     boot: u32,
     newest: u32,
+    /// Bit `n` is set when `newest - n` has been accepted in this boot.
+    window: u64,
     /// When this origin last had a frame accepted. Refused frames do not count.
     last_ms: u32,
 }
@@ -577,7 +581,8 @@ impl Mesh {
     /// older boot than the one stored for its origin is refused, and it leaves the
     /// entry alone. A newer boot replaces the entry. A frame from another boot with
     /// the same counter is refused too: it is a replay or a collision. A frame from
-    /// the stored boot must be within `REPLAY_WINDOW` of the newest sequence number.
+    /// the stored boot must be within `REPLAY_WINDOW` of the newest sequence number,
+    /// and a sequence number in that window is accepted once.
     ///
     /// An origin silent for `ORIGIN_SILENCE_MS` is treated as unknown, so any boot
     /// is accepted again. That leaves a window: a replay of a board silent that long
@@ -602,11 +607,25 @@ impl Mesh {
                     return false;
                 }
                 if counter == stored {
-                    if entry.newest.wrapping_sub(frame.seq) as i32 > REPLAY_WINDOW as i32 {
-                        return false;
-                    }
-                    if (frame.seq.wrapping_sub(entry.newest) as i32) > 0 {
+                    let ahead = frame.seq.wrapping_sub(entry.newest) as i32;
+                    if ahead > 0 {
+                        entry.window = if ahead as u32 >= REPLAY_WINDOW {
+                            0
+                        } else {
+                            entry.window << ahead
+                        };
+                        entry.window |= 1;
                         entry.newest = frame.seq;
+                    } else {
+                        let behind = entry.newest.wrapping_sub(frame.seq);
+                        if behind >= REPLAY_WINDOW {
+                            return false;
+                        }
+                        let bit = 1u64 << behind;
+                        if entry.window & bit != 0 {
+                            return false;
+                        }
+                        entry.window |= bit;
                     }
                     entry.last_ms = now_ms;
                     return true;
@@ -616,6 +635,7 @@ impl Mesh {
                 id: frame.origin,
                 boot: frame.boot,
                 newest: frame.seq,
+                window: 1,
                 last_ms: now_ms,
             };
             return true;
@@ -632,6 +652,7 @@ impl Mesh {
             id: frame.origin,
             boot: frame.boot,
             newest: frame.seq,
+            window: 1,
             last_ms: now_ms,
         });
         true

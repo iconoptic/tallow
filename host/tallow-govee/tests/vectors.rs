@@ -5,7 +5,7 @@
 use serde_json::{json, Value};
 use tallow_govee::frame::{self, Frame, PaintGroup};
 use tallow_govee::scene;
-use tallow_govee::status::{self, Reply, Segment};
+use tallow_govee::status::{self, ColourMode, Reply, Segment};
 use tallow_govee::Refusal;
 
 const VECTORS: &str = include_str!("vectors.json");
@@ -76,6 +76,51 @@ fn query(name: &str) -> Frame {
     }
 }
 
+/// The colour-mode `fields` the dump records from the parsed body.
+fn colour_fields(body: ColourMode) -> Value {
+    match body {
+        ColourMode::Static { sub, kelvin } => json!({
+            "domain": "colormode",
+            "mode": "static",
+            "sub": sub,
+            "kelvin": kelvin,
+        }),
+        ColourMode::Scene { scene_id } => json!({
+            "domain": "colormode",
+            "mode": "scene",
+            "scene_id": scene_id,
+        }),
+        ColourMode::Diy { code } => json!({
+            "domain": "colormode",
+            "mode": "diy",
+            "code": code,
+        }),
+        ColourMode::Music {
+            mode_id,
+            sensitivity,
+            selector,
+            has_fixed_colour,
+            rgb,
+        } => {
+            let mut value = json!({
+                "domain": "colormode",
+                "has_fixed_colour": u8::from(has_fixed_colour),
+                "mode": "music",
+                "mode_id": mode_id,
+                "sensitivity": sensitivity,
+            });
+            if let Some(selector) = selector {
+                value["selector"] = json!(selector);
+            }
+            if let Some(rgb) = rgb {
+                value["rgb"] = json!(rgb);
+            }
+            value
+        }
+        ColourMode::Unparsed { .. } => json!({ "domain": "colormode" }),
+    }
+}
+
 /// The Python `fields` shape of a parsed reply, which the vectors record.
 fn fields(reply: Option<Reply>) -> Value {
     let Some(reply) = reply else {
@@ -86,7 +131,7 @@ fn fields(reply: Option<Reply>) -> Value {
         Reply::Brightness { percent } => {
             json!({ "domain": "brightness", "brightness_pct": percent })
         }
-        Reply::ColourMode { .. } => json!({ "domain": "colormode" }),
+        Reply::ColourMode(body) => colour_fields(body),
         Reply::FirmwareVersion { text } => json!({ "domain": "fw_version", "text": text }),
         Reply::HardwareVersion { text } => json!({ "domain": "hw_version", "text": text }),
         Reply::ConfiguredStrings { count } => {

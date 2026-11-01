@@ -6,10 +6,10 @@
     "color": 18,
     "paint": 16,
     "power": 4,
-    "query": 5,
-    "scene": 140,
-    "status": 12,
-    "total": 395
+    "query": 10,
+    "scene": 141,
+    "status": 23,
+    "total": 412
   },
   "model": "H7020",
   "schema": 1,
@@ -73,6 +73,91 @@
     {
       "id": "query/brightness",
       "input": {
+        "query": "brightness"
+      },
+      "kind": "query",
+      "result": {
+        "packets": [
+          "aa040000000000000000000000000000000000ae"
+        ]
+      },
+      "strings": null
+    },
+    {
+      "id": "query/firmware/pact-2-1",
+      "input": {
+        "pact": [
+          2,
+          1
+        ],
+        "query": "firmware"
+      },
+      "kind": "query",
+      "result": {
+        "packets": [
+          "aa060000000000000000000000000000000000ac"
+        ]
+      },
+      "strings": null
+    },
+    {
+      "id": "query/hardware/pact-2-1",
+      "input": {
+        "pact": [
+          2,
+          1
+        ],
+        "query": "hardware"
+      },
+      "kind": "query",
+      "result": {
+        "packets": [
+          "aa070300000000000000000000000000000000ae"
+        ]
+      },
+      "strings": null
+    },
+    {
+      "id": "query/configured_strings/pact-2-1",
+      "input": {
+        "pact": [
+          2,
+          1
+        ],
+        "query": "configured_strings"
+      },
+      "kind": "query",
+      "result": {
+        "packets": [
+          "aa0f0000000000000000000000000000000000a5"
+        ]
+      },
+      "strings": null
+    },
+    {
+      "id": "query/power/pact-2-1",
+      "input": {
+        "pact": [
+          2,
+          1
+        ],
+        "query": "power"
+      },
+      "kind": "query",
+      "result": {
+        "packets": [
+          "aa010000000000000000000000000000000000ab"
+        ]
+      },
+      "strings": null
+    },
+    {
+      "id": "query/brightness/pact-2-1",
+      "input": {
+        "pact": [
+          2,
+          1
+        ],
         "query": "brightness"
       },
       "kind": "query",
@@ -6720,6 +6805,29 @@
       "strings": null
     },
     {
+      "id": "scene/casefold-sharp-s",
+      "input": {
+        "name": "Cherry blo\u00dfoms",
+        "speed": null
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Cherry blossoms",
+        "packets": [
+          "a300010602031d000000010001ff0000801414c7",
+          "a30100801402ff42c8f914ff0000800000800053",
+          "a3021d000207020001ff000000050500fc1402af",
+          "a303d706ffff19ff1000f6000080001d000206e8",
+          "a3040200017b000000050500fc1402cfff0ffff5",
+          "a3ff72070400f61000ef00000000000000000024",
+          "3305042c08000000000000000000000000000016"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
       "id": "status/power-on",
       "input": {
         "reply": "aa010100000000000000000000000000000000aa",
@@ -6888,6 +6996,216 @@
       "kind": "status",
       "result": {
         "fields": null
+      },
+      "strings": null
+    },
+    {
+      "id": "status/colormode-static-2700",
+      "input": {
+        "reply": "aa0515000a8c000000000000000000000000003c",
+        "source": "constructed per h7020_status_reply.ksy"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "domain": "colormode",
+          "kelvin": 2700,
+          "mode": "static",
+          "sub": 0
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/colormode-static-0",
+      "input": {
+        "reply": "aa051501000000000000000000000000000000bb",
+        "source": "constructed per h7020_status_reply.ksy"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "domain": "colormode",
+          "kelvin": 0,
+          "mode": "static",
+          "sub": 1
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/colormode-scene-2092",
+      "input": {
+        "reply": "aa05042c0800000000000000000000000000008f",
+        "source": "constructed per h7020_status_reply.ksy"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "domain": "colormode",
+          "mode": "scene",
+          "scene_id": 2092
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/colormode-diy",
+      "input": {
+        "reply": "aa050a07000000000000000000000000000000a2",
+        "source": "constructed per h7020_status_reply.ksy"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "code": 7,
+          "domain": "colormode",
+          "mode": "diy"
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/colormode-music-3-colour",
+      "input": {
+        "reply": "aa05130328010908070000000000000000000090",
+        "source": "constructed per h7020_status_reply.ksy"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "domain": "colormode",
+          "has_fixed_colour": 1,
+          "mode": "music",
+          "mode_id": 3,
+          "rgb": [
+            9,
+            8,
+            7
+          ],
+          "sensitivity": 40
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/colormode-music-5-colour",
+      "input": {
+        "reply": "aa05130528010908070000000000000000000096",
+        "source": "constructed per h7020_status_reply.ksy"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "domain": "colormode",
+          "has_fixed_colour": 1,
+          "mode": "music",
+          "mode_id": 5,
+          "rgb": [
+            9,
+            8,
+            7
+          ],
+          "sensitivity": 40
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/colormode-music-6-colour",
+      "input": {
+        "reply": "aa05130628010908070000000000000000000095",
+        "source": "constructed per h7020_status_reply.ksy"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "domain": "colormode",
+          "has_fixed_colour": 1,
+          "mode": "music",
+          "mode_id": 6,
+          "rgb": [
+            9,
+            8,
+            7
+          ],
+          "sensitivity": 40
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/colormode-music-3",
+      "input": {
+        "reply": "aa0513030a0000000000000000000000000000b5",
+        "source": "constructed per h7020_status_reply.ksy"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "domain": "colormode",
+          "has_fixed_colour": 0,
+          "mode": "music",
+          "mode_id": 3,
+          "sensitivity": 10
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/colormode-music-4-colour",
+      "input": {
+        "reply": "aa05130428000109080700000000000000000097",
+        "source": "constructed per h7020_status_reply.ksy"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "domain": "colormode",
+          "has_fixed_colour": 1,
+          "mode": "music",
+          "mode_id": 4,
+          "rgb": [
+            9,
+            8,
+            7
+          ],
+          "selector": 0,
+          "sensitivity": 40
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/colormode-music-4",
+      "input": {
+        "reply": "aa0513040a0000000000000000000000000000b2",
+        "source": "constructed per h7020_status_reply.ksy"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "domain": "colormode",
+          "has_fixed_colour": 0,
+          "mode": "music",
+          "mode_id": 4,
+          "selector": 0,
+          "sensitivity": 10
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/unknown-domain",
+      "input": {
+        "reply": "aa99000000000000000000000000000000000033",
+        "source": "constructed; domain 0x99 has no name"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "domain": "153"
+        }
       },
       "strings": null
     }

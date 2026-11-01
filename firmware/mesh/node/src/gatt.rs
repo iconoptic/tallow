@@ -7,6 +7,7 @@
 //! callback runs on Bluedroid's task, so it only copies. The main loop does the
 //! rest.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use esp_idf_svc::sys::{self, EspError};
@@ -65,18 +66,24 @@ static EVENTS: Mutex<Queue> = Mutex::new(Queue {
     len: 0,
 });
 
-fn push(raw: Raw) {
+/// A close the queue could not take. A lost one would leave the client holding a
+/// link with no request to time out, and listening stays paused until one does.
+static CLOSED_LOST: AtomicBool = AtomicBool::new(false);
+
+/// False if the event was dropped.
+fn push(raw: Raw) -> bool {
     // A blocking lock here would stall Bluedroid's task. A lock held elsewhere, or
     // a full queue, drops the event, and the request waiting for it times out.
     let Ok(mut queue) = EVENTS.try_lock() else {
-        return;
+        return false;
     };
     if queue.len == DEPTH {
-        return;
+        return false;
     }
     let slot = (queue.head + queue.len) % DEPTH;
     queue.items[slot] = Some(raw);
     queue.len += 1;
+    true
 }
 
 fn pop() -> Option<Raw> {
@@ -141,11 +148,11 @@ impl Link {
             } => {
                 self.address = address;
                 let mut bda = address;
-                // SAFETY: `bda` is a local array of the six address bytes the stack
-                // reads. It stays valid for the call, and the stack copies it before
-                // the call returns.
                 checked(
                     "open",
+                    // SAFETY: `bda` is a local array of the six address bytes the stack
+                    // reads. It stays valid for the call, and the stack copies it before
+                    // the call returns.
                     sys::esp!(unsafe {
                         sys::esp_ble_gattc_open(
                             gattc_if,
@@ -242,7 +249,11 @@ impl Link {
     /// connection, and whether the app has registered.
     pub fn take(&mut self) -> Option<Done> {
         loop {
-            let raw = pop()?;
+            let raw = match pop() {
+                Some(raw) => raw,
+                None if CLOSED_LOST.swap(false, Ordering::AcqRel) => Raw::Closed,
+                None => return None,
+            };
             return Some(match raw {
                 Raw::App { ok, gattc_if } => {
                     if ok {
@@ -367,8 +378,17 @@ unsafe extern "C" fn on_gattc(
                 conn: open.conn_id,
             }
         }
-        sys::esp_gattc_cb_event_t_ESP_GATTC_CLOSE_EVT
-        | sys::esp_gattc_cb_event_t_ESP_GATTC_CANCEL_OPEN_EVT => Raw::Closed,
+        sys::esp_gattc_cb_event_t_ESP_GATTC_CLOSE_EVT => Raw::Closed,
+        sys::esp_gattc_cb_event_t_ESP_GATTC_CANCEL_OPEN_EVT => {
+            // SAFETY: `param` is non-null and this is CANCEL_OPEN, so `cancel_open`
+            // is the member set. The struct is copied whole.
+            let cancel = unsafe { (*param).cancel_open };
+            // A cancel that failed closed nothing, and the open may yet finish.
+            if cancel.status != sys::esp_gatt_status_t_ESP_GATT_OK {
+                return;
+            }
+            Raw::Closed
+        }
         sys::esp_gattc_cb_event_t_ESP_GATTC_CFG_MTU_EVT => {
             // SAFETY: `param` is non-null and this is CFG_MTU, so `cfg_mtu` is set.
             let mtu = unsafe { (*param).cfg_mtu };
@@ -434,5 +454,7 @@ unsafe extern "C" fn on_gattc(
         }
         _ => return,
     };
-    push(raw);
+    if !push(raw) && matches!(raw, Raw::Closed) {
+        CLOSED_LOST.store(true, Ordering::Release);
+    }
 }

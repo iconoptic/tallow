@@ -9,6 +9,7 @@ use chacha20poly1305::aead::{AeadInPlace, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
 use tallow_mesh_core::gatt::{parse, Reply, Request, Status, NOTIFY_MAX, VALUE_MAX};
 use tallow_mesh_core::mesh::{is_down, BEACON_MS};
+use tallow_mesh_core::ota::{decode_down, Down};
 use tallow_mesh_core::sightings::RECORD;
 use tallow_mesh_core::wire::{
     Command, Frame, FrameKind, Sealer, Watch, HEADER, MAX_FRAME, MAX_PAYLOAD, TAG, VERSION,
@@ -85,7 +86,7 @@ fn a_sealed_beacon_is_these_bytes() {
     assert_golden(
         FrameKind::Beacon,
         &payload,
-        "a6011000040302010d0c0b0a141312113552a8ec7193390a6490d475728525c311e60edf147dc879276fd4",
+        "a8011000040302010d0c0b0a141312113552a8ec7193390a6490d459d393bf2b8294c4bbcc766998ea939f",
     );
 }
 
@@ -96,7 +97,7 @@ fn a_sealed_report_is_these_bytes() {
     assert_golden(
         FrameKind::Report,
         &payload,
-        "a6021000040302010d0c0b0a141312119ead57138e0a6cce679236bb89f8bada65b4e37f47ff43e4f1f1",
+        "a8021000040302010d0c0b0a141312119ead57138e0a6cce67921f1c9892234b146ac03741a062a716bd",
     );
 }
 
@@ -110,7 +111,7 @@ fn a_sealed_name_is_these_bytes() {
     assert_golden(
         FrameKind::Name,
         &payload,
-        "a6031000040302010d0c0b0a141312119ead57138e0a6e466491d673a050b2f7672fdf132d589ecd2e259112fd69dfa99e19e2",
+        "a8031000040302010d0c0b0a141312119ead57138e0a6e466491d673a050b2f7672fdfd2be9df15448be76b52664184bc49656",
     );
 }
 
@@ -129,7 +130,7 @@ fn a_sealed_stats_frame_is_these_bytes() {
     assert_golden(
         FrameKind::Stats,
         &payload,
-        "a6041000040302010d0c0b0a1413121135169bce62f56c0a6790d470a216de9e120feaa0701a72be6f2b769df6f1c447d945377a79b0e752af465d7f1dab8367ee011fe4177e2ca55e699a0ba51caa3c0b7b1b957db1f1a1870147bf4895a53e2fbdc0ab857352c319f715b26b4a67b2db27696edaeb535e",
+        "a8041000040302010d0c0b0a1413121135169bce62f56c0a6790d470a216de9e120feaa0701a72be6f2b769df6f1c447d945377a79b0e752af465d7f1dab8367ee011fe4177e2ca55e699a0ba51caa3c0b7b1b957db1f1a1870147bf4895a53e2fbdc0ab857352c3ca9fb785a4685a7fc224e10fdc599dbe",
     );
 }
 
@@ -140,7 +141,7 @@ fn a_sealed_probe_is_these_bytes() {
     assert_golden(
         FrameKind::Probe,
         &payload,
-        "a6051000040302010d0c0b0a141312114c40afdc60f56c0af3075305dc55420794556a77177328bc",
+        "a8051000040302010d0c0b0a141312114c40afdc60f56c0adc68619f44c6f0bc700d641836364d87",
     );
 }
 
@@ -155,7 +156,7 @@ fn a_sealed_route_is_these_bytes() {
     assert_golden(
         FrameKind::Route,
         &payload,
-        "a6071000040302010d0c0b0a14131211e6129bce24c64e1bece7b225a77ea90ef416171b09bc8d189f9f73f614",
+        "a8071000040302010d0c0b0a14131211e6129bce24c64e1bece7b225a7670a1d8e7f87c9be98451240be361be0",
     );
 }
 
@@ -172,7 +173,7 @@ fn a_sealed_watch_is_these_bytes() {
         addresses,
     }
     .encode(&mut wire);
-    assert_golden(FrameKind::Watch, &wire[..length], "a6081000040302010d0c0b0a1413121100049964db39b1e49b81f643e243b8209d760dfbc81549650284514a0ab39c");
+    assert_golden(FrameKind::Watch, &wire[..length], "a8081000040302010d0c0b0a1413121100049964db39b1e49b81f643e243b804fe84a76339c4fe41ba7df268cdd767");
 }
 
 #[test]
@@ -257,7 +258,7 @@ fn a_sealed_command_is_these_bytes() {
     assert_golden(
         FrameKind::Command,
         &payload,
-        "a6061000040302010d0c0b0a14131211331685ce04f5500a6092f497fecc687ffc3a7570917f6448b6cb17",
+        "a8061000040302010d0c0b0a14131211331685ce04f5500a6092f47b5fdb02e86ce92a4d4979056779f0e2",
     );
 }
 
@@ -535,7 +536,7 @@ fn a_sealed_gatt_connect_is_these_bytes() {
     assert_golden(
         FrameKind::Gatt,
         &payload,
-        "a60a1000040302010d0c0b0a1413121136179b64db39b1e49b91c121b7e637702fd63c28da06c6c13d3e",
+        "a80a1000040302010d0c0b0a1413121136179b64db39b1e49b91a582c580a0e0dd8b19e0d3a7e4846209",
     );
 }
 
@@ -546,7 +547,7 @@ fn a_sealed_gatt_write_is_these_bytes() {
     assert_golden(
         FrameKind::Gatt,
         &payload,
-        "a60a1000040302010d0c0b0a1413121137169aef60f46e095afd40ca78c0e8859034c8f3f10199ba",
+        "a80a1000040302010d0c0b0a1413121137169aef60f46e09435e4f64e130973b6decc19410c5bd85",
     );
 }
 
@@ -557,7 +558,7 @@ fn a_sealed_gatt_answer_is_these_bytes() {
     assert_golden(
         FrameKind::GattUp,
         &payload,
-        "a60c1000040302010d0c0b0a1413121137169acebe5842899ec54ed58fc7743588ceb60adad4",
+        "a80c1000040302010d0c0b0a1413121137169acebe5826eaac5fb7453e7d51ed816fd5cdfe9f",
     );
 }
 
@@ -568,16 +569,68 @@ fn a_sealed_gatt_notification_is_these_bytes() {
     assert_golden(
         FrameKind::GattUp,
         &payload,
-        "a60c1000040302010d0c0b0a14131211361699ef600a6c8a929474a2d916757302becf069d1b32eb",
+        "a80c1000040302010d0c0b0a14131211361699ef600a6c8a7bf5823c42872329df75c9a7bbde56b6",
     );
 }
 
 #[test]
-fn the_gatt_kinds_go_down_and_up_and_decode_from_their_bytes() {
+fn a_sealed_ota_chunk_is_these_bytes() {
+    // Chunk, offset 0, two bytes 0x11 0x22.
+    let payload = [2, 0x00, 0x00, 0x00, 0x00, 0x11, 0x22];
+    assert_golden(
+        FrameKind::Ota,
+        &payload,
+        "a8091000040302010d0c0b0a1413121136169bce60e44e21ba751603a16fabba20b0d639ec8f6b",
+    );
+}
+
+#[test]
+fn a_sealed_ota_begin_is_these_bytes() {
+    // Size 0x00001000, product 1, version 7, digest of 0x11s, signature of 0x22s.
+    let mut payload = [0u8; 106];
+    payload[0] = 1;
+    payload[1..5].copy_from_slice(&0x1000u32.to_le_bytes());
+    payload[5] = 1;
+    payload[6..10].copy_from_slice(&7u32.to_le_bytes());
+    payload[10..42].fill(0x11);
+    payload[42..106].fill(0x22);
+    assert_eq!(
+        decode_down(&payload),
+        Some(Down::Begin {
+            size: 0x1000,
+            product: 1,
+            version: 7,
+            digest: [0x11; 32],
+            signature: [0x22; 64],
+        })
+    );
+    assert_golden(
+        FrameKind::Ota,
+        &payload,
+        "a8091000040302010d0c0b0a1413121135168bce60f46b0a6490c561b707cf8f061efbb1670b63af793a678cefe0d556c154266b62a1f643b5577f5d3389a145c1233dc63b5c0e87734bb829973e881e385939b74d93d383b623659d7eb7871c189fe289a552a8b1c694389f34ab4b8551cb18be05a395c8bcb5b97c0886bdd516a52f578521f56fcda5",
+    );
+}
+
+#[test]
+fn a_sealed_ota_result_is_these_bytes() {
+    // Result, ok.
+    let payload = [2, 0];
+    assert_golden(
+        FrameKind::OtaUp,
+        &payload,
+        "a80d1000040302010d0c0b0a14131211361680746ca27dce177133724ef989bc94a3",
+    );
+}
+
+#[test]
+fn the_gatt_and_ota_kinds_go_down_and_up_and_decode_from_their_bytes() {
+    assert_eq!(FrameKind::from_u8(9), Some(FrameKind::Ota));
     assert_eq!(FrameKind::from_u8(10), Some(FrameKind::Gatt));
     assert_eq!(FrameKind::from_u8(12), Some(FrameKind::GattUp));
-    assert_eq!(FrameKind::from_u8(9), None, "nine is still unused");
+    assert_eq!(FrameKind::from_u8(13), Some(FrameKind::OtaUp));
+    assert!(is_down(FrameKind::Ota));
     assert!(is_down(FrameKind::Gatt));
+    assert!(!is_down(FrameKind::OtaUp), "status travels up, not down");
     assert!(!is_down(FrameKind::GattUp), "answers travel up, not down");
 }
 

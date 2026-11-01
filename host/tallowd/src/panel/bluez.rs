@@ -83,6 +83,9 @@ impl Transport for BluerTransport {
     async fn connect(&mut self, timeout: Duration) -> Result<(), String> {
         let adapter = self.adapter().await?;
         let device = adapter.device(self.address).map_err(text)?;
+        // Stored first, so `disconnect` can drop a link that a later step failed on.
+        // The session calls it on every failed connect, and the box takes one link.
+        self.device = Some(device.clone());
         tokio::time::timeout(timeout, device.connect())
             .await
             .map_err(|_| "connect timed out".to_owned())?
@@ -107,7 +110,6 @@ impl Transport for BluerTransport {
         };
         let notify = read.notify().await.map_err(text)?;
         let events = device.events().await.map_err(text)?;
-        self.device = Some(device);
         self.write = Some(write);
         self.notify = Some(Box::pin(notify));
         self.events = Some(Box::pin(events));

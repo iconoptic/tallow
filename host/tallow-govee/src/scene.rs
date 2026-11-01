@@ -141,12 +141,22 @@ fn bytes(value: &Value) -> Option<Vec<u8>> {
         .collect()
 }
 
-/// Lower-cases and collapses whitespace, the way `scene_entry` compares names.
+/// Lower-cases one character, and folds sharp s to `ss`. This is not all of
+/// Python's `str.casefold`: other characters with a full folding, such as `ſ`,
+/// `ς`, and `ﬁ`, stay as `to_lowercase` leaves them. No catalogue name holds one,
+/// so a lookup only differs from the Python on text no scene name could match.
+fn fold_char(ch: char, out: &mut String) {
+    match ch {
+        'ß' | 'ẞ' => out.push_str("ss"),
+        other => other.to_lowercase().for_each(|folded| out.push(folded)),
+    }
+}
+
+/// Case-folds and collapses whitespace, the way `scene_entry` compares names.
 fn normalise(text: &str) -> String {
-    text.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase()
+    let mut folded = String::new();
+    text.chars().for_each(|ch| fold_char(ch, &mut folded));
+    folded.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Finds a scene by its key or its label, ignoring case and extra spaces.

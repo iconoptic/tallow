@@ -2,7 +2,7 @@
 
 Routing and frames, with no radio and no OS. The firmware in `../node` supplies the clock and the bytes. `tests/sim.rs` runs the mesh on a pretend radio. `tests/routing.rs` covers parent changes one node at a time. `tests/golden.rs` locks one sealed frame of each kind, and the payloads the real code builds.
 
-The header is in `src/wire.rs`. Version is `0xA6`. Boards on another version ignore these frames, so every board is flashed together. Version `0xA6` added kinds 10 and 12 for GATT (T1.10). Version `0xA5` was the last one before it.
+The header is in `src/wire.rs`. Version is `0xA8`. Boards on another version ignore these frames, so every board is flashed together. Version `0xA8` added the product and version to the OTA Begin. Version `0xA7` added kinds 9 and 13 for OTA. Version `0xA6` added kinds 10 and 12 for GATT (T1.10). Version `0xA5` was the last one before that.
 
 | Offset | Bytes | Field |
 | --- | --- | --- |
@@ -151,11 +151,11 @@ Sent only by the root, with `Mesh::send_down`, and only for a downward kind (`me
 | 0 | 4 | target node id, little-endian |
 | 4 | rest | payload, given to the target as `Event::Down` |
 
-A node learns a route from each upward frame it receives: report, name, stats, probe, route, or GATT answer. The route is the origin's id and the neighbour the frame came from. The table holds 32 routes, and the one refreshed longest ago is replaced when it is full. A route expires 60 seconds after its last upward frame. A downward frame with no live route is dropped and counted in `down_drops`. Beacons and commands do not teach routes. Ota will be a downward kind too. `GattUp` is an upward kind, so it does not use the downward path.
+A node learns a route from each upward frame it receives: report, name, stats, probe, route, GATT answer, or OTA status and result. The route is the origin's id and the neighbour the frame came from. The table holds 32 routes, and the one refreshed longest ago is replaced when it is full. A route expires 60 seconds after its last upward frame. A downward frame with no live route is dropped and counted in `down_drops`. Beacons and commands do not teach routes. `Ota` is a downward kind. `OtaUp` and `GattUp` travel up, so they do not use the downward path.
 
 ## Gatt, kind 10, downward
 
-The host's request to one node's BLE connection. The root sends it with `Mesh::send_down`, so the frame's payload starts with the target id, and the node sees the request after it. The node's client is `src/gatt.rs`, and `gatt::parse` reads these bytes. Every request has the same first three bytes: an id, then an operation. The host must not reuse an id for a new request.
+The host's request to one node's BLE connection. The root sends it with `Mesh::send_down`, so the frame's payload starts with the target id, and the node sees the request after it. The node's client is `src/gatt.rs`. `gatt::parse` reads these bytes, and `gatt::encode` writes a request `parse` accepts. The operations are the ones below. There is no new operation byte. Every request has the same first three bytes: an id, then an operation. The host must not reuse an id for a new request.
 
 | Offset | Bytes | Field |
 | --- | --- | --- |
@@ -178,7 +178,7 @@ Connect goes ahead only to an address on the whitelist. An empty list refuses ev
 
 ## GattUp, kind 12, upward
 
-What a node sends back to the host: the answer to a request, a notification from the connected device, or a report that the link closed. Each one is sent with `Mesh::send_up`, and the root prints it as an `@U 12` line. The first byte after the id, or link id, is the kind.
+What a node sends back to the host: the answer to a request, a notification from the connected device, or a report that the link closed. Each one is sent with `Mesh::send_up`, and the root prints it as an `@U 12` line. The first byte after the id, or link id, is the kind. `Reply::encode` writes this payload. `Reply::decode` reads what `Reply::encode` wrote. A short buffer, an unknown kind, an unknown status, or a value past the kind's limit is `None`.
 
 | Offset | Bytes | Field |
 | --- | --- | --- |
@@ -202,3 +202,64 @@ Kind 2, a notification, is the connected device's bytes, up to 213, and they are
 Kind 3, closed, has no more bytes. It is sent once when the link drops with no request in flight. A request in flight when the link drops answers `NotConnected` instead.
 
 A node that repeats the request id of the last finished request sends that answer again, and does not run the operation again. So a lost answer costs one more frame, not a second write.
+
+## Ota, kind 9, downward
+
+One image, sent to one node with `Mesh::send_down`. The frame payload starts with the target id. The node sees the bytes below, and `ota::decode_down` reads them. `ota::encode_down` writes what that reads. A short buffer, an unknown sub-kind, or a body of the wrong length is `None`.
+
+| Offset | Bytes | Field |
+| --- | --- | --- |
+| 0 | 1 | sub-kind: 1 begin, 2 chunk, 3 query, 4 commit |
+
+Begin is 106 bytes, so 110 with the target id:
+
+| Offset | Bytes | Field |
+| --- | --- | --- |
+| 1 | 4 | image size, little-endian. 0, or more than `0x1C0000`, is refused |
+| 5 | 1 | product: 1 mesh node, 2 `toby-cam-0` |
+| 6 | 4 | version, little-endian |
+| 10 | 32 | SHA-256 of the image |
+| 42 | 64 | Ed25519 signature over the signed message below |
+
+The signed message is 50 bytes, from `ota::signed_message`:
+
+| Offset | Bytes | Field |
+| --- | --- | --- |
+| 0 | 13 | `tallow-ota-v1` |
+| 13 | 1 | product |
+| 14 | 4 | version, little-endian |
+| 18 | 32 | SHA-256 of the image |
+
+Begin is checked before any flash action, in this order: size, product, the version floor, then the signature. A refused Begin answers with a Result, yields no action, and leaves any image in progress alone. A version equal to the floor is a retry and is accepted. The floor is what the board last confirmed, passed to `Receiver::new`.
+
+Chunk is 6 to 175 bytes:
+
+| Offset | Bytes | Field |
+| --- | --- | --- |
+| 1 | 4 | offset, little-endian, a multiple of 170 |
+| 5 | 1 to 170 | the bytes at that offset. A chunk that is not the last is 170 bytes. The last is whatever remains |
+
+Query is 3 bytes: offset 1, window number, little-endian. Commit is the one sub-kind byte and nothing else.
+
+`ota::Receiver` accepts a chunk only when its offset is the next byte not yet hashed. That chunk is hashed into the running SHA-256, and the action is to write those bytes at that offset. A chunk already hashed is ignored. A chunk ahead of that cursor is not stored, so a later Status still names it. A second Begin drops the image in progress and starts the new one. Commit first checks the floor again. The floor can rise after Begin, when the running image is confirmed, so a Commit whose version is now below it answers `5` (`Downgrade`). Otherwise Commit hashes what was written and checks it against Begin's digest, then checks the signature again with the public key the caller passes in. A missing chunk, a bad hash, or a bad signature yields no finish. Any Commit that does not end `Ok` queues an abort and clears the image, so the next Begin starts clean. Finish is the only action that may activate the image. It carries the version that was signed, and that does not raise the floor. The board does that once the image is confirmed.
+
+## OtaUp, kind 13, upward
+
+What the receiver sends back, with `Mesh::send_up`. The root prints it as an `@U 13` line. `ota::encode_up` writes this payload. `ota::decode_up` reads it.
+
+| Offset | Bytes | Field |
+| --- | --- | --- |
+| 0 | 1 | sub-kind: 1 status, 2 result |
+
+Status, 35 bytes:
+
+| Offset | Bytes | Field |
+| --- | --- | --- |
+| 1 | 2 | window, little-endian. One window is 256 chunks |
+| 3 | 32 | bitmap. Bit `i` set means chunk `window * 256 + i` is missing. Bits past the image are clear |
+
+Result, 2 bytes:
+
+| Offset | Bytes | Field |
+| --- | --- | --- |
+| 1 | 1 | code: 0 ok, 1 bad signature, 2 bad hash, 3 missing chunks, 4 refused, 5 below the version floor (from Begin, or from Commit when the floor rose after Begin), 6 another product |

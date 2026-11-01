@@ -90,6 +90,11 @@ pub fn node_stats(payload: &[u8]) -> Option<NodeStats> {
     })
 }
 
+/// A `GattUp` payload: an answer, a notification, or a closed link.
+pub fn gatt_up(payload: &[u8]) -> Option<tallow_mesh_core::gatt::Reply> {
+    tallow_mesh_core::gatt::Reply::decode(payload)
+}
+
 fn nonzero(id: u32) -> Option<u32> {
     (id != 0).then_some(id)
 }
@@ -213,5 +218,22 @@ mod tests {
         assert_eq!(decoded.parent, None);
         assert_eq!(decoded.stats, stats);
         assert_eq!(node_stats(&[0u8; 89]), None);
+    }
+
+    #[test]
+    fn a_gatt_answer_decodes_through_the_core() {
+        use tallow_mesh_core::gatt::{Reply, Status, VALUE_MAX};
+        use tallow_mesh_core::wire::MAX_PAYLOAD;
+        let mut value = [0u8; VALUE_MAX];
+        value[..2].copy_from_slice(&[0xde, 0xad]);
+        let reply = Reply::Answer {
+            id: 3,
+            status: Status::Ok,
+            len: 2,
+            value,
+        };
+        let mut out = [0u8; MAX_PAYLOAD];
+        let length = reply.encode(&mut out);
+        assert_eq!(gatt_up(&out[..length]), Some(reply));
     }
 }

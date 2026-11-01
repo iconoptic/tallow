@@ -20,6 +20,7 @@ debug = "line-tables-only"
 
 [dependencies]
 esp-idf-svc = { version = "0.53", default-features = false, features = ["std", "binstart", "native", "alloc", "experimental"] }
+tallow-mesh-core = { path = "../mesh/core" }
 
 [build-dependencies]
 embuild = "0.33"

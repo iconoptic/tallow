@@ -17,7 +17,7 @@ use tallow_broker::http::{
     build_upstream, classify, parse_request, parse_upstream, read_message, respond, status_of,
     Header,
 };
-use tallow_broker::serve::{handle_connection, serve, GuestListener};
+use tallow_broker::serve::{handle_connection, handle_within, serve, GuestListener};
 use tallow_broker::upstream::forward;
 use tallow_broker::{Failure, MAX_REQUEST, MAX_RESPONSE, PORT, REFUSED_HEADERS};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -1111,4 +1111,35 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack
         .windows(needle.len())
         .any(|window| window == needle)
+}
+
+/// A guest that stops reading cannot hold the one-at-a-time accept loop.
+#[tokio::test]
+async fn a_guest_that_stops_reading_cannot_hold_the_broker() {
+    let dir = TempDir::new("stalled-reader");
+    let missing = dir.path().join("agent.sock");
+    for line in ["GET /api/state HTTP/1.1", "POST /login HTTP/1.1"] {
+        let (mut guest, mut server) = tokio::io::duplex(8);
+        let request = raw(line, &[("Content-Length", "0")], b"");
+        let writer = tokio::spawn(async move {
+            let _ = guest.write_all(&request).await;
+            // Holds the stream open and never reads.
+            tokio::time::sleep(Duration::from_secs(3600)).await;
+            drop(guest);
+        });
+        let answered = tokio::time::timeout(
+            Duration::from_secs(2),
+            handle_within(
+                &mut server,
+                "unit-token",
+                &missing,
+                3,
+                3,
+                Duration::from_millis(50),
+            ),
+        )
+        .await;
+        writer.abort();
+        assert!(answered.is_ok(), "{line} held the connection");
+    }
 }

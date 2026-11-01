@@ -17,3 +17,19 @@ CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 
 # Matches the ESPHome nodes, and makes a 2 ms delay a real delay.
 CONFIG_FREERTOS_HZ=1000
+
+# The first flash of this board changes the bootloader, which is the only
+# place rollback is implemented. cam-flash passes the bootloader this build
+# produces, and it erases otadata so the board boots app0, which it just wrote.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# The ESPHome image runs the CPU at 240 MHz. The previous image left the
+# IDF default, 160.
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
+# Wi-Fi and the stream run on the main task. The IDF default stack is too small.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+
+# The rollback timer marks the image invalid and reboots on this task, so it runs
+# the shutdown handlers here. The same as the mesh node.
+CONFIG_ESP_TIMER_TASK_STACK_SIZE=6144

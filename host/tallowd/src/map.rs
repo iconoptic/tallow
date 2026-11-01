@@ -13,6 +13,9 @@ use anyhow::Context;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use tallow_mesh_core::mesh::Reason;
 use tallow_mesh_core::sightings::Kind;
@@ -249,12 +252,25 @@ impl Map {
     }
 
     /// Write the map to `path` through `path.tmp`, so a reader never sees half a file.
+    /// The map holds device addresses, so the file is private to this user.
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
         let mut temporary_name = path.as_os_str().to_owned();
         temporary_name.push(".tmp");
         let temporary = Path::new(&temporary_name);
         let text = serde_json::to_string_pretty(&self.to_json()).context("encode the map")?;
-        fs::write(temporary, text).with_context(|| format!("write {}", temporary.display()))?;
+        fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(temporary)
+            .and_then(|mut file| file.write_all(text.as_bytes()))
+            .with_context(|| format!("write {}", temporary.display()))?;
+        // `.mode()` applies only when the file is created, so a stale `.tmp`
+        // left at a looser mode by an earlier run would survive the truncate.
+        // The map holds device addresses, so force 0600 before the rename.
+        fs::set_permissions(temporary, fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("chmod {}", temporary.display()))?;
         fs::rename(temporary, path).with_context(|| format!("rename into {}", path.display()))?;
         Ok(())
     }
@@ -452,6 +468,8 @@ pub fn handle(world: &mut Map, line: &Line, now: f64, quiet: bool) -> Vec<String
                 }
             }
         }
+        // An answer, a notification, or a closed link. Not a device the mesh heard.
+        Some(FrameKind::GattUp) => {}
         // Probes and the rest are not kept. Python's handle ignores them too.
         _ => {}
     }
@@ -775,6 +793,22 @@ mod tests {
     }
 
     #[test]
+    fn a_gatt_answer_is_not_counted_as_a_device() {
+        let mut world = Map::default();
+        let line = Line {
+            frame: u32::from(FrameKind::GattUp as u8),
+            origin: "00000005".into(),
+            boot: 1,
+            seq: 1,
+            hops: 1,
+            rssi: -40,
+            payload: vec![0x03, 0x00, 0x01, 0x00, 0xde, 0xad],
+        };
+        assert!(handle(&mut world, &line, FIXED_NOW, false).is_empty());
+        assert_eq!(world.counts(), (0, 0));
+    }
+
+    #[test]
     fn noise_is_dropped_and_other_at_lines_are_printed() {
         let mut recorder = Recorder::default();
         let lines = [
@@ -788,6 +822,7 @@ mod tests {
 
     #[test]
     fn the_saved_file_parses_back_to_the_same_map_and_leaves_no_temporary() {
+        use std::os::unix::fs::PermissionsExt;
         let dir = std::env::temp_dir().join(format!("tallowd-map-{}", std::process::id()));
         fs::create_dir_all(&dir).expect("temp dir");
         let path = dir.join("map.json");
@@ -797,6 +832,8 @@ mod tests {
             serde_json::from_str(&fs::read_to_string(&path).expect("read")).expect("parse");
         assert_eq!(saved, world.to_json());
         assert!(!dir.join("map.json.tmp").exists());
+        let mode = fs::metadata(&path).expect("stat").permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "the map holds device addresses");
         fs::remove_dir_all(&dir).expect("clean up");
     }
 

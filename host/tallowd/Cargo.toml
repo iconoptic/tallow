@@ -23,5 +23,6 @@ tallow-govee = { path = "../tallow-govee", features = ["ble"] }
 tallow-mesh-core = { path = "../../firmware/mesh/core" }
 
 [dev-dependencies]
+ed25519-compact = { version = "2", default-features = false, features = ["opt_size"] }
 tokio = { version = "1", features = ["macros", "rt", "test-util"] }
 tower = { version = "0.5", default-features = false, features = ["util"] }

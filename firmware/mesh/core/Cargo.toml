@@ -9,5 +9,8 @@ path = "src/lib.rs"
 
 [dependencies]
 chacha20poly1305 = { version = "0.10", default-features = false }
-ed25519-compact = { version = "2", default-features = false }
+# `opt_size` keeps the field arithmetic out of line. Without it, verify's
+# scalarmult is one function larger than an Xtensa `l32r` can reach, and the
+# node image does not link.
+ed25519-compact = { version = "2", default-features = false, features = ["opt_size"] }
 sha2 = { version = "0.10", default-features = false }

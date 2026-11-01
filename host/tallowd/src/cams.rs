@@ -10,6 +10,7 @@ use std::io;
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, SystemTime};
 
@@ -388,11 +389,17 @@ pub fn save_inventory(path: &Path, raw: &Value) -> Result<(String, Vec<Cam>), In
     let text =
         serde_json::to_string_pretty(&document).map_err(|error| invalid(error.to_string()))?;
     let text = ascii_json(&text) + "\n";
+    // Each writer gets its own temp file, so two saves cannot truncate each other.
+    static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
+    let seq = TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
     let mut temp_name = path.file_name().unwrap_or_default().to_os_string();
-    temp_name.push(".tmp");
+    temp_name.push(format!(".{}.{seq}.tmp", std::process::id()));
     let temp = path.with_file_name(temp_name);
-    std::fs::write(&temp, text).map_err(InventoryError::Io)?;
-    std::fs::rename(&temp, path).map_err(InventoryError::Io)?;
+    let written = std::fs::write(&temp, text).and_then(|()| std::fs::rename(&temp, path));
+    if written.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    written.map_err(InventoryError::Io)?;
     Ok((title, cams))
 }
 
@@ -736,6 +743,11 @@ struct State {
     viewers: Vec<(u64, Arc<Queue>)>,
     next_id: u64,
     pump: Option<JoinHandle<()>>,
+    /// Counts pumps, so one that ended long ago cannot speak for the next.
+    generation: u64,
+    /// The current pump has told its viewers it ended, and its task may not be
+    /// finished yet. A new viewer must not wait on it.
+    ended: bool,
     stopping: bool,
     timer: Option<(u64, AbortHandle)>,
     timer_seq: u64,
@@ -760,10 +772,23 @@ struct Inner {
 }
 
 impl Inner {
-    fn offer_all(&self, item: Option<Frame>) {
+    fn offer_all(&self, frame: Frame) {
         let state = lock(&self.state);
         for (_, queue) in &state.viewers {
-            queue.offer(item.clone());
+            queue.offer(Some(frame.clone()));
+        }
+    }
+
+    /// The pump of this generation is done. An older pump, one a cancelled join
+    /// let go of, has nobody left to tell.
+    fn end(&self, generation: u64) {
+        let mut state = lock(&self.state);
+        if state.generation != generation {
+            return;
+        }
+        state.ended = true;
+        for (_, queue) in &state.viewers {
+            queue.offer(None);
         }
     }
 
@@ -793,18 +818,18 @@ impl Inner {
 }
 
 /// Tells every viewer the stream has ended, however the pump ends.
-struct Ending(Arc<Inner>);
+struct Ending(Arc<Inner>, u64);
 
 impl Drop for Ending {
     fn drop(&mut self) {
-        self.0.offer_all(None);
+        self.0.end(self.1);
     }
 }
 
-async fn run_pump(inner: Arc<Inner>, mut upstream: Upstream) {
-    let _ending = Ending(Arc::clone(&inner));
+async fn run_pump(inner: Arc<Inner>, mut upstream: Upstream, generation: u64) {
+    let _ending = Ending(Arc::clone(&inner), generation);
     while let Some(frame) = upstream.next_frame().await {
-        inner.offer_all(Some(frame));
+        inner.offer_all(frame);
     }
     // `upstream` drops first (closing the socket), then `_ending` tells the viewers.
 }
@@ -850,9 +875,14 @@ impl Hub {
             if let Some((_, timer)) = state.timer.take() {
                 timer.abort();
             }
-            let ended = state.pump.as_ref().is_some_and(JoinHandle::is_finished)
+            let ended = state.ended
+                || state.pump.as_ref().is_some_and(JoinHandle::is_finished)
                 || (state.pump.is_some() && state.stopping);
             if ended {
+                // Cleared with the take: a join cancelled at the await below must
+                // not leave the next pump looking as if it were being hung up on.
+                state.stopping = false;
+                state.ended = false;
                 state.pump.take()
             } else {
                 None
@@ -861,27 +891,38 @@ impl Hub {
         if let Some(pump) = ended {
             // It ended, or is being hung up on. Let its socket close before asking the cam again.
             let _ = pump.await;
-            lock(&self.inner.state).stopping = false;
         }
         let needs_dial = lock(&self.inner.state).pump.is_none();
         if needs_dial {
             let upstream = self.dial_now().await?;
-            let task = tokio::spawn(run_pump(Arc::clone(&self.inner), upstream));
-            lock(&self.inner.state).pump = Some(task);
-        }
-        let queue = Arc::new(Queue::new());
-        let id = {
+            // Under the lock, so the pump cannot end before its generation is set.
             let mut state = lock(&self.inner.state);
-            state.next_id += 1;
-            let id = state.next_id;
-            state.viewers.push((id, Arc::clone(&queue)));
-            id
-        };
-        Ok(Feed {
+            state.generation += 1;
+            state.ended = false;
+            let generation = state.generation;
+            let inner = Arc::clone(&self.inner);
+            state.pump = Some(tokio::spawn(run_pump(inner, upstream, generation)));
+        }
+        Ok(self.add_viewer())
+    }
+
+    /// Adds a viewer. The pump may have ended since `join` looked, and it told
+    /// only the viewers it knew about, so this one gets the same news.
+    fn add_viewer(&self) -> Feed {
+        let queue = Arc::new(Queue::new());
+        let mut state = lock(&self.inner.state);
+        state.next_id += 1;
+        let id = state.next_id;
+        state.viewers.push((id, Arc::clone(&queue)));
+        if state.ended {
+            queue.offer(None);
+        }
+        drop(state);
+        Feed {
             hub: self.clone(),
             id,
             queue,
-        })
+        }
     }
 
     /// Dial the cam, but not while it is still catching its breath from the last failure.
@@ -1009,7 +1050,7 @@ pub fn part(frame: &[u8]) -> Vec<u8> {
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize};
     use tokio::net::TcpListener;
 
     const STREAM: &str = "multipart/x-mixed-replace;boundary=123456789";
@@ -1314,6 +1355,34 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_inventory_saves_all_land_on_a_whole_file() {
+        let scratch = Scratch::new("concurrent-save");
+        let path = Arc::new(scratch.path("cams.json"));
+        let writers: Vec<_> = (0..8)
+            .map(|writer| {
+                let path = Arc::clone(&path);
+                std::thread::spawn(move || {
+                    for _ in 0..20 {
+                        let raw = json!({"title": format!("Title {writer}"), "cams": []});
+                        save_inventory(&path, &raw).expect("a save during other saves");
+                    }
+                })
+            })
+            .collect();
+        for writer in writers {
+            writer.join().expect("a writer");
+        }
+        load_inventory(&path).expect("a whole file");
+        let parent = path.parent().expect("a parent");
+        let left: Vec<_> = std::fs::read_dir(parent)
+            .expect("list")
+            .map(|entry| entry.expect("entry").file_name())
+            .filter(|name| name.to_string_lossy().ends_with(".tmp"))
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
+    }
+
+    #[test]
     fn save_then_load_round_trips_the_inventory() {
         let scratch = Scratch::new("round-trip");
         let path = scratch.path("cams.json");
@@ -1549,6 +1618,59 @@ mod tests {
     }
 
     // GentleTest
+
+    #[tokio::test(start_paused = true)]
+    async fn a_viewer_who_joins_as_the_stream_ends_is_told_it_ended() {
+        let fake = Fake::spawn(STREAM, false, false, None).await;
+        let hub = Hub::new(fake.cam(), dialer(Tuning::default()), Tuning::default());
+        let mut first = hub.join().await.expect("first viewer");
+        frame(&mut first).await;
+        // The pump has told its viewers, and its task has not finished yet.
+        let generation = lock(&hub.inner.state).generation;
+        hub.inner.end(generation);
+        let mut late = hub.add_viewer();
+        let told = timeout(Duration::from_secs(1), late.next_frame()).await;
+        assert!(matches!(told, Ok(None)), "the late viewer waits forever");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_pump_from_an_older_generation_cannot_end_the_stream() {
+        let fake = Fake::spawn(STREAM, false, false, None).await;
+        let hub = Hub::new(fake.cam(), dialer(Tuning::default()), Tuning::default());
+        let mut first = hub.join().await.expect("first viewer");
+        frame(&mut first).await;
+        let generation = lock(&hub.inner.state).generation;
+        hub.inner.end(generation - 1);
+        assert!(!lock(&hub.inner.state).ended);
+        frame(&mut first).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_join_cancelled_during_a_hang_up_leaves_the_hub_usable() {
+        let fake = Fake::spawn(STREAM, false, false, None).await;
+        let hub = Hub::new(fake.cam(), dialer(Tuning::default()), Tuning::default());
+        let mut first = hub.join().await.expect("first viewer");
+        frame(&mut first).await;
+        drop(first);
+        let token = lock(&hub.inner.state)
+            .timer
+            .as_ref()
+            .map(|(token, _)| *token)
+            .expect("a timer is armed");
+        hub.inner.hang_up(token);
+        // This join takes the pump and waits on it. The zero timeout drops it there.
+        assert!(timeout(Duration::ZERO, hub.join()).await.is_err());
+        assert!(!lock(&hub.inner.state).stopping);
+        settle().await;
+        let mut second = timeout(Duration::from_secs(5), hub.join())
+            .await
+            .expect("the join returned")
+            .expect("a new connection");
+        frame(&mut second).await;
+        // With `stopping` left set, this join would wait on the live pump.
+        let third = timeout(Duration::from_secs(5), hub.join()).await;
+        assert!(matches!(third, Ok(Ok(_))), "the hub is stuck");
+    }
 
     #[tokio::test(start_paused = true)]
     async fn a_quick_stop_and_watch_keeps_the_same_connection() {

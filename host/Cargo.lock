@@ -1181,6 +1181,7 @@ dependencies = [
  "axum",
  "bluer",
  "chrono",
+ "ed25519-compact",
  "futures-util",
  "hmac",
  "serde",

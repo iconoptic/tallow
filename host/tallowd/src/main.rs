@@ -6,12 +6,14 @@
 #[cfg_attr(not(test), allow(dead_code))]
 mod cams;
 mod decode;
+mod gatt;
 mod identity;
 mod irk;
 #[cfg_attr(not(test), allow(dead_code))]
 mod library;
 mod link;
 mod map;
+mod ota;
 mod panel;
 mod rooms;
 #[cfg_attr(not(test), allow(dead_code))]
@@ -47,9 +49,23 @@ fn main() {
                 std::process::exit(1);
             }
         },
+        Some("gatt") => match gatt::command(&argv[1..]) {
+            Ok(code) => std::process::exit(code),
+            Err(err) => {
+                eprintln!("tallowd gatt: {err:#}");
+                std::process::exit(1);
+            }
+        },
+        Some("ota") => match ota::command(&argv[1..]) {
+            Ok(code) => std::process::exit(code),
+            Err(err) => {
+                eprintln!("tallowd ota: {err:#}");
+                std::process::exit(1);
+            }
+        },
         Some(other) => {
             eprintln!(
-                "tallowd: unknown command {other}. The commands are: tallowd panel, tallowd run"
+                "tallowd: unknown command {other}. The commands are: tallowd panel, tallowd run, tallowd gatt, tallowd ota"
             );
             std::process::exit(2);
         }

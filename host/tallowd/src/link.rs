@@ -63,6 +63,14 @@ pub struct Line {
     pub payload: Vec<u8>,
 }
 
+impl Line {
+    /// True when this frame came from the board with id `target`. The root
+    /// forwards every node's frames, so an answer is only an answer from there.
+    pub fn is_from(&self, target: u32) -> bool {
+        u32::from_str_radix(&self.origin, 16) == Ok(target)
+    }
+}
+
 /// The root's serial port. Opening it resets the board.
 pub struct Link {
     port: Box<dyn SerialPort>,
@@ -96,11 +104,17 @@ impl Link {
     /// Send scan settings to every node. Returns the command id, which a node's
     /// stats echo once it has them.
     pub fn send_command(&mut self, settings: &ScanSettings) -> anyhow::Result<u16> {
-        self.command_id = self.command_id.wrapping_add(1);
-        self.port
-            .write_all(command_line(self.command_id, settings).as_bytes())?;
+        let id = self.next_id();
+        self.port.write_all(command_line(id, settings).as_bytes())?;
         self.port.flush()?;
-        Ok(self.command_id)
+        Ok(id)
+    }
+
+    /// The next id on this port. The first comes from the clock, so a node that
+    /// keeps its last answer across a run does not see the same id again.
+    pub fn next_id(&mut self) -> u16 {
+        self.command_id = self.command_id.wrapping_add(1);
+        self.command_id
     }
 
     /// Send a line from [`watch_line`]. The root floods it to every node.
@@ -108,6 +122,23 @@ impl Link {
         self.port.write_all(line)?;
         self.port.flush()?;
         Ok(())
+    }
+
+    /// Send a GATT or OTA line. The caller has already refused one longer than the node's buffer.
+    pub fn send_mesh(&mut self, line: &str) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            crate::gatt::fits(line),
+            "the line is longer than the node's {} byte buffer",
+            crate::gatt::LINE_MAX
+        );
+        self.port.write_all(line.as_bytes())?;
+        self.port.flush()?;
+        Ok(())
+    }
+
+    /// Send a GATT line. The caller has already refused one longer than the node's buffer.
+    pub fn send_gatt(&mut self, line: &str) -> anyhow::Result<()> {
+        self.send_mesh(line)
     }
 
     /// Send `H\n` when a second has passed, then return complete `@` lines.
@@ -320,6 +351,13 @@ mod tests {
         assert_eq!(line.hops, 1);
         assert_eq!(line.rssi, -60);
         assert_eq!(line.payload, [0x0a, 0x0b]);
+    }
+
+    #[test]
+    fn a_line_knows_which_board_it_came_from() {
+        let line = parse_line("@U 12 0a0b0c0d 1 1 1 -40").expect("up line");
+        assert!(line.is_from(0x0a0b_0c0d));
+        assert!(!line.is_from(5));
     }
 
     #[test]

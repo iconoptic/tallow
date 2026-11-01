@@ -287,7 +287,8 @@ impl Bluetooth {
         Ok(())
     }
 
-    /// Tells paging and inquiry whether the GATT client holds a connection.
+    /// Tells paging and inquiry to hold off: the GATT client has a connection, or
+    /// an image is being written.
     pub fn set_link_busy(&self, busy: bool) {
         self.heard.link_busy.store(busy, Ordering::Release);
     }
@@ -329,6 +330,19 @@ impl Bluetooth {
         let window = heard.inquiry_window_ms.load(Ordering::Acquire);
         let began = heard.inquiry_began_ms.load(Ordering::Acquire);
         if window == 0 || now_ms().wrapping_sub(began) < window {
+            return;
+        }
+        heard.inquiry_window_ms.store(0, Ordering::Release);
+        if cancel_discovery().is_err() {
+            heard.inquiry_errors.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// Ends any running inquiry now, before work that keeps the main loop from
+    /// reaching `cut_inquiry` on time. The same reason applies as there.
+    pub fn stop_inquiry(&self) {
+        let heard = &self.heard;
+        if !heard.inquiring.load(Ordering::Acquire) {
             return;
         }
         heard.inquiry_window_ms.store(0, Ordering::Release);
@@ -397,7 +411,7 @@ impl Bluetooth {
         let now = now_ms();
         // Paging and inquiry never overlap: a name request is not started during an
         // inquiry, and an inquiry waits for an outstanding request. Neither runs
-        // while the GATT client holds a connection.
+        // while the GATT client holds a connection or an image is being written.
         if self.heard.link_busy.load(Ordering::Acquire) || self.page_busy(now) {
             return Ok(false);
         }
