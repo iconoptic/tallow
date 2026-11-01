@@ -137,7 +137,7 @@ Performance tips from HA docs:
 The goal is central control of the house's Bluetooth devices. There are two kinds of node:
 
 - A **mesh node** is a classic ESP32 running the Rust firmware in `firmware/mesh/`. It joins no Wi-Fi, and it reaches the host through other nodes. Both classic boards run this as of 2026-10-31 ([Multi-hop mesh](#multi-hop-mesh)).
-- An **ESPHome node** runs `bluetooth_proxy`, joins `tallow-iot`, and talks only to the host over Wi-Fi. The cams are built this way. Picking a node per device with habluetooth and bleak-esphome is not wired.
+- An **ESPHome node** runs `bluetooth_proxy`, joins `tallow-iot`, and talks only to the host over Wi-Fi. The cams are built this way. A Rust image in `firmware/cam` builds and is not flashed ([device note](devices/keyestudio-mb0200-s3-cam.md#rust-image)). Picking a node per device with habluetooth and bleak-esphome is not wired.
 
 The rest of this section is the ESPHome nodes. Their names are separate from the mesh's: `firmware/esphome/node-1.yaml` targets the first board, which the mesh calls `node-0`.
 
@@ -189,7 +189,7 @@ Classic ESP32 boards listen to Bluetooth near them and pass what they hear to th
 | `tools/tests/test_mesh_host.py` | What the host decodes and keeps |
 | `tools/mesh_monitor.py` | Prints a board's serial output. Runs through `tools/mesh.sh monitor` |
 | `firmware/mesh/boards.tsv` | Known boards by USB path. `tools/mesh.sh ports` reads it |
-| `host/` | Cargo workspace. `host/tallowd` is a stub that prints a banner and shares `tallow-mesh-core` with the firmware. `tools/mesh_host.py` is still the host end |
+| `host/` | Cargo workspace. `host/tallowd` prints a banner and shares `tallow-mesh-core`. `src/link.rs` yields `@` lines and parses `@U`. `Link::open` waits for T2.3 (`tallowd run`). `tools/mesh_host.py` is still the host end |
 
 ```bash
 tools/mesh.sh check                # every offline gate
@@ -220,7 +220,7 @@ How it works:
 - **Routes.** Each node sends a beacon every 2 s and picks its own parent from its neighbours' beacons. Cost counts hops, missed beacons, and a penalty below -85 dBm. A neighbour unheard for 11 s is gone. Four failed unicasts in a row drop a parent sooner.
 - **Up.** Reports (every 5 s), names, stats (every 10 s), and delivery probes go hop by hop as ESP-NOW unicast, one frame on the air at a time.
 - **Down.** Scan settings flood the mesh, and the root sends each one three times. Settings are all the downlink carries: BLE window and interval, inquiry period and length, probe rate and size.
-- **Frames.** At most 250 bytes, 218 of payload. Sealed with ChaCha20-Poly1305 under one shared key baked in at build ([docs/04](04-firmware-liberation-and-network-isolation.md#mesh-nodes)). TTL and hops change at each forwarder, so they are not authenticated. Replay protection is per origin and per boot, with a window of 64 frames. A frame carrying a different boot id counts as new, so it does not stop a frame captured in an earlier boot.
+- **Frames.** At most 250 bytes, 218 of payload. Header and payload layouts are in [`firmware/mesh/core/README.md`](../firmware/mesh/core/README.md). Sealed with ChaCha20-Poly1305 under one shared key baked in at build ([docs/04](04-firmware-liberation-and-network-isolation.md#mesh-nodes)). TTL and hops change at each forwarder, so they are not authenticated. Replay protection is per origin and per boot, with a window of 64 frames. A frame carrying a different boot id counts as new, so it does not stop a frame captured in an earlier boot.
 - **Hearing.** BLE scan 30 ms in every 100 ms, and one 5 s Classic inquiry every 60 s. A node keeps 128 sightings and drops the one heard longest ago when full. Name, maker, and class of device go up once and again after 5 minutes. The node offers nothing to pair with or connect to. `D` on a board's own serial port makes it visible to inquiry for 60 s, not connectable, so a bench test has something to find.
 - **Map.** `tools/mesh.sh host` writes `data/mesh/map.json` (gitignored) only while it runs: nodes with their stats, and devices with who heard them and the nearest node. It holds addresses as heard and sends nothing to any device.
 
@@ -228,7 +228,7 @@ How it works:
 
 Two boards on the air, `node-0` as root and `node-1` as leaf ([boards](devices/esp32-devkit.md#boards)).
 
-Tests: 28 Rust tests, 13 unit and 15 simulated-radio, covering four hops, reroute around a dead board, a replay window, forged-frame rejection, and clock wrap. 11 Python tests in `tools/tests/test_mesh_host.py`.
+Tests: 13 core unit, 13 golden, and 15 simulated-radio. The simulated-radio tests cover four hops, reroute around a dead board, a replay window, forged-frame rejection, and clock wrap. `tools/mesh.sh check --fast` on 2026-10-31 also ran 6 daemon tests (the banner and the serial link), and the host unittest passed. 11 Python tests in `tools/tests/test_mesh_host.py`.
 
 | Size | Value |
 | --- | --- |

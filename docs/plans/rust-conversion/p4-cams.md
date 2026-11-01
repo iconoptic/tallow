@@ -14,6 +14,8 @@ Replace ESPHome on the S3 cams with Rust. This is the riskiest phase for the lea
 
 ## T4.1 S3 build
 
+**Done (2026-10-31).** It builds, and `cam-size` is under the OTA slot. The image is not flashed. Size and layout: [device note](../../devices/keyestudio-mb0200-s3-cam.md#rust-image).
+
 - **Tier:** Sonnet. **Needs:** nothing.
 - **Files:** new `firmware/cam/` (crate `tallow-cam`), `tools/mesh.sh`.
 - **Do:** A separate crate with target `xtensa-esp32s3-espidf`, ESP-IDF v5.5.5, image `espressif/idf-rust:esp32s3_1.95.0.0`. Add `tools/mesh.sh cam-build` and `cam-size`. Octal PSRAM at 80 MHz, 16 MB flash, and an OTA layout. No BT. `boot` prints heap and PSRAM free.

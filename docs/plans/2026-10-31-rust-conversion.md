@@ -2,7 +2,7 @@
 
 Move tallow's firmware and host runtime to Rust, and finish the mesh on the way. Work is split into small tasks that a cheaper model can do from the task text alone.
 
-**Status (2026-10-31):** Phase 0 is done. The mesh runs on two classic ESP32s over one physical hop, and `tools/mesh.sh check` passes. Results are in [docs/01](../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh). Nothing in phases 1 to 5 has started.
+**Status (2026-10-31):** Phase 0 is done. The mesh runs on two classic ESP32s over one physical hop, and `tools/mesh.sh check` passes. Results are in [docs/01](../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh). T1.1, the golden frames, is done. T2.1, the serial link, is done. T3.1, the panel HTTP contract, is done. The rest of phase 1 has not started. T2.2 onward are not done. T3.2 onward are not done. T4.1, the S3 cam build, is done and is not flashed. T4.2 onward are not done. Phase 5 has not started.
 
 **Agents start at [rust-conversion/agent-brief.md](rust-conversion/agent-brief.md).** It has the rules, the tiers, and the stop conditions.
 

@@ -1,6 +1,6 @@
 # Keyestudio MB0200 S3 CAM
 
-ESP32-S3 board with an OV3660 camera, an SD slot, and two USB-C ports. Here it is a node, and `toby-cam-1` is the node that watches the dog. A second board, [`toby-cam-0`](#toby-cam-0), is compiled and not flashed. Node design is in [docs/01](../01-bluetooth-server-hardware-and-proxies.md#tallow-nodes). Addresses and ports are in [docs/04](../04-firmware-liberation-and-network-isolation.md#esp32-nodes).
+ESP32-S3 board with an OV3660 camera, an SD slot, and two USB-C ports. Here it is a node, and `toby-cam-1` is the node that watches the dog. A second board, [`toby-cam-0`](#toby-cam-0), has an ESPHome image compiled and not flashed. A Rust image builds and is not flashed ([Rust image](#rust-image)). Node design is in [docs/01](../01-bluetooth-server-hardware-and-proxies.md#tallow-nodes). Addresses and ports are in [docs/04](../04-firmware-liberation-and-network-isolation.md#esp32-nodes).
 
 On 2026-10-28 this unit ran `relay-mb0200`, then `toby-cam-1`. The relay is proven. The cam streams and the panel proxy was checked against it, but its picture is dark and the page is not checked in a browser. After the board was moved, a weak USB supply made it unreachable, and a burst of connects later jammed its web server for minutes. On 2026-10-30 the board held `10.87.0.21` and did not answer ARP for it. The cams page returned 502, and an OTA to that address timed out. On 2026-10-31 it took an esphome-mesh build and crash-looped, and it is still unreachable and not recovered ([Where it is](#where-it-is-2026-10-31)). Results are in [On the board](#on-the-board-2026-10-28), [Power](#power), and [The one-slot jam](#the-one-slot-jam).
 
@@ -20,6 +20,21 @@ On 2026-10-28 this unit ran `relay-mb0200`, then `toby-cam-1`. The relay is prov
 | ESPHome | 2026.9.1 (`tools/esphome.sh`) |
 
 On 2026-10-28 both nodes passed `config` and `compile`. RAM and flash use: relay 41.3% / 14.3%, cam 44.9% / 15.4% (the cam figure predates the power-save fix below). On 2026-10-31 `toby-cam-1.yaml`, without esphome-mesh, compiled at RAM 45.0%, flash 15.4%. It is not flashed.
+
+## Rust image
+
+`firmware/cam` is crate `tallow-cam` for this board. Target `xtensa-esp32s3-espidf`, ESP-IDF v5.5.5, image `espressif/idf-rust:esp32s3_1.95.0.0`. Nothing is installed on the host.
+
+```bash
+tools/mesh.sh cam-build    # release image
+tools/mesh.sh cam-size     # size against the OTA slot
+```
+
+`tools/mesh.sh fmt` formats this crate. `tools/mesh.sh check` covers the mesh crates and the host. This image is `cam-build`. The build does not read `firmware/mesh/mesh.key`. `target/`, `.embuild/`, and `sdkconfig` under `firmware/cam/` are gitignored.
+
+Octal PSRAM at 80 MHz, 16 MB DIO flash at 80 MHz, Bluetooth off. The partition table is the ESPHome OTA layout on this board: `app0` and `app1` are each `0x7C0000` bytes. The image joins no network. `boot` prints free internal heap and free PSRAM on the USB Serial/JTAG port (`boot heap … psram …`), then idles.
+
+On 2026-10-31 `tools/mesh.sh cam-size` printed `App/part. size: 367,392/8,126,464 bytes, 4.52%`. The image is not flashed. `toby-cam-1` was not touched.
 
 ## Pins
 
@@ -118,7 +133,7 @@ The panel re-reads `cams.json` whenever its mtime changes. Adding, renaming, or 
 
 PUT uses the same checks as load, then replaces the file in `save_inventory`: a temporary file next to `cams.json`, then a rename. A rejected document is 400 and the file stays as it was. A missing title is stored as `Cameras`.
 
-The same page has Log out. `POST /logout` clears the `tallow_panel` cookie and redirects to `/login`. It does not change the password. That stays one line in `secrets/panel/password` ([govee-h7020.md](govee-h7020.md#lan-page)).
+The same page has Log out. `POST /logout` clears the `tallow_panel` cookie and redirects to `/login`. It does not change the password. The cookie header, and that logout runs without a cookie, are in [govee-h7020.md](govee-h7020.md#lan-page). The password stays one line in `secrets/panel/password`.
 
 ### One connection per cam
 
@@ -145,7 +160,7 @@ So the panel dials once per cam and shares it, and is gentle about it (`Hub` and
 | `PUT /api/settings/cameras` | The same document after the file is replaced. 400 leaves the file unchanged |
 | `POST /logout` | Clears `tallow_panel` and redirects to `/login` |
 
-`/lights`, `/cams`, `/settings`, `/panel.css`, and these routes need the LAN cookie. A page without it redirects to `/login`; an API call without it is 401. The agent socket gets 404 for `/lights`, `/cams`, `/settings`, `/panel.css`, the cam routes, `GET` and `PUT /api/settings/cameras`, and `POST /logout`. None of those are on the H7020 manifest.
+`GET /api/cams`, `GET /api/cams/status`, `GET /cams/{id}/stream`, and `GET` and `PUT /api/settings/cameras` answer 401 `{"detail":"login"}` without the cookie. Page redirects, `GET /panel.css`, `GET /`, and the cookie header are in [govee-h7020.md](govee-h7020.md#lan-page). The agent socket answers 404 for `GET /lights`, `GET /cams`, `GET /settings`, `GET /panel.css`, the cam routes, `GET` and `PUT /api/settings/cameras`, and `POST /logout`. The 404 body, `POST /login`, socket `GET /`, and `GET /api/manifest` are in [govee-h7020.md](govee-h7020.md#agent-socket). None of those page and cam routes are on the H7020 manifest.
 
 ### The page
 

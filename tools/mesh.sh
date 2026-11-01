@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Rust builds for tallow, from a pinned container image. Nothing is installed on
-# the host. ESP-IDF and the cargo cache land in gitignored firmware/mesh/.
+# Rust builds for tallow, from pinned container images. Nothing is installed on
+# the host. The mesh cargo cache lands in gitignored firmware/mesh/. The cam
+# image and its ESP-IDF tools land in gitignored firmware/cam/.
 #
 # Usage:
 #   tools/mesh.sh check [--fast]       every offline gate; --fast skips the firmware build
@@ -11,6 +12,8 @@
 #   tools/mesh.sh key                  write the gitignored firmware/mesh/mesh.key once
 #   tools/mesh.sh build                release image for a classic ESP32
 #   tools/mesh.sh size                 image size against the OTA slot
+#   tools/mesh.sh cam-build            release image for an ESP32-S3 cam
+#   tools/mesh.sh cam-size             cam image size against its OTA slot
 #   tools/mesh.sh ports                list attached boards; opens no port, resets nothing
 #   tools/mesh.sh flash /dev/ttyUSB0   write the image to one classic ESP32
 #   tools/mesh.sh monitor /dev/ttyUSB0 [seconds]   print a board's serial output
@@ -24,7 +27,12 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE="espressif/idf-rust:esp32_1.95.0.0"
+CAM_IMAGE="espressif/idf-rust:esp32s3_1.95.0.0"
 MESH="${ROOT}/firmware/mesh"
+CAM="${ROOT}/firmware/cam"
+CAM_ELF="target/xtensa-esp32s3-espidf/release/tallow-cam"
+# The mesh node's already-checked-out IDF, so the cam build does not clone it.
+CAM_IDF="${MESH}/node/.embuild/espressif/esp-idf/v5.5.5"
 KEY="${MESH}/mesh.key"
 BOARDS="${MESH}/boards.tsv"
 HOST_IMAGE="ghcr.io/esphome/esphome:2026.9.1"
@@ -54,6 +62,26 @@ run_image() {
 in_image() {
   local workdir="$1"; shift
   run_image "$workdir" bash -lc "set -euo pipefail; $*"
+}
+
+# The cam crate is a separate image and a separate tree. It does not mount the
+# mesh key and it does not write into the mesh crates.
+run_cam_image() {
+  local workdir="$1"; shift
+  mkdir -p "${MESH}/.cache/registry" "${MESH}/.cache/git"
+  local -a args=(--rm --user "$(id -u):$(id -g)" -w "$workdir"
+    -v "${CAM}:/cam"
+    -v "${MESH}/.cache/registry:/home/esp/.cargo/registry"
+    -v "${MESH}/.cache/git:/home/esp/.cargo/git"
+    -e HOME=/home/esp)
+  if [[ -d "$CAM_IDF" ]]; then
+    args+=(-v "${CAM_IDF}:/idf:ro" -e IDF_PATH=/idf)
+  fi
+  docker run "${args[@]}" "$CAM_IMAGE" "$@"
+}
+
+in_cam() {
+  run_cam_image /cam bash -lc "set -euo pipefail; $*"
 }
 
 need_key() {
@@ -146,6 +174,7 @@ case "${1:-}" in
     in_image /mesh/core 'cargo fmt'
     in_image /mesh/node 'cargo fmt'
     in_image /repo/host 'cargo fmt --all'
+    in_cam 'cargo fmt'
     ;;
   test)
     in_image /mesh/core 'cargo test --target x86_64-unknown-linux-gnu -- --nocapture 2>&1'
@@ -159,6 +188,12 @@ case "${1:-}" in
     ;;
   size)
     in_image /mesh/node "espflash save-image --chip esp32 --flash-size 4mb --partition-table partitions.csv ${ELF} /tmp/app.bin 2>&1 | grep -E 'App/part'"
+    ;;
+  cam-build)
+    in_cam 'cargo build --release 2>&1 | tail -40'
+    ;;
+  cam-size)
+    in_cam "espflash save-image --chip esp32s3 --flash-size 16mb --partition-table partitions.csv ${CAM_ELF} /tmp/app.bin 2>&1 | grep -E 'App/part'"
     ;;
   ports)
     show_ports

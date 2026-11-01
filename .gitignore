@@ -82,3 +82,9 @@ firmware/mesh/.cache/
 firmware/mesh/**/sdkconfig
 firmware/mesh/**/sdkconfig.old
 firmware/mesh/mesh.key
+
+# Rust cam firmware builds (tools/mesh.sh cam-build)
+firmware/cam/target/
+firmware/cam/.embuild/
+firmware/cam/sdkconfig
+firmware/cam/sdkconfig.old

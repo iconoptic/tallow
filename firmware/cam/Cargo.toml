@@ -1,0 +1,25 @@
+[package]
+name = "tallow-cam"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "tallow-cam"
+harness = false
+
+[profile.release]
+opt-level = "s"
+debug = "line-tables-only"
+lto = "fat"
+codegen-units = 1
+
+[profile.dev]
+opt-level = "s"
+debug = "line-tables-only"
+
+[dependencies]
+esp-idf-svc = { version = "0.53", default-features = false, features = ["std", "binstart", "native", "alloc", "experimental"] }
+
+[build-dependencies]
+embuild = "0.33"

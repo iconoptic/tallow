@@ -50,6 +50,8 @@ tools/mesh.sh daemon build         # release build of tallowd
 tools/mesh.sh key                  # write the gitignored firmware/mesh/mesh.key once
 tools/mesh.sh build                # release image for a classic ESP32
 tools/mesh.sh size                 # image size against the OTA slot
+tools/mesh.sh cam-build            # release image for an ESP32-S3 cam
+tools/mesh.sh cam-size             # cam image size against its OTA slot
 tools/mesh.sh ports                # list attached boards; opens no port, resets nothing
 tools/mesh.sh flash /dev/ttyUSB0   # write the image to one classic ESP32
 tools/mesh.sh monitor /dev/ttyUSB0 30   # print a board's serial output for 30 s
@@ -70,13 +72,14 @@ tools/mesh.sh host /dev/ttyUSB0 --seconds 120
 | [docs/04-firmware-liberation-and-network-isolation.md](docs/04-firmware-liberation-and-network-isolation.md) | Host IoT access point, isolation boundary, CloudCutter / OpenBeken |
 | [docs/05-target-webapp-architecture.md](docs/05-target-webapp-architecture.md) | FastAPI blueprint. The H7020 LAN page is the slice that exists |
 | [docs/devices/govee-h7020.md](docs/devices/govee-h7020.md) | Govee H7020 BLE frames, the probe, the LAN page, and the host agent socket |
-| [docs/devices/keyestudio-mb0200-s3-cam.md](docs/devices/keyestudio-mb0200-s3-cam.md) | MB0200 S3 CAM node board: pins, first flash, and the cams page |
+| [docs/devices/keyestudio-mb0200-s3-cam.md](docs/devices/keyestudio-mb0200-s3-cam.md) | MB0200 S3 CAM node board: pins, first flash, the cams page, and the unflashed Rust image |
 | [docs/devices/esp32-devkit.md](docs/devices/esp32-devkit.md) | Classic ESP32 devkits: the two mesh boards, flash, and the way back to ESPHome |
 | [docs/plans/2026-10-31-rust-conversion.md](docs/plans/2026-10-31-rust-conversion.md) | Rust conversion plan: scope, settled decisions, and phases. Tasks are in `docs/plans/rust-conversion/` |
 | [docs/plans/rust-conversion/agent-brief.md](docs/plans/rust-conversion/agent-brief.md) | What every model reads before a Rust conversion task |
-| [app/h7020_panel.py](app/h7020_panel.py) | House-LAN panel: menu (`app/menu_page.html`), H7020 page, cams, settings (`app/settings_page.html`). Patterns: `app/library.py`. Playback: `app/show.py`. Socket bearers: `app/agents.py`. Cams: `app/cams.py` |
+| [app/h7020_panel.py](app/h7020_panel.py) | House-LAN panel: menu (`app/menu_page.html`), H7020 page, cams, settings (`app/settings_page.html`). Patterns: `app/library.py`. Playback: `app/show.py`. Socket bearers: `app/agents.py`. Cams: `app/cams.py`. HTTP contract: `tools/tests/panel_contract.py` |
 | [firmware/esphome/](firmware/esphome/) | ESPHome `bluetooth_proxy` node package, MB0200 and classic ESP32 boards, cam skew, and node files (`toby-cam-1`, `toby-cam-0`; `node-1` is on no board). `secrets.yaml` and `.esphome/` are gitignored |
-| [firmware/mesh/](firmware/mesh/) | Rust mesh: `core/` (`no_std` logic and tests), `node/` (ESP-IDF firmware), `boards.tsv` (boards by USB path, read by `tools/mesh.sh ports`). `mesh.key`, `target/`, `.embuild/`, `.cache/`, and `sdkconfig` are gitignored |
+| [firmware/cam/](firmware/cam/) | Rust cam image `tallow-cam` for the MB0200 (ESP32-S3). `tools/mesh.sh cam-build` and `cam-size`. Not flashed. `target/`, `.embuild/`, and `sdkconfig` are gitignored. Layout and size: [device note](docs/devices/keyestudio-mb0200-s3-cam.md#rust-image) |
+| [firmware/mesh/](firmware/mesh/) | Rust mesh: `core/` (`no_std` logic and tests; frame bytes in [`core/README.md`](firmware/mesh/core/README.md)), `node/` (ESP-IDF firmware), `boards.tsv` (boards by USB path, read by `tools/mesh.sh ports`). `mesh.key`, `target/`, `.embuild/`, `.cache/`, and `sdkconfig` are gitignored |
 | [host/](host/) | Cargo workspace for the host daemon. `tallowd` is a stub that shares `tallow-mesh-core` with the firmware. `host/target/` is gitignored |
 | [AGENTS.md](AGENTS.md) | Instructions for future AI coding agents |
 | [.cursor/skills/improve-repo-docs/SKILL.md](.cursor/skills/improve-repo-docs/SKILL.md) | Reconcile docs with the tree. Ledger: `.cursor/docs-ledger.json`. Stop hook: `.cursor/hooks/docs-before-stop.py` |
