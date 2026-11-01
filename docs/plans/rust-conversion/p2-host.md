@@ -6,6 +6,8 @@ Add dependencies only where a task names them.
 
 ## T2.1 Serial link
 
+**Done (2026-10-31).**
+
 - **Tier:** Grok. **Needs:** nothing.
 - **Files:** `host/tallowd/src/link.rs`, `main.rs`, `Cargo.toml`.
 - **Deps:** `serialport` with default features off, `anyhow`.

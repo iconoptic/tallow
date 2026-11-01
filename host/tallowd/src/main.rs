@@ -3,6 +3,9 @@
 //! It shares the mesh's frame format with the firmware through
 //! `tallow-mesh-core`, so the two cannot drift apart.
 
+#[cfg_attr(not(test), allow(dead_code))]
+mod link;
+
 use tallow_mesh_core::wire::VERSION;
 
 fn banner() -> String {

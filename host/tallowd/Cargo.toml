@@ -5,4 +5,6 @@ edition = "2021"
 publish = false
 
 [dependencies]
+anyhow = "1"
+serialport = { version = "4.10.1", default-features = false }
 tallow-mesh-core = { path = "../../firmware/mesh/core" }
