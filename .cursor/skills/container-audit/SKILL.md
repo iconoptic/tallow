@@ -1,0 +1,277 @@
+---
+name: container-audit
+description: "Audit container images, Dockerfiles, and Kubernetes manifests for misconfigurations, excessive privileges, exposed secrets, and runtime risks. Use when the user mentions 'container security,' 'Docker security,' 'Dockerfile audit,' 'Kubernetes security,' 'K8s security,' 'pod security,' 'container hardening,' 'kubectl audit,' 'image scanning,' 'distroless,' 'rootless containers,' 'pod security policy,' 'pod security standards,' 'PSS,' 'network policy,' 'OPA Gatekeeper,' 'Kyverno,' 'runtime security,' or needs to review container or orchestration security."
+allowed-tools: Read, Grep, Glob, WebSearch, WebFetch, Bash(trivy image:*), Bash(trivy config:*), Bash(kube-bench run:*)
+---
+
+# Container Audit — Docker & Kubernetes Security Review
+
+Audit container images, Dockerfiles, Helm charts, Kustomize overlays, and Kubernetes manifests for misconfiguration, excessive privilege, exposed secrets, and runtime security gaps. Distinct from `cloud-audit` (cloud-provider IAM and managed services) and `dependency-audit` (package CVEs in the application). This skill is the container/orchestration layer between them.
+
+## Authorization
+
+Audit only images, registries and clusters the user owns or is authorized to review. `trivy` and `kube-bench` read; they don't change the cluster. Don't `kubectl exec` into workloads, apply manifests or delete pods during the audit, and never try a container escape on a shared or production cluster: describe the path and let the owner validate it in an isolated environment.
+
+## Scope the Audit
+
+1. Inventory the surface — Dockerfiles, base images, registries, Helm charts, K8s manifests, Kustomize overlays, CI build pipelines that produce images
+2. Identify the runtime — vanilla K8s, EKS, GKE, AKS, OpenShift, ECS Fargate, Cloud Run, Fly.io
+3. Identify the network model — service mesh, ingress controller, default-deny vs default-allow
+4. Identify the secret model — K8s Secrets (base64-only), External Secrets Operator, sealed-secrets, Vault, Doppler
+
+## Audit Checklist — Dockerfile
+
+### Base image & supply chain
+
+- Pinned by digest, not tag — `FROM node:20@sha256:abc...` not `FROM node:20` (which can move)
+- Distroless / minimal where possible — `gcr.io/distroless/nodejs20`, `alpine` (be aware of musl quirks), `chainguard/*`
+- Not using `:latest` — non-reproducible builds
+- Multi-stage builds discard build-time tooling — `FROM build AS builder` → `FROM runtime` final stage
+- Grep for: `FROM .*:latest`, `FROM .*:[0-9]+$` (tag without digest)
+
+### Build-time exposure
+
+- Secrets passed via `--build-arg` end up in image layers visible to anyone who pulls the image — use BuildKit secrets (`--mount=type=secret`) or runtime env vars instead. To find secrets already in an image's layers, including files a later layer deleted, see `secrets-audit` → Beyond the repo → Container images
+- `COPY . .` ships everything in the build context — `.dockerignore` should exclude `.git`, `.env`, `node_modules`, `*.pem`, `.aws/`, `.ssh/`
+- `ADD <url>` follows redirects and disables checksum verification — prefer `RUN curl ... && sha256sum -c`
+- Grep for: `ARG .*KEY`, `ARG .*TOKEN`, `ARG .*SECRET`, `ENV .*=.*[A-Za-z0-9]{32,}`, `ADD http`
+
+### Runtime posture
+
+- Non-root user — `USER 1001` (or any non-zero UID) before `CMD`
+- No `chmod 4755` SUID binaries in the final image
+- No unnecessary shells / package managers in the final stage — distroless / FROM scratch is the strong default
+- `HEALTHCHECK` defined so orchestrator can detect unhealthy containers
+- Read-only root filesystem at runtime (set via K8s; verify nothing in the image writes outside `/tmp` or a declared volume)
+- Grep for: `USER root` (or absence of any `USER` directive), `chmod 4755`, `apt-get install.*sudo`
+
+## Audit Checklist — Kubernetes manifests
+
+### Pod security
+
+- `securityContext.runAsNonRoot: true` and `runAsUser` set to a non-zero UID
+- `securityContext.allowPrivilegeEscalation: false`
+- `securityContext.readOnlyRootFilesystem: true` with explicit `emptyDir` mounts where the app needs to write
+- `securityContext.capabilities.drop: ["ALL"]` then add only what's needed
+- `securityContext.privileged` is never `true` in app workloads (Falco, kube-proxy, some CSI drivers are the rare legit exceptions)
+- `hostNetwork`, `hostPID`, `hostIPC` all `false` — yes on these is "container can see / talk to the node"
+- `hostPath` volumes — every one is a node-escape risk; review case by case
+- Grep for: `privileged: true`, `runAsUser: 0`, `hostNetwork: true`, `hostPath:`
+
+### Pod Security Standards (PSS) / admission
+
+- Cluster enforces `restricted` profile via PSS admission, or equivalent via OPA Gatekeeper / Kyverno
+- Pod Security Policies (deprecated since 1.21, removed in 1.25) are NOT what's enforcing this — confirm a current admission controller
+- No workloads in the `kube-system` namespace running app code
+
+### Network
+
+- `NetworkPolicy` exists for every namespace running app workloads — default-deny ingress AND egress, then allow specific pods
+- Missing NetworkPolicy = every pod can talk to every other pod on every port, including kube-apiserver and metadata service
+- Service mesh (Istio, Linkerd) mTLS in STRICT mode for sensitive namespaces, not PERMISSIVE
+- Ingress controllers terminate TLS properly; backend `tls.crt` / `tls.key` in K8s Secrets rotate
+
+### Secrets
+
+- K8s Secrets are base64-encoded, NOT encrypted — by default they're plain bytes in etcd
+- etcd encryption at rest enabled — `--encryption-provider-config` on kube-apiserver
+- Workloads consume secrets via projected volumes, not environment variables (env vars leak via `/proc/<pid>/environ`, error reports, crash dumps)
+- External Secrets Operator / Vault / sealed-secrets bridge so the Git repo never contains plaintext
+- Grep for: `kind: Secret` in Git with `data:` fields (base64-encoded values committed)
+
+### RBAC
+
+- No `ClusterRole` with `*` verbs on `*` resources except `cluster-admin` (audit who's bound to it)
+- `ServiceAccount` per workload, not shared "default" SA
+- `automountServiceAccountToken: false` on workloads that don't need API access
+- Bindings of `system:authenticated` group are visible to every legitimate workload — almost always wrong
+- Grep for: `verbs: ["*"]`, `resources: ["*"]`, `apiGroups: ["*"]`, `system:authenticated`
+
+### Resource limits
+
+- Every container has `resources.requests` and `resources.limits` set — missing limits = noisy neighbor + DoS surface (one pod can starve the node)
+- `LimitRange` per namespace as a backstop
+- `ResourceQuota` per namespace prevents tenant-vs-tenant resource exhaustion
+
+### Image policy
+
+- `imagePullPolicy: Always` for `:latest` (you shouldn't use :latest, but if you do) — otherwise the node caches stale images
+- Cluster-level policy that all images come from approved registries (your own + a small allow-list); enforced via Gatekeeper / Kyverno / image-policy-webhook
+- Image signature verification — cosign + sigstore policy controller, or Notary v2
+
+## Audit Checklist — runtime
+
+- Image scanning in CI — `trivy image`, `grype`, `docker scout cves`. Must run on every build; advisories should not block but should surface
+- Runtime detection — Falco / Tracee / Tetragon catches "shell spawned in a pod that has never opened a shell" patterns
+- Audit logs enabled — kube-apiserver audit log captures `exec`, `attach`, `port-forward` events for incident response
+- `kubectl exec` access tracked — not free for any cluster-admin to silently shell into prod
+- **Kernel CVEs are fixed on the host, not in the image.** Every container shares the node's kernel, so rebuilding images doesn't help; hand the host to `patch-sweep` (Linux hosts track) and record the image as "not the fix location". When the bug needs a socket feature, check it per workload: `net.mptcp.enabled` is per network namespace and every new one starts at `1`, so turning it off on the host doesn't reach containers. Per-pod settings, `hostNetwork`, and the Go binary check (Go ≥ 1.24 listens with MPTCP) are in [references/runtime-exposure.md](references/runtime-exposure.md)
+
+## Useful one-liners
+
+```bash
+# All Dockerfiles in the repo + their first FROM line
+git ls-files | grep -E '(^|/)Dockerfile(\.|$)' | xargs -I{} sh -c 'echo "==> {}"; grep ^FROM "{}"'
+
+# Manifests missing securityContext
+grep -rL "securityContext" --include="*.yaml" --include="*.yml" .
+
+# Manifests with privileged containers
+grep -rln "privileged: *true" --include="*.yaml" --include="*.yml" .
+
+# Manifests with hostPath volumes
+grep -rln "hostPath:" --include="*.yaml" --include="*.yml" .
+
+# Secrets in Git (base64-encoded but readable)
+grep -rln "kind: *Secret" --include="*.yaml" --include="*.yml" . | xargs grep -l "^data:"
+
+# Image scan (Trivy)
+trivy image --severity HIGH,CRITICAL --exit-code 0 <image>
+
+# Manifest scan (Trivy)
+trivy config --severity HIGH,CRITICAL .
+
+# Cluster posture (kube-bench, run inside the cluster)
+kube-bench run --targets master,node,policies
+```
+
+## Verify, then record
+
+Close every candidate from the checklists with one verdict, using the shared format in [references/findings-format.md](references/findings-format.md). Before anything is `confirmed`, run the refutation pass in [references/verification.md](references/verification.md): start from the cited manifest or Dockerfile line and look for the strongest control that would stop it (admission policy, namespace PSS label, a Helm value that overrides the default, a later build stage that discards the layer).
+
+A misconfiguration is a finding only when you can name who gains what. Write down the gate from [references/severity-calibration.md](references/severity-calibration.md): the lower-trust principal (a repo reader, anyone who can pull the image, a namespace user who can create pods, an attacker with code execution in an internet-facing pod), the boundary crossed (container to node, namespace to cluster, repo to production secret), and the result.
+
+**`confirmed`** — the config is in the repo or in saved cluster output and the path to the result is traced. Examples:
+- `kind: Secret` in `k8s/database.yaml` with a base64 `data:` value that decodes to the production DB password: anyone with repo read gets the database. Rate by the authority, as in the keys table of the severity file.
+- A `ClusterRoleBinding` that binds `system:authenticated` to a role with `get` on `secrets` cluster-wide: any pod's service account token reads every secret.
+- A shipped Helm chart whose `values.yaml` defaults to `privileged: true` and a `hostPath: /` mount. Confirmed with a `system_configuration` condition ("deployments that don't override `securityContext.privileged`") and confidence `medium`.
+
+Escape paths that need code execution in the container first (privileged, `hostPath`, `hostPID`, `CAP_SYS_ADMIN`) carry an `environmental_dependency` condition saying so. That lowers likelihood, not the impact of reaching the node.
+
+**`needs_validation`** — the repo shows the risk but the deciding fact lives in the cluster or registry. Examples:
+- A Deployment with no `securityContext`, in a namespace whose PSS `enforce` label is set by the platform team outside this repo. Blocker: the namespace label. Plan: `kubectl get ns payments -o jsonpath='{.metadata.labels}'` and `kubectl apply --dry-run=server -f k8s/api.yaml` (admission runs, nothing persists).
+- `ARG NPM_TOKEN` used in the final stage. Blocker: who can pull `registry.example.com/api`. Plan: read the registry's repository policy and run `docker history --no-trunc` on the pushed image.
+
+**`rejected`** — a named control at a named location stops it on every path. Examples:
+- `hostPath` in `charts/agent/templates/daemonset.yaml`, ruled out by a Kyverno `ClusterPolicy` in `Enforce` mode (`policies/disallow-host-path.yaml`) whose match covers that namespace.
+- `ARG NPM_TOKEN` consumed only in the `builder` stage; `ruled_out_by.location` is the final-stage `FROM` line, which starts from a clean base and copies only `/app/dist`.
+- A `kind: Secret` whose values are `REPLACE_ME` placeholders, or a `SealedSecret` (ciphertext only).
+
+**Hardening notes, not records:** one missing layer when nothing traced depends on it. Examples: a tag instead of a digest, no `readOnlyRootFilesystem`, missing resource limits in a single-tenant cluster, running as root in an otherwise unprivileged pod with no host mounts, no `HEALTHCHECK`. A missing NetworkPolicy becomes a finding only when you name the reachable thing it exposes (an unauthenticated internal service, the metadata endpoint with node credentials).
+
+**Image CVEs** from `trivy image` follow `dependency-audit`'s rule: a vulnerable package is a finding only when you show it is reachable from what the container runs. Otherwise it is `needs_validation` or a hardening note.
+
+**OS-package CVEs: ask the distro first.** Trivy rates OS packages mostly by NVD. RHEL/UBI, Debian and Ubuntu backport fixes without changing the upstream version, so check the vendor's own state for the image's release. "Not affected", or a backported fix at or below the installed version, is `rejected` with the vendor statement saved as evidence. "Will not fix" leaves the finding standing; the plan is a new base image or the owner's `Accepted Risk`. Lookups, the verdict mapping and `ext` keys: [references/vendor-severity.md](references/vendor-severity.md). Then add CISA KEV and EPSS with `node references/enrich-advisories.mjs findings.json -o findings.json`.
+
+**Cluster evidence.** Findings about a live cluster, registry or image (not a file in the repo) point at saved output. Save the read-only command output, redacted, to `<audit dir>/evidence/<name>.json` or `.txt` (for example `kubectl get clusterrolebindings -o json`, `kube-bench run --json`, `trivy image -f json`), and point `location` and `evidence[]` at that file and line. Never save Secret values: strip `.data` and `.stringData` (`kubectl get secret -o json | jq 'del(.items[].data, .items[].stringData)'`) and redact tokens in env vars. A check described but not run is `needs_validation`.
+
+**Fingerprint:** `container-audit/<class>/<file or resource>/<name>`, no line numbers, image tags or digests:
+- `container-audit/privileged-container/charts/agent/values.yaml/securityContext.privileged`
+- `container-audit/secret-in-git/k8s/database.yaml/db-credentials`
+- `container-audit/rbac-wildcard/cluster/prod-eks/ClusterRoleBinding/ci-deployer`
+- `container-audit/CVE-2024-3094/image/registry.example.com/api/xz-utils`
+
+Write image references without the tag (`registry.example.com/api`, not `api:1.4`): the validator rejects `:<digits>` segments. Put the tag and digest in the evidence description.
+
+**`ext` keys** (optional, on any record):
+
+| Key | Value | Example |
+|---|---|---|
+| `resource` | Kubernetes kind, namespace and name, or the image repository | `"Deployment/payments/api"`, `"registry.example.com/api"` |
+| `cis` | CIS Docker or Kubernetes Benchmark control | `"CIS Kubernetes 5.1.1"`, `"CIS Docker 4.1"` |
+| `pss` | The Pod Security Standards level the config violates | `"baseline"`, `"restricted"` |
+| `vendor`, `vendor_severity`, `vendor_fix_state`, `vendor_advisory` | The distro's own state for an OS-package CVE ([references/vendor-severity.md](references/vendor-severity.md)) | `"redhat"`, `"Moderate"`, `"Not affected"`, `"RHSA-2023:3354"` |
+
+Then write `findings.json` sorted by fingerprint, validate it, and optionally export SARIF:
+
+```bash
+node references/validate-findings.mjs findings.json
+node references/to-sarif.mjs findings.json -o findings.sarif
+```
+
+## Verify Fixes at Runtime
+
+- `runAsNonRoot: true` — verify the pod restarts cleanly and stays Running; if the image's `ENTRYPOINT` calls `chown` it'll crashloop
+- NetworkPolicy default-deny — verify legitimate traffic still works (run an in-cluster `kubectl run -it --rm debug ... curl`); silent partial outages are common after default-deny rollout
+- `readOnlyRootFilesystem: true` — verify the app doesn't write outside declared `emptyDir` mounts; log writes, PID files, and tmp files are common breakers
+- Image-policy enforcement — try to deploy an unsigned / off-list image; verify admission rejects it
+
+## Output Format
+
+Write `findings.json` first and validate it. Render the report from it, plus your hardening-notes list. The prose never changes a verdict, severity or blocker the JSON doesn't already say.
+
+````markdown
+# Container Security Audit
+## Target: [cluster name / image registry / repo path]   ## Date: [date]
+## Scope: [full | partial — what was left out, e.g. "manifests only, no cluster access"]
+## findings.json: [path] — validated: [yes]
+
+### Summary
+- Confirmed: [N] (Critical [n] | High [n] | Medium [n] | Low [n])   Needs validation: [N]   Rejected: [N]   Hardening notes: [N]
+- Audited: [N] Dockerfiles, [N] manifests / charts, [N] images; cluster checks: [pass / fail counts, or "not run"]
+
+### Confirmed findings
+#### [SEVERITY] [Title]  `fingerprint`
+**Location:** `path/to/manifest.yaml:42` (or `audit/evidence/<name>.json:<line>`)   **Confidence:** [medium | high (reproduced)]
+**Category:** Dockerfile | Pod security | RBAC | NetworkPolicy | Secrets | Resource limits | Image policy | Runtime
+**Principal → boundary → result:** [who, what they cross, what happens]
+**Conditions:** [e.g. environmental_dependency: needs code execution in the pod]
+**Vulnerable config:**
+```yaml
+[snippet]
+```
+**Remediation:**
+```yaml
+[fixed snippet]
+```
+**Verify the fix:** [observed behaviour that proves it holds, see Verify Fixes at Runtime]
+
+### Needs validation
+| Finding | Blockers | Check for the owner to run |
+|---|---|---|
+
+### Hardening notes (not findings)
+- [location] — [gap] — [why it isn't a finding] — [effort]
+
+### Rejected (do not re-raise)
+| Fingerprint | Claim | Ruled out by | Location |
+|---|---|---|---|
+
+### Cluster posture
+| Control | Status | Evidence |
+|---|---|---|
+| PSS / admission (Gatekeeper, Kyverno) | | |
+| NetworkPolicy default-deny | | |
+| etcd encryption at rest | | |
+| API server audit logging | | |
+| Image signature / registry policy | | |
+| Runtime detection (Falco, Tetragon) | | |
+
+### Prioritized remediation plan
+1. [Critical / High confirmed findings]
+2. [Medium / Low confirmed findings]
+3. [Owner-run checks for needs-validation items]
+4. [Hardening notes worth the effort]
+````
+
+Dispositions for confirmed findings (set later, usually by `finding-triage`): Fixed / Deferred / Accepted Risk / Mitigated (platform/config) / Requires major migration. A false positive is a `rejected` record, not a disposition.
+
+## Boundaries
+
+- Only audit clusters and registries the user provides or has authorization for
+- Never `kubectl delete` or modify cluster state during an audit — read-only operations only (`get`, `describe`, `auth can-i`)
+- For runtime evidence, prefer non-disruptive checks (a `kubectl run -it --rm` ephemeral debug pod) over modifying running workloads
+- Refuse cluster-takeover scenarios — escalating from a found weakness to a full pivot is exploitation, not audit
+- Record a finding you can't settle from the repo or saved output as `needs_validation`, with the blocker and the check, never as confirmed
+
+## References
+
+- CIS Docker Benchmark
+- CIS Kubernetes Benchmark
+- NSA/CISA Kubernetes Hardening Guide
+- Pod Security Standards (PSS) — restricted, baseline, privileged
+- OWASP Docker Security Cheat Sheet
+- OWASP Kubernetes Security Cheat Sheet
+- MITRE ATT&CK for Containers
+- Red Hat Security Data API, OSV (Debian and Ubuntu), CISA KEV, FIRST EPSS: [references/vendor-severity.md](references/vendor-severity.md)
+- Shared references (copied into `references/` at build time): [findings-format.md](references/findings-format.md), [severity-calibration.md](references/severity-calibration.md), [verification.md](references/verification.md), [validate-findings.mjs](references/validate-findings.mjs), [to-sarif.mjs](references/to-sarif.mjs), [findings.schema.json](references/findings.schema.json)
