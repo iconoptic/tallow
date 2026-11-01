@@ -1,0 +1,80 @@
+{
+  "patterns": [
+    {
+      "id": "sunset",
+      "name": "Sunset",
+      "kind": "scene",
+      "scene": {
+        "name": "Sunset Glow",
+        "speed": 2
+      }
+    },
+    {
+      "id": "cafe-glow",
+      "name": "Caf\u00e9 Glow",
+      "kind": "scene",
+      "scene": {
+        "name": "Sunset Glow",
+        "speed": 0
+      }
+    },
+    {
+      "id": "pair",
+      "name": "Pair",
+      "kind": "paint",
+      "paint": [
+        {
+          "bulbs": [
+            1,
+            2
+          ],
+          "rgb": [
+            255,
+            0,
+            0
+          ]
+        },
+        {
+          "bulbs": [
+            3
+          ],
+          "rgb": [
+            0,
+            0,
+            255
+          ]
+        }
+      ]
+    },
+    {
+      "id": "walk",
+      "name": "Walk",
+      "kind": "sequence",
+      "repeat": true,
+      "steps": [
+        {
+          "hold": 2,
+          "scene": {
+            "name": "Sunset Glow",
+            "speed": 2
+          }
+        },
+        {
+          "hold": 5,
+          "paint": [
+            {
+              "bulbs": [
+                1
+              ],
+              "rgb": [
+                1,
+                2,
+                3
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

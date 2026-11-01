@@ -1,0 +1,3271 @@
+{
+  "codec_commit": "0ca80566f263a6638c5cb18e1343a7883618c31a",
+  "model": "H7020",
+  "scenes": [
+    {
+      "category": "Natural",
+      "code": 2070,
+      "default_speed": 1,
+      "key": "twilight",
+      "music_code": 0,
+      "name": "Twilight",
+      "param": "ASAAAAABAAH/TAPKCAUAywUD/78H/38A/2AHAAD/AADtAQ==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  193,
+                  202,
+                  204
+                ]
+              }
+            ],
+            "colour_speed": [
+              178,
+              203,
+              216
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Natural",
+      "code": 2071,
+      "default_speed": 2,
+      "key": "meteor",
+      "music_code": 0,
+      "name": "Meteor",
+      "param": "BRoAAAABAAH/uQDSFBQAgBQBBiT+AACAAACAABoQAQABAgG8TgDTFBQA/hQB////AACAEAD8ABoTAQABAgG8TgDTFBQA/hQBZ4z/AACAEAD8ABoVAQABAgG8TgDTFBQA/hQBZ4z/AACAEAD8ABoSAQABAgG8TgDTFBQA/hQBZ4z/AACAEAD8AA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 2,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  201,
+                  201,
+                  210
+                ]
+              }
+            ],
+            "colour_speed": [],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  196,
+                  201,
+                  211
+                ]
+              }
+            ],
+            "colour_speed": [
+              242,
+              242,
+              254
+            ],
+            "move_all": [
+              244,
+              249,
+              252
+            ],
+            "move_in": [],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  196,
+                  201,
+                  211
+                ]
+              }
+            ],
+            "colour_speed": [
+              242,
+              242,
+              254
+            ],
+            "move_all": [
+              244,
+              249,
+              252
+            ],
+            "move_in": [],
+            "page": 2
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  196,
+                  201,
+                  211
+                ]
+              }
+            ],
+            "colour_speed": [
+              242,
+              242,
+              254
+            ],
+            "move_all": [
+              244,
+              249,
+              252
+            ],
+            "move_in": [],
+            "page": 3
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  196,
+                  201,
+                  211
+                ]
+              }
+            ],
+            "colour_speed": [
+              242,
+              242,
+              254
+            ],
+            "move_all": [
+              244,
+              249,
+              252
+            ],
+            "move_in": [],
+            "page": 4
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Natural",
+      "code": 2072,
+      "default_speed": 1,
+      "key": "nebula",
+      "music_code": 0,
+      "name": "Nebula",
+      "param": "AiAAAAAJAAH/AAGAFBQDgBQDAAD/bwf+yQb/BADyEAD3ABoAAgsGAAFTFQDqFBQA7RQB/v7+AACAAAD2AA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [],
+            "colour_speed": [
+              102,
+              128,
+              140
+            ],
+            "move_all": [
+              239,
+              247,
+              249
+            ],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  204,
+                  234,
+                  242
+                ]
+              }
+            ],
+            "colour_speed": [
+              219,
+              237,
+              239
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 1
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Natural",
+      "code": 2073,
+      "default_speed": 2,
+      "key": "aurora",
+      "music_code": 0,
+      "name": "Aurora",
+      "param": "AiAAAAABAgH/MgEAAAAA+jIDAP8AAP//qv8AAwCAAAAAACMAAAADAgH/GQD6AAAC+gAEf/8A//8AoP//AP//FAH6AAD/AA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 2,
+        "option_count": 4,
+        "pages": [
+          {
+            "brightness": [],
+            "colour_speed": [
+              237,
+              239,
+              250,
+              252
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  214,
+                  229,
+                  250,
+                  252
+                ]
+              }
+            ],
+            "colour_speed": [
+              237,
+              242,
+              250,
+              252
+            ],
+            "move_all": [],
+            "move_in": [
+              237,
+              242,
+              250,
+              252
+            ],
+            "page": 1
+          }
+        ]
+      },
+      "speeds": 4
+    },
+    {
+      "category": "Natural",
+      "code": 2074,
+      "default_speed": 2,
+      "key": "sunset glow",
+      "music_code": 0,
+      "name": "Sunset Glow",
+      "param": "AyBQAQAKAgH/SwDXFBQD9woD/+QH/4IA/wcNFADzAAAABCAAAAADAgF/TADMFBQD8xQD/2MA/0EA/6VWAQDrAADwAyBVAQAFAgH/SwDXFBQD9woD/+QH/4IA/wcNFADzAAAABA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 2,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  201,
+                  204,
+                  215
+                ]
+              }
+            ],
+            "colour_speed": [
+              204,
+              234,
+              247
+            ],
+            "move_all": [],
+            "move_in": [
+              224,
+              234,
+              243
+            ],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  191,
+                  198,
+                  204
+                ]
+              }
+            ],
+            "colour_speed": [
+              204,
+              229,
+              243
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  191,
+                  198,
+                  215
+                ]
+              }
+            ],
+            "colour_speed": [
+              229,
+              237,
+              247
+            ],
+            "move_all": [],
+            "move_in": [
+              229,
+              234,
+              243
+            ],
+            "page": 2
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Natural",
+      "code": 2075,
+      "default_speed": null,
+      "key": "night",
+      "music_code": 0,
+      "name": "Night",
+      "param": "Ah0AAAAFAAGWBQGWMjIC3DICAAD/nADIAAAAAAAAACAAAAADAgGWBQHXMjICADIDiwD/AAAAAAD/AAAAAAAAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": null,
+      "speeds": 0
+    },
+    {
+      "category": "Natural",
+      "code": 2076,
+      "default_speed": null,
+      "key": "moonlight",
+      "music_code": 0,
+      "name": "Moonlight",
+      "param": "AiAAAg4GAgF+DAPIBQoB8goD+/6w//8A/+ycAAAAAQDtAB2gAQAyAAFkHgAAAAAAgBQCHyv/HJv/AAAAAAAAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": null,
+      "speeds": 0
+    },
+    {
+      "category": "Natural",
+      "code": 2077,
+      "default_speed": 1,
+      "key": "spring",
+      "music_code": 0,
+      "name": "Spring",
+      "param": "AykAAgoFAgH/GQAAAAAC+jIG/zgA/38AAP8AAAAAAP//iwD/AACAAAAAACMAAh4KAAH//wCqAAAB+gAE8QAd/3UA/8AA/0sAAAD/AAH6AB0AAAABAAGZMgHIMjICyDICAP8A//8AAAAAAAAAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [],
+            "colour_speed": [
+              242,
+              250,
+              255
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  140,
+                  170,
+                  183
+                ]
+              }
+            ],
+            "colour_speed": [
+              242,
+              250,
+              252
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  153,
+                  200,
+                  216
+                ]
+              }
+            ],
+            "colour_speed": [
+              178,
+              200,
+              216
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 2
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Natural",
+      "code": 2078,
+      "default_speed": 2,
+      "key": "summer",
+      "music_code": 0,
+      "name": "Summer",
+      "param": "AhoAAAABAgHMfwAAAAAA/zIBhO/+AwCAAAAAACYAAhkKAAH//wAAAAAA/QAFB/+//8AA//8A/4+4/0UHAAAAEAD6Ag==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 2,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [],
+            "colour_speed": [
+              229,
+              237,
+              253
+            ],
+            "move_all": [
+              229,
+              242,
+              250
+            ],
+            "move_in": [],
+            "page": 1
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Natural",
+      "code": 2079,
+      "default_speed": 2,
+      "key": "fall",
+      "music_code": 0,
+      "name": "Fall",
+      "param": "AhoAAAABAgH//wAAAAAA/zIB/zgAAwCAAAAAACkAAh4KAAH//wAAAAAA+gAG8QAd/3UA/8kH/0sA/wAAAAAAEADcAAD/AA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 2,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [],
+            "colour_speed": [
+              229,
+              242,
+              250
+            ],
+            "move_all": [],
+            "move_in": [
+              198,
+              209,
+              220
+            ],
+            "page": 1
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Natural",
+      "code": 2080,
+      "default_speed": null,
+      "key": "winter",
+      "music_code": 0,
+      "name": "Winter",
+      "param": "AhoAAAABAgH//wAAAAAA/zIBBpL+AwCAAAAAACYAAh4KAAH//wAAAAAA+gAFAAD/AP///8AA//8AAAX/AAAAAAD/AA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": null,
+      "speeds": 0
+    },
+    {
+      "category": "Natural",
+      "code": 2081,
+      "default_speed": 1,
+      "key": "sea bottom",
+      "music_code": 0,
+      "name": "Sea bottom",
+      "param": "BB0AAAABAAHmswK+CAgDWBQCBp3+B+H/AACAAQDfAB1QAgMBAgG2KwO+BAQDWBQCBp3+B+H/FQDuAAD2AB1TAgMBAgGzHAK+BAQDWBQCBp3+B+H/AQDuEwDuAB1kAgMBAgGpGQK+BAQDWBQCBp3+B+H/AQDuEwDnAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  178,
+                  190,
+                  198
+                ]
+              }
+            ],
+            "colour_speed": [
+              84,
+              88,
+              114
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  178,
+                  190,
+                  198
+                ]
+              }
+            ],
+            "colour_speed": [
+              84,
+              88,
+              114
+            ],
+            "move_all": [],
+            "move_in": [
+              232,
+              238,
+              242
+            ],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  178,
+                  190,
+                  198
+                ]
+              }
+            ],
+            "colour_speed": [
+              84,
+              88,
+              114
+            ],
+            "move_all": [
+              232,
+              238,
+              242
+            ],
+            "move_in": [],
+            "page": 2
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  178,
+                  190,
+                  198
+                ]
+              }
+            ],
+            "colour_speed": [
+              84,
+              88,
+              114
+            ],
+            "move_all": [
+              226,
+              231,
+              237
+            ],
+            "move_in": [],
+            "page": 3
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Natural",
+      "code": 2082,
+      "default_speed": 1,
+      "key": "wave",
+      "music_code": 0,
+      "name": "Wave",
+      "param": "BSAwAAABAgHMTAMABRIDgRQDB6b/B0D/////FAD6AACAACAyAAABAgHITQEAFBQDgBQDpv77B/b/B1z/FAD6AACAACA0AAADAgHMSwMAFBQDgBQDs+D/Iwf/PfL+FAD5AACAACBGAAADAgHJTwEAFBQDgBQDCP7rWKf//uv+FAD5AACAABoAAAABAAF+TQPCFBQAxRQBNXf/BQD6EQH/AA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [],
+            "colour_speed": [
+              114,
+              129,
+              153
+            ],
+            "move_all": [],
+            "move_in": [
+              242,
+              250,
+              252
+            ],
+            "page": 0
+          },
+          {
+            "brightness": [],
+            "colour_speed": [
+              114,
+              128,
+              153
+            ],
+            "move_all": [],
+            "move_in": [
+              242,
+              250,
+              252
+            ],
+            "page": 1
+          },
+          {
+            "brightness": [],
+            "colour_speed": [
+              114,
+              128,
+              153
+            ],
+            "move_all": [],
+            "move_in": [
+              242,
+              249,
+              252
+            ],
+            "page": 2
+          },
+          {
+            "brightness": [],
+            "colour_speed": [
+              114,
+              128,
+              153
+            ],
+            "move_all": [],
+            "move_in": [
+              242,
+              249,
+              252
+            ],
+            "page": 3
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  178,
+                  194,
+                  209
+                ]
+              }
+            ],
+            "colour_speed": [
+              178,
+              197,
+              216
+            ],
+            "move_all": [
+              242,
+              255,
+              255
+            ],
+            "move_in": [],
+            "page": 4
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Natural",
+      "code": 2083,
+      "default_speed": 1,
+      "key": "firefly",
+      "music_code": 0,
+      "name": "Firefly",
+      "param": "AiAAAAABAAH/oAPNCgoDgBQDB/9eB//QOFL/AACAAACAAB0AAhEBAAH/ZgPNCgoB+wEC/+QH/4cHAACAAACABQ==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  198,
+                  205,
+                  209
+                ]
+              }
+            ],
+            "colour_speed": [
+              114,
+              128,
+              153
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  198,
+                  205,
+                  209
+                ]
+              }
+            ],
+            "colour_speed": [
+              242,
+              251,
+              252
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 1
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Natural",
+      "code": 2084,
+      "default_speed": 1,
+      "key": "deep sea",
+      "music_code": 0,
+      "name": "Deep sea",
+      "param": "Ah0AAAABAAH//wAAAAAA3DICAGT/AAD/AAAAAAAAABoAAgoBAgH/KAHXAAAAADIBAP+WAAAAAAAAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [],
+            "colour_speed": [
+              204,
+              220,
+              229
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  204,
+                  215,
+                  224
+                ]
+              }
+            ],
+            "colour_speed": [],
+            "move_all": [],
+            "move_in": [],
+            "page": 1
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Natural",
+      "code": 2085,
+      "default_speed": 1,
+      "key": "desert",
+      "music_code": 0,
+      "name": "Desert",
+      "param": "AhoAAQAyAgH/GQEAFBQA+jIByHgAAwCAAAAAACkAAh4PAAH/MgDIFBQA/AAG//8A/28A/6AA/3MA/8IA+v8AFAHMAAD/AA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [],
+            "colour_speed": [
+              244,
+              250,
+              252
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  191,
+                  200,
+                  209
+                ]
+              }
+            ],
+            "colour_speed": [
+              244,
+              252,
+              252
+            ],
+            "move_all": [],
+            "move_in": [
+              193,
+              204,
+              216
+            ],
+            "page": 1
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Natural",
+      "code": 2086,
+      "default_speed": 1,
+      "key": "karst cave",
+      "music_code": 0,
+      "name": "Karst Cave",
+      "param": "AikAAAABAAH/mAOaCgoCyBQGvQD/AAD//wAA/38AAP8AAP//AAH6AAAAAB0AAgQBAAH/AADPFBQAgBQCPWn/nzf/AACAAACAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 4,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  140,
+                  154,
+                  168,
+                  191
+                ]
+              }
+            ],
+            "colour_speed": [
+              178,
+              200,
+              209,
+              224
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  198,
+                  207,
+                  211,
+                  224
+                ]
+              }
+            ],
+            "colour_speed": [
+              114,
+              128,
+              140,
+              153
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 1
+          }
+        ]
+      },
+      "speeds": 4
+    },
+    {
+      "category": "Natural",
+      "code": 2087,
+      "default_speed": 1,
+      "key": "forest",
+      "music_code": 0,
+      "name": "Forest",
+      "param": "AyYAAQAKAgH/GQG0CgoCyBQF//8AAP//////AP//lP8AFAGWAAAAACMAAg8FAgH/MwHMBQUB+goEBP8AtP8AR///4/8AAAAAAAAAABoAAAABAgH/MgHIFBQC7hQBAP8AAAAAAAAAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  168,
+                  180,
+                  191
+                ]
+              }
+            ],
+            "colour_speed": [
+              178,
+              200,
+              216
+            ],
+            "move_all": [],
+            "move_in": [
+              140,
+              150,
+              165
+            ],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  191,
+                  204,
+                  216
+                ]
+              }
+            ],
+            "colour_speed": [
+              244,
+              250,
+              252
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  183,
+                  200,
+                  209
+                ]
+              }
+            ],
+            "colour_speed": [
+              229,
+              238,
+              242
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 2
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Natural",
+      "code": 2088,
+      "default_speed": 1,
+      "key": "glacier",
+      "music_code": 0,
+      "name": "Glacier",
+      "param": "Ax0wAAABAgH/TQO7FBQAxgoCB4P/AP//BAD2EADqAhoAAAABAAH/gwPMFBQAgBQBAAD/AACAAACAAR00AAABAgH/TQO7FBQAxgoCB4P/AP//BAD2EADqAg==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  173,
+                  187,
+                  204
+                ]
+              }
+            ],
+            "colour_speed": [
+              178,
+              198,
+              216
+            ],
+            "move_all": [
+              226,
+              234,
+              242
+            ],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  178,
+                  204,
+                  216
+                ]
+              }
+            ],
+            "colour_speed": [
+              128,
+              128,
+              127
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  173,
+                  187,
+                  204
+                ]
+              }
+            ],
+            "colour_speed": [
+              178,
+              198,
+              216
+            ],
+            "move_all": [
+              226,
+              234,
+              242
+            ],
+            "move_in": [],
+            "page": 2
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Natural",
+      "code": 2089,
+      "default_speed": 3,
+      "key": "cornfield",
+      "music_code": 0,
+      "name": "Cornfield",
+      "param": "BB0gAQAGAgH/AAL/FBQA/xQC/0EA/4IABAD4EAD5AB0iAQAIAgH/AAD/FBQA/xQC/0EA/2MAAQDyEAD4AB0mAQAIAgH/AAD/FBQA/xQC/0EA/5YAAQDyEAD4ABqgAQAyAAE7CgAAAAAA/zIB/4cHERTwAAAAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 3,
+        "option_count": 4,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  224,
+                  234,
+                  242,
+                  255
+                ]
+              }
+            ],
+            "colour_speed": [
+              229,
+              239,
+              244,
+              255
+            ],
+            "move_all": [
+              232,
+              239,
+              244,
+              249
+            ],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  224,
+                  234,
+                  242,
+                  255
+                ]
+              }
+            ],
+            "colour_speed": [
+              229,
+              239,
+              244,
+              255
+            ],
+            "move_all": [
+              229,
+              237,
+              244,
+              248
+            ],
+            "move_in": [],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  224,
+                  234,
+                  242,
+                  255
+                ]
+              }
+            ],
+            "colour_speed": [
+              229,
+              239,
+              244,
+              255
+            ],
+            "move_all": [
+              229,
+              237,
+              242,
+              248
+            ],
+            "move_in": [],
+            "page": 2
+          },
+          {
+            "brightness": [],
+            "colour_speed": [
+              229,
+              239,
+              244,
+              255
+            ],
+            "move_all": [],
+            "move_in": [
+              224,
+              229,
+              234,
+              240
+            ],
+            "page": 3
+          }
+        ]
+      },
+      "speeds": 4
+    },
+    {
+      "category": "Natural",
+      "code": 2090,
+      "default_speed": 3,
+      "key": "flower field",
+      "music_code": 0,
+      "name": "Flower Field",
+      "param": "AiygAh4ZAgH/lgCmAAAC7QAH0QBe/wMA/2wA//8A/38A/wAA9QD/AAAAEAD0ABqgAQAyAAEyFAAAAAAA8BQBzwBiAAAAAAAAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 3,
+        "option_count": 4,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  122,
+                  142,
+                  153,
+                  166
+                ]
+              }
+            ],
+            "colour_speed": [
+              204,
+              219,
+              229,
+              237
+            ],
+            "move_all": [
+              219,
+              234,
+              239,
+              244
+            ],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [],
+            "colour_speed": [
+              204,
+              229,
+              234,
+              240
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 1
+          }
+        ]
+      },
+      "speeds": 4
+    },
+    {
+      "category": "Natural",
+      "code": 2091,
+      "default_speed": null,
+      "key": "tree shadow",
+      "music_code": 0,
+      "name": "Tree shadow",
+      "param": "Ah0AAAABAAGnVQO+Dw8A6RQCHf+2dv6bAACAAACAACYAAgYBAAGPRgPLBQoA6RQFHf+2dv6bAAAAAAAA//8ABQDjAAD7AA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": null,
+      "speeds": 0
+    },
+    {
+      "category": "Natural",
+      "code": 2092,
+      "default_speed": 1,
+      "key": "cherry blossoms",
+      "music_code": 0,
+      "name": "Cherry blossoms",
+      "param": "Ax0AAAABAAH/AACAFBQAgBQC/0LI+RT/AACAAACAAB0AAgcCAAH/AAAABQUA/BQC1wb//xn/EAD2AACAAB0AAgYCAAF7AAAABQUA/BQCz/8P/3IHBAD2EADvAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  114,
+                  128,
+                  153
+                ]
+              }
+            ],
+            "colour_speed": [
+              114,
+              128,
+              153
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [],
+            "colour_speed": [
+              244,
+              252,
+              252
+            ],
+            "move_all": [],
+            "move_in": [
+              234,
+              246,
+              247
+            ],
+            "page": 1
+          },
+          {
+            "brightness": [],
+            "colour_speed": [
+              244,
+              252,
+              252
+            ],
+            "move_all": [
+              229,
+              239,
+              244
+            ],
+            "move_in": [],
+            "page": 2
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Natural",
+      "code": 35,
+      "default_speed": null,
+      "key": "ripple",
+      "music_code": 0,
+      "name": "Ripple",
+      "param": "",
+      "scene_type": 0,
+      "selector_only": false,
+      "speed": null,
+      "speeds": 0
+    },
+    {
+      "category": "Natural",
+      "code": 2093,
+      "default_speed": null,
+      "key": "rustling leaves",
+      "music_code": 0,
+      "name": "Rustling leaves",
+      "param": "Ah0AAAABAAH//wEAAAAA3DICAP8AAf+WAAAAAAAAABoAAigBAgH/KAHXIBQAADIB//8AAAAAAAAAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": null,
+      "speeds": 0
+    },
+    {
+      "category": "Natural",
+      "code": 64,
+      "default_speed": null,
+      "key": "devour",
+      "music_code": 0,
+      "name": "Devour",
+      "param": "",
+      "scene_type": 0,
+      "selector_only": false,
+      "speed": null,
+      "speeds": 0
+    },
+    {
+      "category": "Natural",
+      "code": 10003,
+      "default_speed": 1,
+      "key": "desert b",
+      "music_code": 0,
+      "name": "Desert B",
+      "param": "AyYAAAAFAgHLMwPJFBQDABQF/x4H/zcH/1oH/zcH/x4HAACAAACAABpQAwECAAH/AACAFBQAgBQB/zIHFgD5AACAABpVAwECAAH/AACAFBQAgBQB/zEHFAD5AACAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  178,
+                  201,
+                  219
+                ]
+              }
+            ],
+            "colour_speed": [],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  102,
+                  128,
+                  153
+                ]
+              }
+            ],
+            "colour_speed": [
+              102,
+              128,
+              153
+            ],
+            "move_all": [],
+            "move_in": [
+              242,
+              249,
+              252
+            ],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  102,
+                  128,
+                  153
+                ]
+              }
+            ],
+            "colour_speed": [
+              102,
+              128,
+              153
+            ],
+            "move_all": [],
+            "move_in": [
+              242,
+              249,
+              252
+            ],
+            "page": 2
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Natural",
+      "code": 10004,
+      "default_speed": 2,
+      "key": "sand grains",
+      "music_code": 0,
+      "name": "Sand Grains",
+      "param": "Ah0AAwMFAAGgoAAAFBQDABQC/4Mw/4UjAACAEAH3ARoAAAABAAH/jAH5FBQDAAcB/2MaAACAAACAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 2,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [],
+            "colour_speed": [],
+            "move_all": [
+              224,
+              237,
+              247
+            ],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  229,
+                  239,
+                  249
+                ]
+              }
+            ],
+            "colour_speed": [],
+            "move_all": [],
+            "move_in": [],
+            "page": 1
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Life",
+      "code": 63,
+      "default_speed": null,
+      "key": "illumination",
+      "music_code": 0,
+      "name": "Illumination",
+      "param": "",
+      "scene_type": 0,
+      "selector_only": false,
+      "speed": null,
+      "speeds": 0
+    },
+    {
+      "category": "Life",
+      "code": 2063,
+      "default_speed": 3,
+      "key": "bright",
+      "music_code": 0,
+      "name": "Bright",
+      "param": "AhoAAAABAAH/TAPnFBQA+jIB//UIAwCAAAAAACAAAg8FAAF/TQHIFBQC+hQD/9gH/38A+P6iAAAAEAD7AA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 3,
+        "option_count": 4,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  178,
+                  204,
+                  219,
+                  231
+                ]
+              }
+            ],
+            "colour_speed": [
+              216,
+              229,
+              242,
+              250
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  127,
+                  153,
+                  178,
+                  200
+                ]
+              }
+            ],
+            "colour_speed": [
+              216,
+              229,
+              242,
+              250
+            ],
+            "move_all": [
+              216,
+              229,
+              242,
+              251
+            ],
+            "move_in": [],
+            "page": 1
+          }
+        ]
+      },
+      "speeds": 4
+    },
+    {
+      "category": "Life",
+      "code": 2064,
+      "default_speed": 2,
+      "key": "colorful",
+      "music_code": 0,
+      "name": "Colorful",
+      "param": "AywAAgoFAgL/GQDZAAD/GQDdAAAC+goF/zgA/38AAP8AAP//iwD/AACAAAAAACMAAh4KAAH//wCeAAAB9QAE8QAd/3UA/8AA/0sAAAD/AAH6AykAAAABAAHEdACbFBQA+QoG/w8H/38A//8AAP8AAP//AAD/AACAAACAAQ==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 2,
+        "option_count": 4,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  191,
+                  206,
+                  217,
+                  224
+                ]
+              },
+              {
+                "block": 1,
+                "values": [
+                  196,
+                  211,
+                  221,
+                  229
+                ]
+              }
+            ],
+            "colour_speed": [
+              229,
+              242,
+              250,
+              252
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  132,
+                  147,
+                  158,
+                  168
+                ]
+              }
+            ],
+            "colour_speed": [
+              224,
+              234,
+              245,
+              249
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  127,
+                  145,
+                  155,
+                  168
+                ]
+              }
+            ],
+            "colour_speed": [
+              229,
+              242,
+              249,
+              252
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 2
+          }
+        ]
+      },
+      "speeds": 4
+    },
+    {
+      "category": "Life",
+      "code": 2065,
+      "default_speed": 2,
+      "key": "candy",
+      "music_code": 0,
+      "name": "Candy",
+      "param": "BCkAAQAyAgH/AAP/CgoBpQUG/wAA/38A//8AAP8AAP//iwD/FAD9AAiAACkAAQAyAgH/sgP/CgoBowUG/wAA/38A//8AAP8AAP//iwD/FgD8EAGAASkAAQAyAAGUlACAFBQA5xQG/wAA/38A//8AAP8AAP//iwD/AACAAACAACkAAhkBAAH//wCAFBQA/BQG/wAA/38A//8AAP8AAP//iwD/AACAAACAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 2,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  229,
+                  244,
+                  255
+                ]
+              }
+            ],
+            "colour_speed": [
+              127,
+              153,
+              165
+            ],
+            "move_all": [],
+            "move_in": [
+              229,
+              242,
+              253
+            ],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  229,
+                  244,
+                  255
+                ]
+              }
+            ],
+            "colour_speed": [
+              140,
+              150,
+              163
+            ],
+            "move_all": [
+              102,
+              114,
+              128
+            ],
+            "move_in": [
+              229,
+              242,
+              252
+            ],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  102,
+                  114,
+                  128
+                ]
+              }
+            ],
+            "colour_speed": [
+              204,
+              219,
+              231
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 2
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  102,
+                  114,
+                  128
+                ]
+              }
+            ],
+            "colour_speed": [
+              229,
+              242,
+              252
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 3
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Life",
+      "code": 2066,
+      "default_speed": 1,
+      "key": "flying",
+      "music_code": 0,
+      "name": "Flying",
+      "param": "Ax0AAgYDAgG9YgPaCgoDxhQC/44H/wYVBADQAQD5BSMAAgUCAgHbWQPaCg8DzRQE7Tj+//sHSO3+Of5dBADQAQD5BSMAAAABAAHMzAK+CgoA7hQE/26Y/1MN/9gvIP4UAACAAACAAQ==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  204,
+                  218,
+                  226
+                ]
+              }
+            ],
+            "colour_speed": [
+              183,
+              198,
+              204
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  204,
+                  218,
+                  226
+                ]
+              }
+            ],
+            "colour_speed": [
+              188,
+              205,
+              209
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  178,
+                  190,
+                  204
+                ]
+              }
+            ],
+            "colour_speed": [
+              224,
+              238,
+              242
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 2
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Life",
+      "code": 2067,
+      "default_speed": 1,
+      "key": "spin",
+      "music_code": 0,
+      "name": "Spin",
+      "param": "BSYgAAABAgH/fgOACgoA8xQF/4wH//4HYf4IB/6uB7r+FQD4AACAACkiAAABAgH/GAOACgoA8xQG/4wH//4H/14H/wY9/wbTtAb+FwD4AACAACkkAAABAgH/GQOACgoA8hQG/4wH//4HCP+qBtr+CH3+1wb/FQD4AACAACkmAAABAgH/GQOACgoA8xQG/4wH//4H/waF9Qf/Vmb/B6L/FwD4AACAACkoAAABAgH/GQOACgoA8xQG/4wH//4H8VD/B2n/CP+RCP8PFQD4AACAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  114,
+                  128,
+                  153
+                ]
+              }
+            ],
+            "colour_speed": [
+              229,
+              243,
+              247
+            ],
+            "move_all": [],
+            "move_in": [
+              242,
+              248,
+              252
+            ],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  114,
+                  128,
+                  153
+                ]
+              }
+            ],
+            "colour_speed": [
+              229,
+              243,
+              247
+            ],
+            "move_all": [],
+            "move_in": [
+              242,
+              248,
+              252
+            ],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  114,
+                  128,
+                  153
+                ]
+              }
+            ],
+            "colour_speed": [
+              229,
+              242,
+              247
+            ],
+            "move_all": [],
+            "move_in": [
+              242,
+              248,
+              252
+            ],
+            "page": 2
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  114,
+                  128,
+                  153
+                ]
+              }
+            ],
+            "colour_speed": [
+              229,
+              243,
+              247
+            ],
+            "move_all": [],
+            "move_in": [
+              242,
+              248,
+              252
+            ],
+            "page": 3
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  114,
+                  128,
+                  153
+                ]
+              }
+            ],
+            "colour_speed": [
+              229,
+              243,
+              247
+            ],
+            "move_all": [],
+            "move_in": [
+              242,
+              248,
+              252
+            ],
+            "page": 4
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Life",
+      "code": 2068,
+      "default_speed": 1,
+      "key": "dancing",
+      "music_code": 0,
+      "name": "Dancing",
+      "param": "Ax0AAAABAAH/AAB/UhQAzQMCAwD/ZwD/EAN/EAN/ARooAAABAAH/AACpZBQAoAEB/wDdEAHLEAD/ARogAAABAAH/AAB/FBQAfwEBAP/aEgF/EgD/Ag==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  114,
+                  127,
+                  153
+                ]
+              }
+            ],
+            "colour_speed": [
+              191,
+              205,
+              216
+            ],
+            "move_all": [
+              114,
+              127,
+              153
+            ],
+            "move_in": [
+              114,
+              127,
+              153
+            ],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  155,
+                  169,
+                  181
+                ]
+              }
+            ],
+            "colour_speed": [
+              150,
+              160,
+              178
+            ],
+            "move_all": [
+              244,
+              255,
+              255
+            ],
+            "move_in": [
+              191,
+              203,
+              216
+            ],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  114,
+                  127,
+                  153
+                ]
+              }
+            ],
+            "colour_speed": [
+              114,
+              127,
+              153
+            ],
+            "move_all": [
+              242,
+              255,
+              255
+            ],
+            "move_in": [
+              114,
+              127,
+              153
+            ],
+            "page": 2
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Life",
+      "code": 2069,
+      "default_speed": null,
+      "key": "competition",
+      "music_code": 0,
+      "name": "Competition",
+      "param": "AhogAAABAAH/zACAFBQAgBQB/wAAAACAEgD/ABooAAABAAH/zwCAFBQAgBQBAAD/AACAEAD/AA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": null,
+      "speeds": 0
+    },
+    {
+      "category": "Emotion",
+      "code": 2097,
+      "default_speed": 1,
+      "key": "cheerful",
+      "music_code": 0,
+      "name": "Cheerful",
+      "param": "Ah0AAAABAAH/fQGAFBQAgBQC/wAAAAD/AACAAACAAC8AAQAyAAL//wCAFBT/AAGAFBQBABQGAP//AAAAAP//AAAAAP//AAAAFQD7AACAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  114,
+                  128,
+                  140
+                ]
+              }
+            ],
+            "colour_speed": [
+              114,
+              128,
+              140
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 1,
+                "values": [
+                  114,
+                  128,
+                  153
+                ]
+              },
+              {
+                "block": 0,
+                "values": [
+                  114,
+                  128,
+                  153
+                ]
+              }
+            ],
+            "colour_speed": [],
+            "move_all": [],
+            "move_in": [
+              242,
+              251,
+              252
+            ],
+            "page": 1
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Emotion",
+      "code": 2098,
+      "default_speed": null,
+      "key": "meditation",
+      "music_code": 0,
+      "name": "Meditation",
+      "param": "AiMAAAABAgHnNQAAAAAAblMEKwf/Bhz+Bkb+B3v/AwAcAAAAAB0AAQAyAgH/MgAAMgAA+jICAAB4AABQAwCAAAAAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": null,
+      "speeds": 0
+    },
+    {
+      "category": "Emotion",
+      "code": 65,
+      "default_speed": null,
+      "key": "heartbeat",
+      "music_code": 0,
+      "name": "Heartbeat",
+      "param": "",
+      "scene_type": 0,
+      "selector_only": false,
+      "speed": null,
+      "speeds": 0
+    },
+    {
+      "category": "Emotion",
+      "code": 2094,
+      "default_speed": 2,
+      "key": "romantic",
+      "music_code": 0,
+      "name": "Romantic",
+      "param": "AyNQAQAPAgH/CgIAAAACAAAE/wAA/1oA/3gA5QA2EAD6AAAAACMAAQAPAgH/CgIAAAACAAAE/wAA/1oA/3gA8gAcEAD6AAAAABoAAAABAgGWMgAAAAAA+jIB/4H/EQCAAAAAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 2,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [],
+            "colour_speed": [],
+            "move_all": [],
+            "move_in": [
+              229,
+              242,
+              250
+            ],
+            "page": 0
+          },
+          {
+            "brightness": [],
+            "colour_speed": [],
+            "move_all": [],
+            "move_in": [
+              229,
+              242,
+              250
+            ],
+            "page": 1
+          },
+          {
+            "brightness": [],
+            "colour_speed": [
+              237,
+              242,
+              250
+            ],
+            "move_all": [],
+            "move_in": [
+              102,
+              114,
+              128
+            ],
+            "page": 2
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Festival",
+      "code": 2095,
+      "default_speed": 2,
+      "key": "christmas",
+      "music_code": 0,
+      "name": "Christmas",
+      "param": "Ah0AAgoBAAH/gAP3BQUA/woC/wAA//8AAACAEADbAhoAAAABAAH/GgDWFBQB9TIBAP8AEADrAA75AQ==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 2,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  229,
+                  239,
+                  247
+                ]
+              }
+            ],
+            "colour_speed": [
+              239,
+              247,
+              255
+            ],
+            "move_all": [
+              201,
+              211,
+              219
+            ],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  193,
+                  204,
+                  214
+                ]
+              }
+            ],
+            "colour_speed": [
+              229,
+              237,
+              245
+            ],
+            "move_all": [],
+            "move_in": [
+              216,
+              226,
+              235
+            ],
+            "page": 1
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Festival",
+      "code": 2992,
+      "default_speed": 2,
+      "key": "christmas tree",
+      "music_code": 0,
+      "name": "Christmas Tree",
+      "param": "BRoAAAABAgH/CQOAFBQAgBQBAP8AAACAAACAABpVAwMDAgH/DQOAFBQAgBQB/38AEAD0AACAABpQAwMDAgH/DQOAFBQAgBQB/38AEgD0AACAAB0AAgcBAAH/AADqFBQB6hQC/wAA/z9CAACAAACAABoVAAABAAH/AAHMFBQAgBQB////AACAAACAAQ==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 2,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  102,
+                  114,
+                  128
+                ]
+              }
+            ],
+            "colour_speed": [
+              102,
+              114,
+              128
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  102,
+                  114,
+                  128
+                ]
+              }
+            ],
+            "colour_speed": [
+              102,
+              114,
+              128
+            ],
+            "move_all": [],
+            "move_in": [
+              219,
+              234,
+              244
+            ],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  102,
+                  114,
+                  128
+                ]
+              }
+            ],
+            "colour_speed": [
+              102,
+              114,
+              128
+            ],
+            "move_all": [],
+            "move_in": [
+              219,
+              234,
+              244
+            ],
+            "page": 2
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  209,
+                  224,
+                  234
+                ]
+              }
+            ],
+            "colour_speed": [
+              209,
+              224,
+              234
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 3
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  178,
+                  191,
+                  204
+                ]
+              }
+            ],
+            "colour_speed": [
+              102,
+              114,
+              128
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 4
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Festival",
+      "code": 2993,
+      "default_speed": 1,
+      "key": "sled",
+      "music_code": 0,
+      "name": "Sled",
+      "param": "AxoAAAABAAH/AACAFBQAgBQBh/b+AACAAACAAB1AAAACAgH/CgAAFBQCABQC/wAA/38AAgD/EAH8ARoAAwMDAAH/AACAFBQAgBQBAP8AFAD8AACAAQ==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [],
+            "colour_speed": [],
+            "move_all": [
+              249,
+              252,
+              255
+            ],
+            "move_in": [],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  117,
+                  128,
+                  140
+                ]
+              }
+            ],
+            "colour_speed": [
+              117,
+              128,
+              140
+            ],
+            "move_all": [],
+            "move_in": [
+              249,
+              252,
+              255
+            ],
+            "page": 2
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Festival",
+      "code": 2994,
+      "default_speed": 1,
+      "key": "christmas gift",
+      "music_code": 0,
+      "name": "Christmas Gift",
+      "param": "AykAAgMBAAH/AAHbFBQBgBQG/wAA/38A//8AAP8AAP//iwD/AACAAACAACkAAgMBAAH/AAHoFBQBgBQGiwD/AP//AP8A//8A/38A/wAAAACAAACAABoAAAABAAH/HAHMFBQAgBQBB/8eAACAAACAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  209,
+                  219,
+                  229
+                ]
+              }
+            ],
+            "colour_speed": [
+              102,
+              128,
+              153
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  216,
+                  232,
+                  242
+                ]
+              }
+            ],
+            "colour_speed": [
+              102,
+              128,
+              153
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  183,
+                  204,
+                  216
+                ]
+              }
+            ],
+            "colour_speed": [
+              102,
+              128,
+              153
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 2
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Festival",
+      "code": 2096,
+      "default_speed": 2,
+      "key": "carnival",
+      "music_code": 0,
+      "name": "Carnival",
+      "param": "BRogAQAFAgH/KAHwAAACADIB/wAAEQD8EQH8ABoiAQAFAgH/KAHwAAACADIB/38AEQD8EQH8ABokAQAFAgH/KAHwAAACADIB//8AEQD8EQH8ABomAQAFAgH/KAHwAAACADIBf/8AEAD8EQH8ABooAQAFAgH/KAHwAAACADIBAP8AEQD8EQH8AA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 2,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  229,
+                  234,
+                  240
+                ]
+              }
+            ],
+            "colour_speed": [],
+            "move_all": [
+              244,
+              249,
+              252
+            ],
+            "move_in": [
+              244,
+              249,
+              252
+            ],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  229,
+                  234,
+                  240
+                ]
+              }
+            ],
+            "colour_speed": [],
+            "move_all": [
+              244,
+              249,
+              252
+            ],
+            "move_in": [
+              244,
+              249,
+              252
+            ],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  229,
+                  234,
+                  240
+                ]
+              }
+            ],
+            "colour_speed": [],
+            "move_all": [
+              244,
+              249,
+              252
+            ],
+            "move_in": [
+              244,
+              249,
+              252
+            ],
+            "page": 2
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  229,
+                  234,
+                  240
+                ]
+              }
+            ],
+            "colour_speed": [],
+            "move_all": [
+              244,
+              249,
+              252
+            ],
+            "move_in": [
+              244,
+              249,
+              252
+            ],
+            "page": 3
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  229,
+                  234,
+                  240
+                ]
+              }
+            ],
+            "colour_speed": [],
+            "move_all": [
+              244,
+              249,
+              252
+            ],
+            "move_in": [
+              244,
+              249,
+              252
+            ],
+            "page": 4
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Festival",
+      "code": 2983,
+      "default_speed": 2,
+      "key": "halloween",
+      "music_code": 0,
+      "name": "Halloween",
+      "param": "AiMAAAACAgI1FgHEFBQxFQPGFBQDURQC/38AiwD/AACAAACAACAAAggGAAH/AADdBgUA9AoD/zcHAAAAiwD/AACAAACAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 2,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [],
+            "colour_speed": [
+              188,
+              198,
+              220
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  201,
+                  204,
+                  215
+                ]
+              }
+            ],
+            "colour_speed": [],
+            "move_all": [],
+            "move_in": [],
+            "page": 1
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Festival",
+      "code": 2984,
+      "default_speed": 2,
+      "key": "halloween b",
+      "music_code": 0,
+      "name": "Halloween B",
+      "param": "BRoAAhQKAAGnAAPJCgoA/wUBiwD/AACAAACAACYAAAABAAH/AAD/CgoD/wUF/wAAAAAAAAAAAAAAAAAAAACAAACAABowAQACAAH//wD3FBQA/xQB/wAAEgD3AACAABo0AQACAAH/5gCZFBQA/xQB/wAAEAD3AACAABoAAAABAAETCQC/FBQA/xQBiwD/AAD3AACAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 2,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  186,
+                  193,
+                  201
+                ]
+              }
+            ],
+            "colour_speed": [
+              244,
+              249,
+              255
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  244,
+                  249,
+                  255
+                ]
+              }
+            ],
+            "colour_speed": [
+              244,
+              249,
+              255
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  232,
+                  239,
+                  247
+                ]
+              }
+            ],
+            "colour_speed": [
+              244,
+              249,
+              255
+            ],
+            "move_all": [],
+            "move_in": [
+              232,
+              242,
+              247
+            ],
+            "page": 2
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  132,
+                  142,
+                  153
+                ]
+              }
+            ],
+            "colour_speed": [
+              244,
+              249,
+              255
+            ],
+            "move_all": [],
+            "move_in": [
+              234,
+              242,
+              247
+            ],
+            "page": 3
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  173,
+                  183,
+                  191
+                ]
+              }
+            ],
+            "colour_speed": [
+              244,
+              249,
+              255
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 4
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Festival",
+      "code": 2985,
+      "default_speed": 1,
+      "key": "halloween c",
+      "music_code": 0,
+      "name": "Halloween C",
+      "param": "ASkAAAABAAH/fwO/FBQB/BQGiwD/iwD/iwD//00H/0AH/0EHAACAAQDyAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  178,
+                  191,
+                  216
+                ]
+              }
+            ],
+            "colour_speed": [
+              247,
+              252,
+              252
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 0
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Festival",
+      "code": 2991,
+      "default_speed": 1,
+      "key": "party",
+      "music_code": 0,
+      "name": "Party",
+      "param": "BCkAAQAyAgH/AAP/CgoBpQUG/wAA/38A//8AAP8AAP//iwD/FADyAAiAACkAAQAyAgH/sgP/CgoBowUG/wAA/38A//8AAP8AAP//iwD/FgD4EAGAASkAAQAyAAGUlACAFBQA5xQG/wAA/38A//8AAP8AAP//iwD/AACAAACAACkAAhkBAAH//wCAFBQA/xQG/wAA/38A//8AAP8AAP//iwD/AACAAACAAA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  244,
+                  255,
+                  255
+                ]
+              }
+            ],
+            "colour_speed": [
+              147,
+              165,
+              178
+            ],
+            "move_all": [],
+            "move_in": [
+              234,
+              242,
+              247
+            ],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  244,
+                  255,
+                  255
+                ]
+              }
+            ],
+            "colour_speed": [
+              150,
+              163,
+              178
+            ],
+            "move_all": [],
+            "move_in": [
+              239,
+              248,
+              252
+            ],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  117,
+                  128,
+                  142
+                ]
+              }
+            ],
+            "colour_speed": [
+              221,
+              231,
+              239
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 2
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  117,
+                  128,
+                  142
+                ]
+              }
+            ],
+            "colour_speed": [
+              244,
+              255,
+              255
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 3
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Festival",
+      "code": 11214,
+      "default_speed": 1,
+      "key": "easter",
+      "music_code": 0,
+      "name": "Easter",
+      "param": "BRooAAABAgH/AADqFBQBABQB/38AEADqAACAACAkAAABAgL/AADqFBT/AACZFBQBABQB/ycoEADqAACAARomAAABAgH/AADqFBQAABQBQv44EADqAACAARoiAAABAgH/AADqFBQAABQBJ37/EADqAACAARogAAABAgH/AADqFBQAABQBniD+EADqAACAAQ==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  224,
+                  234,
+                  242
+                ]
+              }
+            ],
+            "colour_speed": [],
+            "move_all": [],
+            "move_in": [
+              224,
+              234,
+              242
+            ],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  224,
+                  234,
+                  244
+                ]
+              }
+            ],
+            "colour_speed": [],
+            "move_all": [],
+            "move_in": [
+              224,
+              234,
+              242
+            ],
+            "page": 1
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  224,
+                  234,
+                  247
+                ]
+              }
+            ],
+            "colour_speed": [],
+            "move_all": [],
+            "move_in": [
+              224,
+              234,
+              242
+            ],
+            "page": 2
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  224,
+                  234,
+                  247
+                ]
+              }
+            ],
+            "colour_speed": [],
+            "move_all": [],
+            "move_in": [
+              224,
+              234,
+              242
+            ],
+            "page": 3
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  224,
+                  234,
+                  247
+                ]
+              }
+            ],
+            "colour_speed": [],
+            "move_all": [],
+            "move_in": [
+              224,
+              234,
+              242
+            ],
+            "page": 4
+          }
+        ]
+      },
+      "speeds": 3
+    },
+    {
+      "category": "Festival",
+      "code": 13486,
+      "default_speed": 1,
+      "key": "valentine's day",
+      "music_code": 0,
+      "name": "Valentine's Day",
+      "param": "AiAAAAABAgH/GQHIMhQDfzID/wAA/y00/wAAEADyAAAAACMAAhkPAAFMDQPJFBQClhQE/0JyowD//07//6X/AAAAAAD/AA==",
+      "scene_type": 2,
+      "selector_only": false,
+      "speed": {
+        "default_index": 1,
+        "option_count": 3,
+        "pages": [
+          {
+            "brightness": [],
+            "colour_speed": [
+              127,
+              127,
+              204
+            ],
+            "move_all": [],
+            "move_in": [
+              229,
+              242,
+              252
+            ],
+            "page": 0
+          },
+          {
+            "brightness": [
+              {
+                "block": 0,
+                "values": [
+                  198,
+                  201,
+                  211
+                ]
+              }
+            ],
+            "colour_speed": [
+              127,
+              150,
+              198
+            ],
+            "move_all": [],
+            "move_in": [],
+            "page": 1
+          }
+        ]
+      },
+      "speeds": 3
+    }
+  ],
+  "schema": 1
+}

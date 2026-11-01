@@ -1,0 +1,41 @@
+{
+  "schedules": [
+    {
+      "id": "evening",
+      "enabled": true,
+      "days": [
+        "mon",
+        "wed"
+      ],
+      "time": "19:30",
+      "action": {
+        "pattern": "walk"
+      }
+    },
+    {
+      "id": "night-off",
+      "enabled": false,
+      "days": [
+        "sun"
+      ],
+      "time": "23:00",
+      "action": {
+        "power": false
+      }
+    },
+    {
+      "id": "morning",
+      "enabled": true,
+      "days": [
+        "sat"
+      ],
+      "time": "06:30",
+      "action": {
+        "scene": {
+          "name": "Sunset Glow",
+          "speed": 1
+        }
+      }
+    }
+  ]
+}

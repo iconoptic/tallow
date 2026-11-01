@@ -1,0 +1,128 @@
+{
+ "devices": {
+  "0A:0B:0C:0D:0E:0F unknown": {
+   "addr": "0A:0B:0C:0D:0E:0F",
+   "heard_by": {
+    "2c7f0b11": {
+     "hits": 1,
+     "last": 1798761598,
+     "rssi": -80
+    }
+   },
+   "kind": "unknown",
+   "nearest": "2c7f0b11"
+  },
+  "10:20:30:40:50:60 ble-public": {
+   "addr": "10:20:30:40:50:60",
+   "heard_by": {
+    "2c7f0b11": {
+     "hits": 2,
+     "last": 1798761600,
+     "rssi": -60
+    },
+    "541e99a9": {
+     "hits": 1,
+     "last": 1798761596,
+     "rssi": -60
+    }
+   },
+   "kind": "ble-public",
+   "nearest": "2c7f0b11"
+  },
+  "23:00:00:11:A0:38 classic": {
+   "addr": "23:00:00:11:A0:38",
+   "class": 2360324,
+   "heard_by": {
+    "541e99a9": {
+     "hits": 5,
+     "last": 1798761598,
+     "rssi": -48
+    }
+   },
+   "kind": "classic",
+   "name": "Klipsch Soundbar",
+   "nearest": "541e99a9"
+  },
+  "C0:11:22:33:44:AA ble-random": {
+   "addr": "C0:11:22:33:44:AA",
+   "company": 76,
+   "heard_by": {
+    "2c7f0b11": {
+     "hits": 2,
+     "last": 1798761600,
+     "rssi": -55
+    },
+    "541e99a9": {
+     "hits": 3,
+     "last": 1798761600,
+     "rssi": -70
+    }
+   },
+   "kind": "ble-random",
+   "name": "WF-1000XM5",
+   "nearest": "2c7f0b11"
+  }
+ },
+ "nodes": {
+  "2c7f0b11": {
+   "adverts": 2600,
+   "classic": 0,
+   "evicted": 0,
+   "heap_block": 60000,
+   "heap_free": 140000,
+   "heap_min": 118000,
+   "hops": 1,
+   "inquiries": 2,
+   "inquiry_errors": 0,
+   "inquiry_started": 0,
+   "inquiry_stopped": 0,
+   "link_rssi": -58,
+   "neighbours": 2,
+   "parent": 1411291561,
+   "parent_changes": 0,
+   "parent_quality": 200,
+   "parent_rssi": -52,
+   "queue_drops": 0,
+   "rank": 1,
+   "rx_bad": 0,
+   "rx_drops": 0,
+   "rx_dup": 0,
+   "rx_frames": 0,
+   "seen": 1798761600,
+   "settings": 0,
+   "tx_failed": 1,
+   "tx_ok": 400,
+   "uptime_s": 312
+  },
+  "541e99a9": {
+   "adverts": 5000,
+   "classic": 0,
+   "evicted": 0,
+   "heap_block": 65536,
+   "heap_free": 151234,
+   "heap_min": 120000,
+   "hops": 0,
+   "inquiries": 3,
+   "inquiry_errors": 0,
+   "inquiry_started": 0,
+   "inquiry_stopped": 0,
+   "link_rssi": 0,
+   "neighbours": 1,
+   "parent": 0,
+   "parent_changes": 0,
+   "parent_quality": 0,
+   "parent_rssi": 0,
+   "queue_drops": 0,
+   "rank": 0,
+   "rx_bad": 0,
+   "rx_drops": 0,
+   "rx_dup": 0,
+   "rx_frames": 0,
+   "seen": 1798761600,
+   "settings": 0,
+   "tx_failed": 4,
+   "tx_ok": 900,
+   "uptime_s": 600
+  }
+ }
+}

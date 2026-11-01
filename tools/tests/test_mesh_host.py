@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import struct
 import sys
@@ -64,6 +66,63 @@ class Decode(unittest.TestCase):
             self.assertIsNone(host.decode_up(line))
 
 
+class Routes(unittest.TestCase):
+    def test_a_parent_change_decodes(self) -> None:
+        payload = struct.pack("<III", 1234, 0x11223344, 0) + bytes([0])
+        self.assertEqual(
+            host.parse_route(payload),
+            {"uptime_s": 1234, "old": "11223344", "new": None, "reason": "beacon timeout"},
+        )
+
+    def test_a_route_of_the_wrong_size_is_refused(self) -> None:
+        self.assertIsNone(host.parse_route(bytes(12)))
+        self.assertIsNone(host.parse_route(bytes(14)))
+
+    def test_an_unknown_reason_is_named_as_such(self) -> None:
+        self.assertEqual(host.parse_route(bytes(12) + bytes([9]))["reason"], "unknown")
+
+    def test_a_route_frame_is_printed_with_its_reason(self) -> None:
+        payload = struct.pack("<III", 77, 0x0A0B0C0D, 0x01020304) + bytes([1])
+        up = {"frame": host.FRAME_ROUTE, "origin": "00000005", "payload": payload, "hops": 2, "rssi": -60}
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            host.handle(up, host.Map(), False)
+        self.assertEqual(
+            out.getvalue(),
+            "route 00000005 up 77 s from 0a0b0c0d to 01020304 reason failed acks\n",
+        )
+
+    def test_a_route_frame_is_silent_during_a_trial(self) -> None:
+        up = {"frame": host.FRAME_ROUTE, "origin": "00000005", "payload": bytes(13), "hops": 1, "rssi": -60}
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            host.handle(up, host.Map(), True)
+        self.assertEqual(out.getvalue(), "")
+
+
+class Delivery(unittest.TestCase):
+    NODES = {"root": {"link_rssi": 0}, "leaf": {"link_rssi": -50}}
+
+    def test_a_clean_run_is_measured_by_what_it_sent(self) -> None:
+        rows = host.delivery({"leaf": set(range(1, 441))}, self.NODES, 45, 10)
+        self.assertEqual(rows, [("leaf", 440, 440, 100.0)])
+
+    def test_a_hole_in_the_middle_counts(self) -> None:
+        rows = host.delivery({"leaf": set(range(1, 441)) - {200, 201}}, self.NODES, 45, 10)
+        self.assertEqual(rows[0][1:3], (438, 440))
+
+    def test_a_node_that_stops_partway_fails(self) -> None:
+        rows = host.delivery({"leaf": set(range(1, 101))}, self.NODES, 45, 10)
+        self.assertEqual(rows[0][2], 405)
+        self.assertLess(rows[0][3], 95)
+
+    def test_a_node_that_sends_nothing_fails(self) -> None:
+        self.assertEqual(host.delivery({}, self.NODES, 45, 10), [("leaf", 0, 405, 0.0)])
+
+    def test_the_root_is_not_expected_to_cross_the_air(self) -> None:
+        self.assertEqual(host.delivery({}, {"root": {"link_rssi": 0}}, 45, 10), [])
+
+
 class WorldMap(unittest.TestCase):
     def test_the_nearest_node_is_the_strongest(self) -> None:
         world = host.Map()
@@ -86,6 +145,52 @@ class WorldMap(unittest.TestCase):
         world.sighting("a", {"addr": "AA", "kind": "classic", "rssi": -50, "count": 1, "age_s": 0}, 1.0)
         world.sighting("a", {"addr": "AA", "kind": "ble-public", "rssi": -50, "count": 1, "age_s": 0}, 1.0)
         self.assertEqual(len(world.devices), 2)
+
+
+class Watch(unittest.TestCase):
+    """The paging list line the host sends, and the addresses it refuses."""
+
+    def test_addresses_become_one_line_of_hex_pairs(self) -> None:
+        line = host.watch_line(["AA:BB:CC:DD:EE:01", "10:20:30:40:50:60"])
+        self.assertEqual(line, b"W aabbccddee01 102030405060\n")
+
+    def test_case_does_not_change_the_line(self) -> None:
+        self.assertEqual(host.watch_line(["aa:bb:cc:dd:ee:01"]), host.watch_line(["AA:BB:CC:DD:EE:01"]))
+
+    def test_no_address_is_a_line_that_clears_the_list(self) -> None:
+        self.assertEqual(host.watch_line([]), b"W\n")
+
+    def test_sixteen_addresses_fit_the_firmware_line(self) -> None:
+        addresses = [f"00:00:00:00:00:{index:02X}" for index in range(16)]
+        line = host.watch_line(addresses).rstrip(b"\n")
+        # The firmware reads at most 220 bytes of a line into its buffer.
+        self.assertEqual(len(line), 2 + 16 * 13 - 1)
+        self.assertLessEqual(len(line), 220)
+
+    def test_seventeen_addresses_are_refused(self) -> None:
+        with self.assertRaisesRegex(ValueError, "at most 16"):
+            host.watch_line([f"00:00:00:00:00:{index:02X}" for index in range(17)])
+
+    def test_bad_addresses_are_refused(self) -> None:
+        bad = [
+            "AA:BB:CC:DD:EE",            # five pairs
+            "AA:BB:CC:DD:EE:FF:00",      # seven pairs
+            "AA:BB:CC:DD:EE:GG",         # not hex
+            "AA:BB:CC:DD:EE:F",          # a single digit
+            "AA:BB:CC:DD:EE:FFF",        # three digits
+            "AABBCCDDEEFF",              # no separators
+            "AA-BB-CC-DD-EE-FF",         # dashes
+            " AA:BB:CC:DD:EE:FF",        # leading space
+            "AA:BB:CC:DD:EE:FF\nW",      # a newline inside the address
+            "",
+        ]
+        for text in bad:
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                host.watch_line([text])
+
+    def test_one_bad_address_refuses_the_whole_list(self) -> None:
+        with self.assertRaises(ValueError):
+            host.watch_line(["AA:BB:CC:DD:EE:FF", "AA:BB:CC:DD:EE"])
 
 
 if __name__ == "__main__":

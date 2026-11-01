@@ -1,0 +1,12 @@
+[Unit]
+Description=H7020 agent socket broker (Rust port, not installed)
+Documentation=file:///home/btgrant/Projects/tallow/docs/devices/govee-h7020.md
+
+[Service]
+ExecStart=/home/btgrant/Projects/tallow/host/target/release/tallow-broker
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

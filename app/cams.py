@@ -116,7 +116,8 @@ def load_cams(path: Path) -> list[Cam]:
 
 def save_inventory(path: Path, raw: Any) -> tuple[str, list[Cam]]:
     """Validate and replace the inventory. The write is a temp file renamed into place."""
-    title, cams = parse_inventory(raw, path)
+    # The path stays out of the message: this answers a browser.
+    title, cams = parse_inventory(raw)
     path.parent.mkdir(parents=True, exist_ok=True)
     document = {
         "title": title,

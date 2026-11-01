@@ -23,3 +23,11 @@ esp-idf-svc = { version = "0.53", default-features = false, features = ["std", "
 
 [build-dependencies]
 embuild = "0.33"
+
+# The camera driver is Espressif's esp32-camera component, pinned to the version
+# the ESPHome build of this board uses. The component manager writes
+# components_esp32s3.lock here; that file is gitignored.
+[[package.metadata.esp-idf-sys.extra_components]]
+remote_component = { name = "espressif/esp32-camera", version = "2.1.7" }
+bindings_header = "src/bindings.h"
+bindings_module = "camera"

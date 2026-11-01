@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Devices</title>
+<link rel="stylesheet" href="/panel.css">
+<style>
+  h2 { font-size: 1.2rem; margin: 1.6rem 0 0; }
+  code { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
+  .empty { margin-top: 1.2rem; padding: 1rem 1.2rem; border-radius: var(--radius); background: var(--chip); }
+  .empty p { margin: 0.5rem 0 0; }
+  .cards { list-style: none; margin: 0.8rem 0 0; padding: 0; display: grid; gap: 0.7rem; }
+  .card { min-width: 0; padding: 0.9rem 1rem; border-radius: var(--radius); background: var(--chip); overflow-wrap: anywhere; }
+  .card h3 { margin: 0; font-size: 1.05rem; }
+  .card p { margin: 0.5rem 0 0; color: var(--note); font-size: 0.92rem; }
+  .card dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.25rem 0.8rem; margin: 0.6rem 0 0; font-size: 0.92rem; }
+  .card dt { color: var(--note); }
+  .card dd { margin: 0; }
+</style>
+</head>
+<body>
+<main class="wide">
+  <a class="back" href="/">&larr; tallow</a>
+  <h1>Devices</h1>
+  <p class="note">What the mesh hears, as the map file says. Nothing here changes a device.</p>
+  <p id="error" class="err" role="status"></p>
+  <div id="stale" class="empty" hidden>
+    <p><strong>The map is not running.</strong></p>
+    <p id="reason" class="note"></p>
+    <p class="note">Find the root node's port with <code>tools/mesh.sh ports</code>, then start the map on it:</p>
+    <p><code>tools/mesh.sh host &lt;port&gt;</code></p>
+    <p class="note">It writes <code>data/mesh/map.json</code> while it runs. This page reads that file every 5 s.</p>
+  </div>
+  <div id="live" hidden>
+    <p id="stamp" class="note"></p>
+    <h2>Devices</h2>
+    <ul id="devices" class="cards"></ul>
+    <p id="no-devices" class="note" hidden>No devices heard yet.</p>
+    <h2>Nodes</h2>
+    <ul id="nodes" class="cards"></ul>
+    <p id="no-nodes" class="note" hidden>No nodes in the map.</p>
+  </div>
+</main>
+<script>
+const REFRESH_MS = 5000;
+const PAGED = -127;
+const REASONS = {
+  missing: "No map file has been written yet.",
+  unreadable: "The map file cannot be read.",
+  malformed: "The map file is not the map the host writes.",
+  "too large": "The map file is larger than the panel reads.",
+  future: "The map file is dated ahead of this machine's clock.",
+};
+const KINDS = {
+  "ble-public": "BLE, public address",
+  "ble-random": "BLE, random address",
+  classic: "Classic Bluetooth",
+};
+const errorEl = document.getElementById("error");
+const staleEl = document.getElementById("stale");
+const reasonEl = document.getElementById("reason");
+const liveEl = document.getElementById("live");
+const stampEl = document.getElementById("stamp");
+const devicesEl = document.getElementById("devices");
+const noDevicesEl = document.getElementById("no-devices");
+const nodesEl = document.getElementById("nodes");
+const noNodesEl = document.getElementById("no-nodes");
+
+function make(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function ago(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 90) return `${s} s ago`;
+  if (s < 5400) return `${Math.round(s / 60)} min ago`;
+  return `${Math.round(s / 3600)} h ago`;
+}
+
+function kib(bytes) {
+  return typeof bytes === "number" ? `${Math.round(bytes / 1024)} KB` : "unknown";
+}
+
+// A random address changes, so it names nothing that lasts. Only a key that resolves it says who it is.
+function isRotating(device) {
+  return device.kind === "ble-random" && !device.resolved;
+}
+
+function titleOf(device) {
+  if (device.resolved) return device.resolved;
+  if (device.name) return device.name;
+  if (isRotating(device)) return "Changing address";
+  return "Unnamed device";
+}
+
+// A Classic page reports -127: the device answered a page, which has no signal strength.
+function signal(kind, rssi) {
+  if (kind === "classic" && rssi === PAGED) return "paged, no signal strength";
+  return `${rssi} dBm`;
+}
+
+function deviceCard(device, now) {
+  const card = make("li", "card");
+  const heard = Object.entries(device.heard_by || {});
+  const latest = heard.reduce((best, [, entry]) => (best === null || entry.last > best ? entry.last : best), null);
+  const nearest = device.nearest && device.heard_by ? device.heard_by[device.nearest] : undefined;
+  card.append(make("h3", "", titleOf(device)));
+  if (isRotating(device)) {
+    card.append(make("p", "", "A changing address, not a stable identity. A random address changes. Any name shown came from the air and is not checked."));
+  }
+  const list = make("dl");
+  const add = (term, value) => list.append(make("dt", "", term), make("dd", "", value));
+  add("Kind", KINDS[device.kind] || device.kind || "unknown");
+  add("Address", device.addr || "unknown");
+  add("Room", device.room || "No room yet");
+  add("Nearest", nearest ? `${device.nearest}, ${signal(device.kind, nearest.rssi)}` : "none");
+  add("Last heard", latest === null ? "never" : ago(now - latest));
+  add("Heard by", heard.length ? heard.map(([node, entry]) => `${node} ${signal(device.kind, entry.rssi)}`).join("; ") : "nobody");
+  card.append(list);
+  return card;
+}
+
+function nodeCard(id, node, now) {
+  const card = make("li", "card");
+  card.append(make("h3", "", id));
+  const list = make("dl");
+  const add = (term, value) => list.append(make("dt", "", term), make("dd", "", value));
+  add("Rank", node.rank === undefined ? "unknown" : String(node.rank));
+  add("Heap", `${kib(node.heap_free)} free, lowest ${kib(node.heap_min)}`);
+  add("Parent", node.parent ? node.parent.toString(16).padStart(8, "0") : "no parent");
+  add("Hops", node.hops === undefined || node.hops === null ? "unknown" : String(node.hops));
+  add("Seen", typeof node.seen === "number" ? ago(now - node.seen) : "unknown");
+  card.append(list);
+  return card;
+}
+
+function showStale(doc) {
+  liveEl.hidden = true;
+  staleEl.hidden = false;
+  let text = REASONS[doc.reason] || "The map file is not usable.";
+  if (doc.reason === "old" && typeof doc.age_s === "number") text = `The map was last written ${ago(doc.age_s)}.`;
+  reasonEl.textContent = text;
+}
+
+function showLive(doc) {
+  staleEl.hidden = true;
+  liveEl.hidden = false;
+  const now = doc.now;
+  stampEl.textContent = `Map written ${ago(doc.age_s || 0)}.`;
+  const devices = Object.entries(doc.devices || {}).sort(([, a], [, b]) => titleOf(a).localeCompare(titleOf(b)));
+  devicesEl.replaceChildren(...devices.map(([, device]) => deviceCard(device, now)));
+  noDevicesEl.hidden = devices.length > 0;
+  const nodes = Object.entries(doc.nodes || {}).sort(([a], [b]) => a.localeCompare(b));
+  nodesEl.replaceChildren(...nodes.map(([id, node]) => nodeCard(id, node, now)));
+  noNodesEl.hidden = nodes.length > 0;
+}
+
+async function refresh() {
+  try {
+    const response = await fetch("/api/mesh/map", { headers: { accept: "application/json" }, cache: "no-store" });
+    if (response.status === 401) {
+      location.href = "/login";
+      return;
+    }
+    if (!response.ok) throw new Error(String(response.status));
+    const doc = await response.json();
+    errorEl.textContent = "";
+    if (doc.stale) showStale(doc);
+    else showLive(doc);
+  } catch (error) {
+    errorEl.textContent = "The panel did not answer.";
+  }
+}
+
+setInterval(() => !document.hidden && refresh(), REFRESH_MS);
+refresh();
+</script>
+</body>
+</html>

@@ -114,7 +114,7 @@ def authenticate(
     if channel == "lan":
         if authorization:
             return None
-        if cookie and hmac.compare_digest(cookie, browser_token):
+        if cookie and hmac.compare_digest(cookie.encode(), browser_token.encode()):
             return ("browser", frozenset(SCOPES))
         return None
     if channel != "agent":

@@ -1,0 +1,19 @@
+# The tallow mesh host: tallowd reads the root node's serial port and keeps
+# data/mesh/map.json in the repo. tools/setup_mesh_host.sh installs this as a user
+# unit, and it needs no root at runtime. It holds the root's port while it runs,
+# so tools/mesh.sh flash, monitor, and backup fail on that port until it stops:
+#   systemctl --user stop tallowd.service
+# Each start resets the root board, so a restart waits RestartSec.
+[Unit]
+Description=tallow mesh host (tallowd)
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Projects/tallow
+ExecStart=%h/Projects/tallow/host/target/release/tallowd run --port /dev/tallow-root --seconds 315360000 --out data/mesh/map.json
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

@@ -3,6 +3,9 @@
 //! This build has no Bluetooth and joins no network. Serial output is the
 //! USB Serial/JTAG port.
 
+mod camera;
+
+use camera::Camera;
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::sys;
 
@@ -22,10 +25,29 @@ fn boot() {
     println!("boot heap {heap} psram {psram}");
 }
 
+/// Takes one frame and prints its size. The frame goes back to the driver
+/// when `frame` drops at the end of the match arm.
+fn log_frame(camera: &mut Camera) {
+    match camera.capture() {
+        Some(frame) => {
+            let (width, height) = frame.size();
+            println!("frame {width}x{height} jpeg {} bytes", frame.jpeg().len());
+        }
+        None => println!("no frame ready"),
+    }
+}
+
 fn main() {
     sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
     boot();
+    match Camera::init() {
+        Ok(mut camera) => loop {
+            log_frame(&mut camera);
+            FreeRtos::delay_ms(5000);
+        },
+        Err(err) => println!("camera init failed: {err}"),
+    }
     loop {
         FreeRtos::delay_ms(1000);
     }

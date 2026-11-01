@@ -1,0 +1,6895 @@
+{
+  "codec": "references/protocols-ble/ha-govee-led-ble",
+  "codec_commit": "0ca80566f263a6638c5cb18e1343a7883618c31a",
+  "counts": {
+    "brightness": 200,
+    "color": 18,
+    "paint": 16,
+    "power": 4,
+    "query": 5,
+    "scene": 140,
+    "status": 12,
+    "total": 395
+  },
+  "model": "H7020",
+  "schema": 1,
+  "string_counts": [
+    1,
+    2
+  ],
+  "vectors": [
+    {
+      "id": "query/firmware",
+      "input": {
+        "query": "firmware"
+      },
+      "kind": "query",
+      "result": {
+        "packets": [
+          "aa060000000000000000000000000000000000ac"
+        ]
+      },
+      "strings": null
+    },
+    {
+      "id": "query/hardware",
+      "input": {
+        "query": "hardware"
+      },
+      "kind": "query",
+      "result": {
+        "packets": [
+          "aa070300000000000000000000000000000000ae"
+        ]
+      },
+      "strings": null
+    },
+    {
+      "id": "query/configured_strings",
+      "input": {
+        "query": "configured_strings"
+      },
+      "kind": "query",
+      "result": {
+        "packets": [
+          "aa0f0000000000000000000000000000000000a5"
+        ]
+      },
+      "strings": null
+    },
+    {
+      "id": "query/power",
+      "input": {
+        "query": "power"
+      },
+      "kind": "query",
+      "result": {
+        "packets": [
+          "aa010000000000000000000000000000000000ab"
+        ]
+      },
+      "strings": null
+    },
+    {
+      "id": "query/brightness",
+      "input": {
+        "query": "brightness"
+      },
+      "kind": "query",
+      "result": {
+        "packets": [
+          "aa040000000000000000000000000000000000ae"
+        ]
+      },
+      "strings": null
+    },
+    {
+      "id": "power/on/1s",
+      "input": {
+        "on": true
+      },
+      "kind": "power",
+      "result": {
+        "packets": [
+          "3301010000000000000000000000000000000033"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "power/off/1s",
+      "input": {
+        "on": false
+      },
+      "kind": "power",
+      "result": {
+        "packets": [
+          "3301000000000000000000000000000000000032"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "power/on/2s",
+      "input": {
+        "on": true
+      },
+      "kind": "power",
+      "result": {
+        "packets": [
+          "3301010000000000000000000000000000000033"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "power/off/2s",
+      "input": {
+        "on": false
+      },
+      "kind": "power",
+      "result": {
+        "packets": [
+          "3301000000000000000000000000000000000032"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/001/1s",
+      "input": {
+        "level": 1
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304010000000000000000000000000000000036"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/002/1s",
+      "input": {
+        "level": 2
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304020000000000000000000000000000000035"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/003/1s",
+      "input": {
+        "level": 3
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304030000000000000000000000000000000034"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/004/1s",
+      "input": {
+        "level": 4
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304040000000000000000000000000000000033"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/005/1s",
+      "input": {
+        "level": 5
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304050000000000000000000000000000000032"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/006/1s",
+      "input": {
+        "level": 6
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304060000000000000000000000000000000031"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/007/1s",
+      "input": {
+        "level": 7
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304070000000000000000000000000000000030"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/008/1s",
+      "input": {
+        "level": 8
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330408000000000000000000000000000000003f"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/009/1s",
+      "input": {
+        "level": 9
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330409000000000000000000000000000000003e"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/010/1s",
+      "input": {
+        "level": 10
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33040a000000000000000000000000000000003d"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/011/1s",
+      "input": {
+        "level": 11
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33040b000000000000000000000000000000003c"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/012/1s",
+      "input": {
+        "level": 12
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33040c000000000000000000000000000000003b"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/013/1s",
+      "input": {
+        "level": 13
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33040d000000000000000000000000000000003a"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/014/1s",
+      "input": {
+        "level": 14
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33040e0000000000000000000000000000000039"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/015/1s",
+      "input": {
+        "level": 15
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33040f0000000000000000000000000000000038"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/016/1s",
+      "input": {
+        "level": 16
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304100000000000000000000000000000000027"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/017/1s",
+      "input": {
+        "level": 17
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304110000000000000000000000000000000026"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/018/1s",
+      "input": {
+        "level": 18
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304120000000000000000000000000000000025"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/019/1s",
+      "input": {
+        "level": 19
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304130000000000000000000000000000000024"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/020/1s",
+      "input": {
+        "level": 20
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304140000000000000000000000000000000023"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/021/1s",
+      "input": {
+        "level": 21
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304150000000000000000000000000000000022"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/022/1s",
+      "input": {
+        "level": 22
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304160000000000000000000000000000000021"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/023/1s",
+      "input": {
+        "level": 23
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304170000000000000000000000000000000020"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/024/1s",
+      "input": {
+        "level": 24
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330418000000000000000000000000000000002f"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/025/1s",
+      "input": {
+        "level": 25
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330419000000000000000000000000000000002e"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/026/1s",
+      "input": {
+        "level": 26
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33041a000000000000000000000000000000002d"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/027/1s",
+      "input": {
+        "level": 27
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33041b000000000000000000000000000000002c"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/028/1s",
+      "input": {
+        "level": 28
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33041c000000000000000000000000000000002b"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/029/1s",
+      "input": {
+        "level": 29
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33041d000000000000000000000000000000002a"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/030/1s",
+      "input": {
+        "level": 30
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33041e0000000000000000000000000000000029"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/031/1s",
+      "input": {
+        "level": 31
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33041f0000000000000000000000000000000028"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/032/1s",
+      "input": {
+        "level": 32
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304200000000000000000000000000000000017"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/033/1s",
+      "input": {
+        "level": 33
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304210000000000000000000000000000000016"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/034/1s",
+      "input": {
+        "level": 34
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304220000000000000000000000000000000015"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/035/1s",
+      "input": {
+        "level": 35
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304230000000000000000000000000000000014"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/036/1s",
+      "input": {
+        "level": 36
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304240000000000000000000000000000000013"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/037/1s",
+      "input": {
+        "level": 37
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304250000000000000000000000000000000012"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/038/1s",
+      "input": {
+        "level": 38
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304260000000000000000000000000000000011"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/039/1s",
+      "input": {
+        "level": 39
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304270000000000000000000000000000000010"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/040/1s",
+      "input": {
+        "level": 40
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330428000000000000000000000000000000001f"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/041/1s",
+      "input": {
+        "level": 41
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330429000000000000000000000000000000001e"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/042/1s",
+      "input": {
+        "level": 42
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33042a000000000000000000000000000000001d"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/043/1s",
+      "input": {
+        "level": 43
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33042b000000000000000000000000000000001c"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/044/1s",
+      "input": {
+        "level": 44
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33042c000000000000000000000000000000001b"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/045/1s",
+      "input": {
+        "level": 45
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33042d000000000000000000000000000000001a"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/046/1s",
+      "input": {
+        "level": 46
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33042e0000000000000000000000000000000019"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/047/1s",
+      "input": {
+        "level": 47
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33042f0000000000000000000000000000000018"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/048/1s",
+      "input": {
+        "level": 48
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304300000000000000000000000000000000007"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/049/1s",
+      "input": {
+        "level": 49
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304310000000000000000000000000000000006"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/050/1s",
+      "input": {
+        "level": 50
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304320000000000000000000000000000000005"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/051/1s",
+      "input": {
+        "level": 51
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304330000000000000000000000000000000004"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/052/1s",
+      "input": {
+        "level": 52
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304340000000000000000000000000000000003"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/053/1s",
+      "input": {
+        "level": 53
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304350000000000000000000000000000000002"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/054/1s",
+      "input": {
+        "level": 54
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304360000000000000000000000000000000001"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/055/1s",
+      "input": {
+        "level": 55
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304370000000000000000000000000000000000"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/056/1s",
+      "input": {
+        "level": 56
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330438000000000000000000000000000000000f"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/057/1s",
+      "input": {
+        "level": 57
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330439000000000000000000000000000000000e"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/058/1s",
+      "input": {
+        "level": 58
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33043a000000000000000000000000000000000d"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/059/1s",
+      "input": {
+        "level": 59
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33043b000000000000000000000000000000000c"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/060/1s",
+      "input": {
+        "level": 60
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33043c000000000000000000000000000000000b"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/061/1s",
+      "input": {
+        "level": 61
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33043d000000000000000000000000000000000a"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/062/1s",
+      "input": {
+        "level": 62
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33043e0000000000000000000000000000000009"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/063/1s",
+      "input": {
+        "level": 63
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33043f0000000000000000000000000000000008"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/064/1s",
+      "input": {
+        "level": 64
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304400000000000000000000000000000000077"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/065/1s",
+      "input": {
+        "level": 65
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304410000000000000000000000000000000076"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/066/1s",
+      "input": {
+        "level": 66
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304420000000000000000000000000000000075"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/067/1s",
+      "input": {
+        "level": 67
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304430000000000000000000000000000000074"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/068/1s",
+      "input": {
+        "level": 68
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304440000000000000000000000000000000073"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/069/1s",
+      "input": {
+        "level": 69
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304450000000000000000000000000000000072"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/070/1s",
+      "input": {
+        "level": 70
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304460000000000000000000000000000000071"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/071/1s",
+      "input": {
+        "level": 71
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304470000000000000000000000000000000070"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/072/1s",
+      "input": {
+        "level": 72
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330448000000000000000000000000000000007f"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/073/1s",
+      "input": {
+        "level": 73
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330449000000000000000000000000000000007e"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/074/1s",
+      "input": {
+        "level": 74
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33044a000000000000000000000000000000007d"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/075/1s",
+      "input": {
+        "level": 75
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33044b000000000000000000000000000000007c"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/076/1s",
+      "input": {
+        "level": 76
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33044c000000000000000000000000000000007b"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/077/1s",
+      "input": {
+        "level": 77
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33044d000000000000000000000000000000007a"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/078/1s",
+      "input": {
+        "level": 78
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33044e0000000000000000000000000000000079"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/079/1s",
+      "input": {
+        "level": 79
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33044f0000000000000000000000000000000078"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/080/1s",
+      "input": {
+        "level": 80
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304500000000000000000000000000000000067"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/081/1s",
+      "input": {
+        "level": 81
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304510000000000000000000000000000000066"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/082/1s",
+      "input": {
+        "level": 82
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304520000000000000000000000000000000065"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/083/1s",
+      "input": {
+        "level": 83
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304530000000000000000000000000000000064"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/084/1s",
+      "input": {
+        "level": 84
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304540000000000000000000000000000000063"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/085/1s",
+      "input": {
+        "level": 85
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304550000000000000000000000000000000062"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/086/1s",
+      "input": {
+        "level": 86
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304560000000000000000000000000000000061"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/087/1s",
+      "input": {
+        "level": 87
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304570000000000000000000000000000000060"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/088/1s",
+      "input": {
+        "level": 88
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330458000000000000000000000000000000006f"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/089/1s",
+      "input": {
+        "level": 89
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330459000000000000000000000000000000006e"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/090/1s",
+      "input": {
+        "level": 90
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33045a000000000000000000000000000000006d"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/091/1s",
+      "input": {
+        "level": 91
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33045b000000000000000000000000000000006c"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/092/1s",
+      "input": {
+        "level": 92
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33045c000000000000000000000000000000006b"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/093/1s",
+      "input": {
+        "level": 93
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33045d000000000000000000000000000000006a"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/094/1s",
+      "input": {
+        "level": 94
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33045e0000000000000000000000000000000069"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/095/1s",
+      "input": {
+        "level": 95
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33045f0000000000000000000000000000000068"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/096/1s",
+      "input": {
+        "level": 96
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304600000000000000000000000000000000057"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/097/1s",
+      "input": {
+        "level": 97
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304610000000000000000000000000000000056"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/098/1s",
+      "input": {
+        "level": 98
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304620000000000000000000000000000000055"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/099/1s",
+      "input": {
+        "level": 99
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304630000000000000000000000000000000054"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/100/1s",
+      "input": {
+        "level": 100
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304640000000000000000000000000000000053"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "brightness/001/2s",
+      "input": {
+        "level": 1
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304010000000000000000000000000000000036"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/002/2s",
+      "input": {
+        "level": 2
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304020000000000000000000000000000000035"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/003/2s",
+      "input": {
+        "level": 3
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304030000000000000000000000000000000034"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/004/2s",
+      "input": {
+        "level": 4
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304040000000000000000000000000000000033"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/005/2s",
+      "input": {
+        "level": 5
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304050000000000000000000000000000000032"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/006/2s",
+      "input": {
+        "level": 6
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304060000000000000000000000000000000031"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/007/2s",
+      "input": {
+        "level": 7
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304070000000000000000000000000000000030"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/008/2s",
+      "input": {
+        "level": 8
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330408000000000000000000000000000000003f"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/009/2s",
+      "input": {
+        "level": 9
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330409000000000000000000000000000000003e"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/010/2s",
+      "input": {
+        "level": 10
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33040a000000000000000000000000000000003d"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/011/2s",
+      "input": {
+        "level": 11
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33040b000000000000000000000000000000003c"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/012/2s",
+      "input": {
+        "level": 12
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33040c000000000000000000000000000000003b"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/013/2s",
+      "input": {
+        "level": 13
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33040d000000000000000000000000000000003a"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/014/2s",
+      "input": {
+        "level": 14
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33040e0000000000000000000000000000000039"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/015/2s",
+      "input": {
+        "level": 15
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33040f0000000000000000000000000000000038"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/016/2s",
+      "input": {
+        "level": 16
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304100000000000000000000000000000000027"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/017/2s",
+      "input": {
+        "level": 17
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304110000000000000000000000000000000026"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/018/2s",
+      "input": {
+        "level": 18
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304120000000000000000000000000000000025"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/019/2s",
+      "input": {
+        "level": 19
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304130000000000000000000000000000000024"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/020/2s",
+      "input": {
+        "level": 20
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304140000000000000000000000000000000023"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/021/2s",
+      "input": {
+        "level": 21
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304150000000000000000000000000000000022"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/022/2s",
+      "input": {
+        "level": 22
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304160000000000000000000000000000000021"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/023/2s",
+      "input": {
+        "level": 23
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304170000000000000000000000000000000020"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/024/2s",
+      "input": {
+        "level": 24
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330418000000000000000000000000000000002f"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/025/2s",
+      "input": {
+        "level": 25
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330419000000000000000000000000000000002e"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/026/2s",
+      "input": {
+        "level": 26
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33041a000000000000000000000000000000002d"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/027/2s",
+      "input": {
+        "level": 27
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33041b000000000000000000000000000000002c"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/028/2s",
+      "input": {
+        "level": 28
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33041c000000000000000000000000000000002b"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/029/2s",
+      "input": {
+        "level": 29
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33041d000000000000000000000000000000002a"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/030/2s",
+      "input": {
+        "level": 30
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33041e0000000000000000000000000000000029"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/031/2s",
+      "input": {
+        "level": 31
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33041f0000000000000000000000000000000028"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/032/2s",
+      "input": {
+        "level": 32
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304200000000000000000000000000000000017"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/033/2s",
+      "input": {
+        "level": 33
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304210000000000000000000000000000000016"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/034/2s",
+      "input": {
+        "level": 34
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304220000000000000000000000000000000015"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/035/2s",
+      "input": {
+        "level": 35
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304230000000000000000000000000000000014"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/036/2s",
+      "input": {
+        "level": 36
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304240000000000000000000000000000000013"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/037/2s",
+      "input": {
+        "level": 37
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304250000000000000000000000000000000012"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/038/2s",
+      "input": {
+        "level": 38
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304260000000000000000000000000000000011"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/039/2s",
+      "input": {
+        "level": 39
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304270000000000000000000000000000000010"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/040/2s",
+      "input": {
+        "level": 40
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330428000000000000000000000000000000001f"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/041/2s",
+      "input": {
+        "level": 41
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330429000000000000000000000000000000001e"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/042/2s",
+      "input": {
+        "level": 42
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33042a000000000000000000000000000000001d"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/043/2s",
+      "input": {
+        "level": 43
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33042b000000000000000000000000000000001c"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/044/2s",
+      "input": {
+        "level": 44
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33042c000000000000000000000000000000001b"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/045/2s",
+      "input": {
+        "level": 45
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33042d000000000000000000000000000000001a"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/046/2s",
+      "input": {
+        "level": 46
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33042e0000000000000000000000000000000019"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/047/2s",
+      "input": {
+        "level": 47
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33042f0000000000000000000000000000000018"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/048/2s",
+      "input": {
+        "level": 48
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304300000000000000000000000000000000007"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/049/2s",
+      "input": {
+        "level": 49
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304310000000000000000000000000000000006"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/050/2s",
+      "input": {
+        "level": 50
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304320000000000000000000000000000000005"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/051/2s",
+      "input": {
+        "level": 51
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304330000000000000000000000000000000004"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/052/2s",
+      "input": {
+        "level": 52
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304340000000000000000000000000000000003"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/053/2s",
+      "input": {
+        "level": 53
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304350000000000000000000000000000000002"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/054/2s",
+      "input": {
+        "level": 54
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304360000000000000000000000000000000001"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/055/2s",
+      "input": {
+        "level": 55
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304370000000000000000000000000000000000"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/056/2s",
+      "input": {
+        "level": 56
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330438000000000000000000000000000000000f"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/057/2s",
+      "input": {
+        "level": 57
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330439000000000000000000000000000000000e"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/058/2s",
+      "input": {
+        "level": 58
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33043a000000000000000000000000000000000d"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/059/2s",
+      "input": {
+        "level": 59
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33043b000000000000000000000000000000000c"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/060/2s",
+      "input": {
+        "level": 60
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33043c000000000000000000000000000000000b"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/061/2s",
+      "input": {
+        "level": 61
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33043d000000000000000000000000000000000a"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/062/2s",
+      "input": {
+        "level": 62
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33043e0000000000000000000000000000000009"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/063/2s",
+      "input": {
+        "level": 63
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33043f0000000000000000000000000000000008"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/064/2s",
+      "input": {
+        "level": 64
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304400000000000000000000000000000000077"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/065/2s",
+      "input": {
+        "level": 65
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304410000000000000000000000000000000076"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/066/2s",
+      "input": {
+        "level": 66
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304420000000000000000000000000000000075"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/067/2s",
+      "input": {
+        "level": 67
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304430000000000000000000000000000000074"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/068/2s",
+      "input": {
+        "level": 68
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304440000000000000000000000000000000073"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/069/2s",
+      "input": {
+        "level": 69
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304450000000000000000000000000000000072"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/070/2s",
+      "input": {
+        "level": 70
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304460000000000000000000000000000000071"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/071/2s",
+      "input": {
+        "level": 71
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304470000000000000000000000000000000070"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/072/2s",
+      "input": {
+        "level": 72
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330448000000000000000000000000000000007f"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/073/2s",
+      "input": {
+        "level": 73
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330449000000000000000000000000000000007e"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/074/2s",
+      "input": {
+        "level": 74
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33044a000000000000000000000000000000007d"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/075/2s",
+      "input": {
+        "level": 75
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33044b000000000000000000000000000000007c"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/076/2s",
+      "input": {
+        "level": 76
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33044c000000000000000000000000000000007b"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/077/2s",
+      "input": {
+        "level": 77
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33044d000000000000000000000000000000007a"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/078/2s",
+      "input": {
+        "level": 78
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33044e0000000000000000000000000000000079"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/079/2s",
+      "input": {
+        "level": 79
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33044f0000000000000000000000000000000078"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/080/2s",
+      "input": {
+        "level": 80
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304500000000000000000000000000000000067"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/081/2s",
+      "input": {
+        "level": 81
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304510000000000000000000000000000000066"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/082/2s",
+      "input": {
+        "level": 82
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304520000000000000000000000000000000065"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/083/2s",
+      "input": {
+        "level": 83
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304530000000000000000000000000000000064"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/084/2s",
+      "input": {
+        "level": 84
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304540000000000000000000000000000000063"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/085/2s",
+      "input": {
+        "level": 85
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304550000000000000000000000000000000062"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/086/2s",
+      "input": {
+        "level": 86
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304560000000000000000000000000000000061"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/087/2s",
+      "input": {
+        "level": 87
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304570000000000000000000000000000000060"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/088/2s",
+      "input": {
+        "level": 88
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330458000000000000000000000000000000006f"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/089/2s",
+      "input": {
+        "level": 89
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "330459000000000000000000000000000000006e"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/090/2s",
+      "input": {
+        "level": 90
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33045a000000000000000000000000000000006d"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/091/2s",
+      "input": {
+        "level": 91
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33045b000000000000000000000000000000006c"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/092/2s",
+      "input": {
+        "level": 92
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33045c000000000000000000000000000000006b"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/093/2s",
+      "input": {
+        "level": 93
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33045d000000000000000000000000000000006a"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/094/2s",
+      "input": {
+        "level": 94
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33045e0000000000000000000000000000000069"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/095/2s",
+      "input": {
+        "level": 95
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "33045f0000000000000000000000000000000068"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/096/2s",
+      "input": {
+        "level": 96
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304600000000000000000000000000000000057"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/097/2s",
+      "input": {
+        "level": 97
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304610000000000000000000000000000000056"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/098/2s",
+      "input": {
+        "level": 98
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304620000000000000000000000000000000055"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/099/2s",
+      "input": {
+        "level": 99
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304630000000000000000000000000000000054"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "brightness/100/2s",
+      "input": {
+        "level": 100
+      },
+      "kind": "brightness",
+      "result": {
+        "packets": [
+          "3304640000000000000000000000000000000053"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "color/000-000-000/1s",
+      "input": {
+        "b": 0,
+        "g": 0,
+        "r": 0
+      },
+      "kind": "color",
+      "result": {
+        "packets": [
+          "330515010000000000000000ff7f0000000000a2"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "color/255-255-255/1s",
+      "input": {
+        "b": 255,
+        "g": 255,
+        "r": 255
+      },
+      "kind": "color",
+      "result": {
+        "packets": [
+          "33051501ffffff0000000000ff7f00000000005d"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "color/255-000-000/1s",
+      "input": {
+        "b": 0,
+        "g": 0,
+        "r": 255
+      },
+      "kind": "color",
+      "result": {
+        "packets": [
+          "33051501ff00000000000000ff7f00000000005d"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "color/000-255-000/1s",
+      "input": {
+        "b": 0,
+        "g": 255,
+        "r": 0
+      },
+      "kind": "color",
+      "result": {
+        "packets": [
+          "3305150100ff000000000000ff7f00000000005d"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "color/000-000-255/1s",
+      "input": {
+        "b": 255,
+        "g": 0,
+        "r": 0
+      },
+      "kind": "color",
+      "result": {
+        "packets": [
+          "330515010000ff0000000000ff7f00000000005d"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "color/001-002-003/1s",
+      "input": {
+        "b": 3,
+        "g": 2,
+        "r": 1
+      },
+      "kind": "color",
+      "result": {
+        "packets": [
+          "330515010102030000000000ff7f0000000000a2"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "color/010-020-030/1s",
+      "input": {
+        "b": 30,
+        "g": 20,
+        "r": 10
+      },
+      "kind": "color",
+      "result": {
+        "packets": [
+          "330515010a141e0000000000ff7f0000000000a2"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "color/128-064-032/1s",
+      "input": {
+        "b": 32,
+        "g": 64,
+        "r": 128
+      },
+      "kind": "color",
+      "result": {
+        "packets": [
+          "330515018040200000000000ff7f000000000042"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "color/255-128-000/1s",
+      "input": {
+        "b": 0,
+        "g": 128,
+        "r": 255
+      },
+      "kind": "color",
+      "result": {
+        "packets": [
+          "33051501ff80000000000000ff7f0000000000dd"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "color/000-000-000/2s",
+      "input": {
+        "b": 0,
+        "g": 0,
+        "r": 0
+      },
+      "kind": "color",
+      "result": {
+        "packets": [
+          "330515010000000000000000ffffff3f000000e2"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "color/255-255-255/2s",
+      "input": {
+        "b": 255,
+        "g": 255,
+        "r": 255
+      },
+      "kind": "color",
+      "result": {
+        "packets": [
+          "33051501ffffff0000000000ffffff3f0000001d"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "color/255-000-000/2s",
+      "input": {
+        "b": 0,
+        "g": 0,
+        "r": 255
+      },
+      "kind": "color",
+      "result": {
+        "packets": [
+          "33051501ff00000000000000ffffff3f0000001d"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "color/000-255-000/2s",
+      "input": {
+        "b": 0,
+        "g": 255,
+        "r": 0
+      },
+      "kind": "color",
+      "result": {
+        "packets": [
+          "3305150100ff000000000000ffffff3f0000001d"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "color/000-000-255/2s",
+      "input": {
+        "b": 255,
+        "g": 0,
+        "r": 0
+      },
+      "kind": "color",
+      "result": {
+        "packets": [
+          "330515010000ff0000000000ffffff3f0000001d"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "color/001-002-003/2s",
+      "input": {
+        "b": 3,
+        "g": 2,
+        "r": 1
+      },
+      "kind": "color",
+      "result": {
+        "packets": [
+          "330515010102030000000000ffffff3f000000e2"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "color/010-020-030/2s",
+      "input": {
+        "b": 30,
+        "g": 20,
+        "r": 10
+      },
+      "kind": "color",
+      "result": {
+        "packets": [
+          "330515010a141e0000000000ffffff3f000000e2"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "color/128-064-032/2s",
+      "input": {
+        "b": 32,
+        "g": 64,
+        "r": 128
+      },
+      "kind": "color",
+      "result": {
+        "packets": [
+          "330515018040200000000000ffffff3f00000002"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "color/255-128-000/2s",
+      "input": {
+        "b": 0,
+        "g": 128,
+        "r": 255
+      },
+      "kind": "color",
+      "result": {
+        "packets": [
+          "33051501ff80000000000000ffffff3f0000009d"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "paint/all-blue/1s",
+      "input": {
+        "groups": [
+          {
+            "bulbs": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ],
+            "rgb": [
+              0,
+              0,
+              255
+            ]
+          }
+        ]
+      },
+      "kind": "paint",
+      "result": {
+        "packets": [
+          "330515010000ff0000000000ff7f00000000005d"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "paint/split-red-blue/1s",
+      "input": {
+        "groups": [
+          {
+            "bulbs": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "rgb": [
+              255,
+              0,
+              0
+            ]
+          },
+          {
+            "bulbs": [
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ],
+            "rgb": [
+              0,
+              0,
+              255
+            ]
+          }
+        ]
+      },
+      "kind": "paint",
+      "result": {
+        "packets": [
+          "33051501ff000000000000007f000000000000a2",
+          "330515010000ff0000000000807f000000000022"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "paint/boundary-pair/1s",
+      "input": {
+        "groups": [
+          {
+            "bulbs": [
+              7,
+              8
+            ],
+            "rgb": [
+              10,
+              20,
+              30
+            ]
+          }
+        ]
+      },
+      "kind": "paint",
+      "result": {
+        "packets": [
+          "330515010a141e0000000000c0000000000000e2"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "paint/ends/1s",
+      "input": {
+        "groups": [
+          {
+            "bulbs": [
+              1
+            ],
+            "rgb": [
+              255,
+              255,
+              255
+            ]
+          },
+          {
+            "bulbs": [
+              15
+            ],
+            "rgb": [
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      },
+      "kind": "paint",
+      "result": {
+        "packets": [
+          "33051501ffffff000000000001000000000000dc",
+          "3305150101020300000000000040000000000062"
+        ]
+      },
+      "strings": 1
+    },
+    {
+      "id": "paint/refused-overlap/1s",
+      "input": {
+        "groups": [
+          {
+            "bulbs": [
+              1,
+              2
+            ],
+            "rgb": [
+              255,
+              0,
+              0
+            ]
+          },
+          {
+            "bulbs": [
+              2,
+              3
+            ],
+            "rgb": [
+              0,
+              255,
+              0
+            ]
+          }
+        ]
+      },
+      "kind": "paint",
+      "result": {
+        "error": "ValueError: bulb 2 is in two groups"
+      },
+      "strings": 1
+    },
+    {
+      "id": "paint/refused-past-last-bulb/1s",
+      "input": {
+        "groups": [
+          {
+            "bulbs": [
+              16
+            ],
+            "rgb": [
+              255,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "kind": "paint",
+      "result": {
+        "error": "ValueError: segment 16 out of range 1..15"
+      },
+      "strings": 1
+    },
+    {
+      "id": "paint/refused-bulb-zero/1s",
+      "input": {
+        "groups": [
+          {
+            "bulbs": [
+              0
+            ],
+            "rgb": [
+              255,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "kind": "paint",
+      "result": {
+        "error": "ValueError: segment 0 out of range 1..15"
+      },
+      "strings": 1
+    },
+    {
+      "id": "paint/refused-empty/1s",
+      "input": {
+        "groups": []
+      },
+      "kind": "paint",
+      "result": {
+        "error": "ValueError: paint needs at least one group"
+      },
+      "strings": 1
+    },
+    {
+      "id": "paint/all-blue/2s",
+      "input": {
+        "groups": [
+          {
+            "bulbs": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30
+            ],
+            "rgb": [
+              0,
+              0,
+              255
+            ]
+          }
+        ]
+      },
+      "kind": "paint",
+      "result": {
+        "packets": [
+          "330515010000ff0000000000ffffff3f0000001d"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "paint/split-red-blue/2s",
+      "input": {
+        "groups": [
+          {
+            "bulbs": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ],
+            "rgb": [
+              255,
+              0,
+              0
+            ]
+          },
+          {
+            "bulbs": [
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30
+            ],
+            "rgb": [
+              0,
+              0,
+              255
+            ]
+          }
+        ]
+      },
+      "kind": "paint",
+      "result": {
+        "packets": [
+          "33051501ff00000000000000ff7f00000000005d",
+          "330515010000ff00000000000080ff3f0000009d"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "paint/boundary-pair/2s",
+      "input": {
+        "groups": [
+          {
+            "bulbs": [
+              15,
+              16
+            ],
+            "rgb": [
+              10,
+              20,
+              30
+            ]
+          }
+        ]
+      },
+      "kind": "paint",
+      "result": {
+        "packets": [
+          "330515010a141e000000000000c00000000000e2"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "paint/ends/2s",
+      "input": {
+        "groups": [
+          {
+            "bulbs": [
+              1
+            ],
+            "rgb": [
+              255,
+              255,
+              255
+            ]
+          },
+          {
+            "bulbs": [
+              30
+            ],
+            "rgb": [
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      },
+      "kind": "paint",
+      "result": {
+        "packets": [
+          "33051501ffffff000000000001000000000000dc",
+          "3305150101020300000000000000002000000002"
+        ]
+      },
+      "strings": 2
+    },
+    {
+      "id": "paint/refused-overlap/2s",
+      "input": {
+        "groups": [
+          {
+            "bulbs": [
+              1,
+              2
+            ],
+            "rgb": [
+              255,
+              0,
+              0
+            ]
+          },
+          {
+            "bulbs": [
+              2,
+              3
+            ],
+            "rgb": [
+              0,
+              255,
+              0
+            ]
+          }
+        ]
+      },
+      "kind": "paint",
+      "result": {
+        "error": "ValueError: bulb 2 is in two groups"
+      },
+      "strings": 2
+    },
+    {
+      "id": "paint/refused-past-last-bulb/2s",
+      "input": {
+        "groups": [
+          {
+            "bulbs": [
+              31
+            ],
+            "rgb": [
+              255,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "kind": "paint",
+      "result": {
+        "error": "ValueError: segment 31 out of range 1..30"
+      },
+      "strings": 2
+    },
+    {
+      "id": "paint/refused-bulb-zero/2s",
+      "input": {
+        "groups": [
+          {
+            "bulbs": [
+              0
+            ],
+            "rgb": [
+              255,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "kind": "paint",
+      "result": {
+        "error": "ValueError: segment 0 out of range 1..30"
+      },
+      "strings": 2
+    },
+    {
+      "id": "paint/refused-empty/2s",
+      "input": {
+        "groups": []
+      },
+      "kind": "paint",
+      "result": {
+        "error": "ValueError: paint needs at least one group"
+      },
+      "strings": 2
+    },
+    {
+      "id": "scene/Twilight/speed-0",
+      "input": {
+        "name": "Twilight",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Twilight",
+        "packets": [
+          "a3000103020120000000010001ff4c03c10805fe",
+          "a30100b20503ffbf07ff7f00ff60070000ff00b6",
+          "a3ff00ed010000000000000000000000000000b0",
+          "330504160800000000000000000000000000002c"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Twilight/speed-1",
+      "input": {
+        "name": "Twilight",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Twilight",
+        "packets": [
+          "a3000103020120000000010001ff4c03ca0805f5",
+          "a30100cb0503ffbf07ff7f00ff60070000ff00cf",
+          "a3ff00ed010000000000000000000000000000b0",
+          "330504160800000000000000000000000000002c"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Twilight/speed-2",
+      "input": {
+        "name": "Twilight",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Twilight",
+        "packets": [
+          "a3000103020120000000010001ff4c03cc0805f3",
+          "a30100d80503ffbf07ff7f00ff60070000ff00dc",
+          "a3ff00ed010000000000000000000000000000b0",
+          "330504160800000000000000000000000000002c"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Meteor/speed-0",
+      "input": {
+        "name": "Meteor",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Meteor",
+        "packets": [
+          "a300010902051a000000010001ffb900c9141439",
+          "a301008014010624fe000080000080001a1001e0",
+          "a30200010201bc4e00c4141400f21401ffffff8d",
+          "a3030000801000f4001a130100010201bc4e003c",
+          "a304c4141400f21401678cff0000801000f400f4",
+          "a3051a150100010201bc4e00c4141400f214017b",
+          "a306678cff0000801000f4001a120100010201de",
+          "a307bc4e00c4141400f21401678cff00008010f1",
+          "a3ff00f4000000000000000000000000000000a8",
+          "330504170800000000000000000000000000002d"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Meteor/speed-1",
+      "input": {
+        "name": "Meteor",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Meteor",
+        "packets": [
+          "a300010902051a000000010001ffb900c9141439",
+          "a301008014010624fe000080000080001a1001e0",
+          "a30200010201bc4e00c9141400f21401ffffff80",
+          "a3030000801000f9001a130100010201bc4e0031",
+          "a304c9141400f21401678cff0000801000f900f4",
+          "a3051a150100010201bc4e00c9141400f2140176",
+          "a306678cff0000801000f9001a120100010201d3",
+          "a307bc4e00c9141400f21401678cff00008010fc",
+          "a3ff00f9000000000000000000000000000000a5",
+          "330504170800000000000000000000000000002d"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Meteor/speed-2",
+      "input": {
+        "name": "Meteor",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Meteor",
+        "packets": [
+          "a300010902051a000000010001ffb900d2141422",
+          "a301008014010624fe000080000080001a1001e0",
+          "a30200010201bc4e00d3141400fe1401ffffff96",
+          "a3030000801000fc001a130100010201bc4e0034",
+          "a304d3141400fe1401678cff0000801000fc00e7",
+          "a3051a150100010201bc4e00d3141400fe140160",
+          "a306678cff0000801000fc001a120100010201d6",
+          "a307bc4e00d3141400fe1401678cff00008010ea",
+          "a3ff00fc000000000000000000000000000000a0",
+          "330504170800000000000000000000000000002d"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Nebula/speed-0",
+      "input": {
+        "name": "Nebula",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Nebula",
+        "packets": [
+          "a3000104020220000000090001ff0001801414f0",
+          "a301036614030000ff6f07fec906ff0400f2106f",
+          "a30200ef001a00020b060001531500cc141400d0",
+          "a3ffdb1401fefefe0000800000f600000000001a",
+          "3305041808000000000000000000000000000022"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Nebula/speed-1",
+      "input": {
+        "name": "Nebula",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Nebula",
+        "packets": [
+          "a3000104020220000000090001ff0001801414f0",
+          "a301038014030000ff6f07fec906ff0400f21089",
+          "a30200f7001a00020b060001531500ea141400ee",
+          "a3ffed1401fefefe0000800000f600000000002c",
+          "3305041808000000000000000000000000000022"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Nebula/speed-2",
+      "input": {
+        "name": "Nebula",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Nebula",
+        "packets": [
+          "a3000104020220000000090001ff0001801414f0",
+          "a301038c14030000ff6f07fec906ff0400f21085",
+          "a30200f9001a00020b060001531500f2141400f8",
+          "a3ffef1401fefefe0000800000f600000000002e",
+          "3305041808000000000000000000000000000022"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Aurora/speed-0",
+      "input": {
+        "name": "Aurora",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Aurora",
+        "packets": [
+          "a3000105020220000000010201ff320100000049",
+          "a30100ed320300ff0000ffffaaff000300800057",
+          "a30200000023000000030201ff1900d6000002b0",
+          "a303ed00047fff00ffff00a0ffff00ffff14017c",
+          "a3ffed0000ff000000000000000000000000004e",
+          "3305041908000000000000000000000000000023"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Aurora/speed-1",
+      "input": {
+        "name": "Aurora",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Aurora",
+        "packets": [
+          "a3000105020220000000010201ff320100000049",
+          "a30100ef320300ff0000ffffaaff000300800055",
+          "a30200000023000000030201ff1900e500000283",
+          "a303f200047fff00ffff00a0ffff00ffff140163",
+          "a3fff20000ff0000000000000000000000000051",
+          "3305041908000000000000000000000000000023"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Aurora/speed-2",
+      "input": {
+        "name": "Aurora",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Aurora",
+        "packets": [
+          "a3000105020220000000010201ff320100000049",
+          "a30100fa320300ff0000ffffaaff000300800040",
+          "a30200000023000000030201ff1900fa0000029c",
+          "a303fa00047fff00ffff00a0ffff00ffff14016b",
+          "a3fffa0000ff0000000000000000000000000059",
+          "3305041908000000000000000000000000000023"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Aurora/speed-3",
+      "input": {
+        "name": "Aurora",
+        "speed": 3
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Aurora",
+        "packets": [
+          "a3000105020220000000010201ff320100000049",
+          "a30100fc320300ff0000ffffaaff000300800046",
+          "a30200000023000000030201ff1900fc0000029a",
+          "a303fc00047fff00ffff00a0ffff00ffff14016d",
+          "a3fffc0000ff000000000000000000000000005f",
+          "3305041908000000000000000000000000000023"
+        ],
+        "speed": 3
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Sunset Glow/speed-0",
+      "input": {
+        "name": "Sunset Glow",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Sunset Glow",
+        "packets": [
+          "a30001070203205001000a0201ff4b00c91414a1",
+          "a30103cc0a03ffe407ff8200ff070d1400e00004",
+          "a302000004200000000302017f4c00bf1414030a",
+          "a303cc1403ff6300ff4100ffa5560100eb0000bf",
+          "a304f00320550100050201ff4b00bf141403e5cb",
+          "a3050a03ffe407ff8200ff070d1400e5000000ca",
+          "a3ff040000000000000000000000000000000058",
+          "3305041a08000000000000000000000000000020"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Sunset Glow/speed-1",
+      "input": {
+        "name": "Sunset Glow",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Sunset Glow",
+        "packets": [
+          "a30001070203205001000a0201ff4b00cc1414a4",
+          "a30103ea0a03ffe407ff8200ff070d1400ea0028",
+          "a302000004200000000302017f4c00c614140373",
+          "a303e51403ff6300ff4100ffa5560100eb000096",
+          "a304f00320550100050201ff4b00c6141403edba",
+          "a3050a03ffe407ff8200ff070d1400ea000000c5",
+          "a3ff040000000000000000000000000000000058",
+          "3305041a08000000000000000000000000000020"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Sunset Glow/speed-2",
+      "input": {
+        "name": "Sunset Glow",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Sunset Glow",
+        "packets": [
+          "a30001070203205001000a0201ff4b00d71414bf",
+          "a30103f70a03ffe407ff8200ff070d1400f3002c",
+          "a302000004200000000302017f4c00cc14140379",
+          "a303f31403ff6300ff4100ffa5560100eb000080",
+          "a304f00320550100050201ff4b00d7141403f7b1",
+          "a3050a03ffe407ff8200ff070d1400f3000000dc",
+          "a3ff040000000000000000000000000000000058",
+          "3305041a08000000000000000000000000000020"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Night/speed-none",
+      "input": {
+        "name": "Night",
+        "speed": null
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Night",
+        "packets": [
+          "a300010402021d000000050001960501963232bb",
+          "a30102dc32020000ff9c00c800000000000000e7",
+          "a30220000000030201960501d7323202003203f7",
+          "a3ff8b00ff0000000000ff0000000000000000d7",
+          "3305041b08000000000000000000000000000021"
+        ],
+        "speed": null
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Moonlight/speed-none",
+      "input": {
+        "name": "Moonlight",
+        "speed": null
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Moonlight",
+        "packets": [
+          "a300010402022000020e0602017e0c03c8050a39",
+          "a30101f20a03fbfeb0ffff00ffec9c0000000163",
+          "a30200ed001da00100320001641e0000000000b9",
+          "a3ff8014021f2bff1c9bff000000000000000079",
+          "3305041c08000000000000000000000000000026"
+        ],
+        "speed": null
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Spring/speed-0",
+      "input": {
+        "name": "Spring",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Spring",
+        "packets": [
+          "a300010702032900020a050201ff190000000065",
+          "a30102f23206ff3800ff7f0000ff0000000000de",
+          "a302ffff8b00ff000080000000002300021e0a60",
+          "a3030001ffff008c000001f20004f1001dff75bc",
+          "a30400ffc000ff4b000000ff0001fa001d000035",
+          "a3050001000199320199323202b2320200ff00ea",
+          "a3ffffff0000000000000000000000000000005c",
+          "3305041d08000000000000000000000000000027"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Spring/speed-1",
+      "input": {
+        "name": "Spring",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Spring",
+        "packets": [
+          "a300010702032900020a050201ff190000000065",
+          "a30102fa3206ff3800ff7f0000ff0000000000d6",
+          "a302ffff8b00ff000080000000002300021e0a60",
+          "a3030001ffff00aa000001fa0004f1001dff7592",
+          "a30400ffc000ff4b000000ff0001fa001d000035",
+          "a30500010001993201c8323202c8320200ff00c1",
+          "a3ffffff0000000000000000000000000000005c",
+          "3305041d08000000000000000000000000000027"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Spring/speed-2",
+      "input": {
+        "name": "Spring",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Spring",
+        "packets": [
+          "a300010702032900020a050201ff190000000065",
+          "a30102ff3206ff3800ff7f0000ff0000000000d3",
+          "a302ffff8b00ff000080000000002300021e0a60",
+          "a3030001ffff00b7000001fc0004f1001dff7589",
+          "a30400ffc000ff4b000000ff0001fa001d000035",
+          "a30500010001993201d8323202d8320200ff00c1",
+          "a3ffffff0000000000000000000000000000005c",
+          "3305041d08000000000000000000000000000027"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Summer/speed-0",
+      "input": {
+        "name": "Summer",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Summer",
+        "packets": [
+          "a300010502021a000000010201cc7f000000000c",
+          "a30100ff320184effe030080000000002600025c",
+          "a302190a0001ffff0000000000e5000507ffbf14",
+          "a303ffc000ffff00ff8fb8ff45070000001000fa",
+          "a3ffe502000000000000000000000000000000bb",
+          "3305041e08000000000000000000000000000024"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Summer/speed-1",
+      "input": {
+        "name": "Summer",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Summer",
+        "packets": [
+          "a300010502021a000000010201cc7f000000000c",
+          "a30100ff320184effe030080000000002600025c",
+          "a302190a0001ffff0000000000ed000507ffbf1c",
+          "a303ffc000ffff00ff8fb8ff45070000001000fa",
+          "a3fff202000000000000000000000000000000ac",
+          "3305041e08000000000000000000000000000024"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Summer/speed-2",
+      "input": {
+        "name": "Summer",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Summer",
+        "packets": [
+          "a300010502021a000000010201cc7f000000000c",
+          "a30100ff320184effe030080000000002600025c",
+          "a302190a0001ffff0000000000fd000507ffbf0c",
+          "a303ffc000ffff00ff8fb8ff45070000001000fa",
+          "a3fffa02000000000000000000000000000000a4",
+          "3305041e08000000000000000000000000000024"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Fall/speed-0",
+      "input": {
+        "name": "Fall",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Fall",
+        "packets": [
+          "a300010502021a000000010201ffff00000000bf",
+          "a30100ff3201ff38000300800000000029000201",
+          "a3021e0a0001ffff0000000000e50006f1001dbb",
+          "a303ff7500ffc907ff4b00ff0000000000100040",
+          "a3ffc60000ff0000000000000000000000000065",
+          "3305041f08000000000000000000000000000025"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Fall/speed-1",
+      "input": {
+        "name": "Fall",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Fall",
+        "packets": [
+          "a300010502021a000000010201ffff00000000bf",
+          "a30100ff3201ff38000300800000000029000201",
+          "a3021e0a0001ffff0000000000f20006f1001dac",
+          "a303ff7500ffc907ff4b00ff0000000000100040",
+          "a3ffd10000ff0000000000000000000000000072",
+          "3305041f08000000000000000000000000000025"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Fall/speed-2",
+      "input": {
+        "name": "Fall",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Fall",
+        "packets": [
+          "a300010502021a000000010201ffff00000000bf",
+          "a30100ff3201ff38000300800000000029000201",
+          "a3021e0a0001ffff0000000000fa0006f1001da4",
+          "a303ff7500ffc907ff4b00ff0000000000100040",
+          "a3ffdc0000ff000000000000000000000000007f",
+          "3305041f08000000000000000000000000000025"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Winter/speed-none",
+      "input": {
+        "name": "Winter",
+        "speed": null
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Winter",
+        "packets": [
+          "a300010502021a000000010201ffff00000000bf",
+          "a30100ff32010692fe03008000000000260002a3",
+          "a3021e0a0001ffff0000000000fa00050000ffb4",
+          "a30300ffffffc000ffff000005ff000000000065",
+          "a3ffff00000000000000000000000000000000a3",
+          "330504200800000000000000000000000000001a"
+        ],
+        "speed": null
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Sea bottom/speed-0",
+      "input": {
+        "name": "Sea bottom",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Sea bottom",
+        "packets": [
+          "a300010802041d000000010001e6b302b2080854",
+          "a30103541402069dfe07e1ff0000800100df00c1",
+          "a3021d500203010201b62b03b204040354140282",
+          "a303069dfe07e1ff1500e80000f6001d53020398",
+          "a304010201b31c02b2040403541402069dfe0799",
+          "a305e1ff0100ee1300e8001d640203010201a97f",
+          "a3061902b2040403541402069dfe07e1ff010030",
+          "a3ffee1300e20000000000000000000000000043",
+          "330504210800000000000000000000000000001b"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Sea bottom/speed-1",
+      "input": {
+        "name": "Sea bottom",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Sea bottom",
+        "packets": [
+          "a300010802041d000000010001e6b302be080858",
+          "a30103581402069dfe07e1ff0000800100df00cd",
+          "a3021d500203010201b62b03be04040358140282",
+          "a303069dfe07e1ff1500ee0000f6001d5302039e",
+          "a304010201b31c02be040403581402069dfe0799",
+          "a305e1ff0100ee1300ee001d640203010201a979",
+          "a3061902be040403581402069dfe07e1ff010030",
+          "a3ffee1300e70000000000000000000000000046",
+          "330504210800000000000000000000000000001b"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Sea bottom/speed-2",
+      "input": {
+        "name": "Sea bottom",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Sea bottom",
+        "packets": [
+          "a300010802041d000000010001e6b302c6080820",
+          "a30103721402069dfe07e1ff0000800100df00e7",
+          "a3021d500203010201b62b03c6040403721402d0",
+          "a303069dfe07e1ff1500f20000f6001d53020382",
+          "a304010201b31c02c6040403721402069dfe07cb",
+          "a305e1ff0100ee1300f2001d640203010201a965",
+          "a3061902c6040403721402069dfe07e1ff010062",
+          "a3ffee1300ed000000000000000000000000004c",
+          "330504210800000000000000000000000000001b"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Wave/speed-0",
+      "input": {
+        "name": "Wave",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Wave",
+        "packets": [
+          "a300010a020520300000010201cc4c0300051229",
+          "a3010372140307a6ff0740ffffffff1400f2003b",
+          "a30200800020320000010201c84d0100141403b6",
+          "a303721403a6fefb07f6ff075cff1400f200002a",
+          "a304800020340000030201cc4b030014140372c6",
+          "a3051403b3e0ff2307ff3df2fe1400f200008091",
+          "a3060020460000030201c94f0100141403721421",
+          "a3070308feeb58a7fffeebfe1400f20000800037",
+          "a3081a0000000100017e4d03b2141400b2140194",
+          "a3ff3577ff0500fa1101f20000000000000000fc",
+          "3305042208000000000000000000000000000018"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Wave/speed-1",
+      "input": {
+        "name": "Wave",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Wave",
+        "packets": [
+          "a300010a020520300000010201cc4c0300051229",
+          "a3010381140307a6ff0740ffffffff1400fa00c0",
+          "a30200800020320000010201c84d0100141403b6",
+          "a303801403a6fefb07f6ff075cff1400fa0000d0",
+          "a304800020340000030201cc4b03001414038034",
+          "a3051403b3e0ff2307ff3df2fe1400f90000809a",
+          "a3060020460000030201c94f01001414038014d3",
+          "a3070308feeb58a7fffeebfe1400f9000080003c",
+          "a3081a0000000100017e4d03c2141400c5140193",
+          "a3ff3577ff0500fa1101ff0000000000000000f1",
+          "3305042208000000000000000000000000000018"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Wave/speed-2",
+      "input": {
+        "name": "Wave",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Wave",
+        "packets": [
+          "a300010a020520300000010201cc4c0300051229",
+          "a3010399140307a6ff0740ffffffff1400fc00de",
+          "a30200800020320000010201c84d0100141403b6",
+          "a303991403a6fefb07f6ff075cff1400fc0000cf",
+          "a304800020340000030201cc4b0300141403992d",
+          "a3051403b3e0ff2307ff3df2fe1400fc0000809f",
+          "a3060020460000030201c94f01001414039914ca",
+          "a3070308feeb58a7fffeebfe1400fc0000800039",
+          "a3081a0000000100017e4d03d1141400d814019d",
+          "a3ff3577ff0500fa1101ff0000000000000000f1",
+          "3305042208000000000000000000000000000018"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Firefly/speed-0",
+      "input": {
+        "name": "Firefly",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Firefly",
+        "packets": [
+          "a3000104020220000000010001ffa003c60a0a1c",
+          "a3010372140307ff5e07ffd03852ff000080005f",
+          "a3020080001d000211010001ff6603c60a0a0172",
+          "a3fff20102ffe407ff87070000800000800500cb",
+          "3305042308000000000000000000000000000019"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Firefly/speed-1",
+      "input": {
+        "name": "Firefly",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Firefly",
+        "packets": [
+          "a3000104020220000000010001ffa003cd0a0a17",
+          "a3010380140307ff5e07ffd03852ff00008000ad",
+          "a3020080001d000211010001ff6603cd0a0a0179",
+          "a3fffb0102ffe407ff87070000800000800500c2",
+          "3305042308000000000000000000000000000019"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Firefly/speed-2",
+      "input": {
+        "name": "Firefly",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Firefly",
+        "packets": [
+          "a3000104020220000000010001ffa003d10a0a0b",
+          "a3010399140307ff5e07ffd03852ff00008000b4",
+          "a3020080001d000211010001ff6603d10a0a0165",
+          "a3fffc0102ffe407ff87070000800000800500c5",
+          "3305042308000000000000000000000000000019"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Deep sea/speed-0",
+      "input": {
+        "name": "Deep sea",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Deep sea",
+        "packets": [
+          "a300010402021d000000010001ffff00000000bb",
+          "a30100cc32020064ff0000ff000000000000003a",
+          "a3021a00020a010201ff2801cc00000000320198",
+          "a3ff00ff96000000000000000000000000000035",
+          "330504240800000000000000000000000000001e"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Deep sea/speed-1",
+      "input": {
+        "name": "Deep sea",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Deep sea",
+        "packets": [
+          "a300010402021d000000010001ffff00000000bb",
+          "a30100dc32020064ff0000ff000000000000002a",
+          "a3021a00020a010201ff2801d700000000320183",
+          "a3ff00ff96000000000000000000000000000035",
+          "330504240800000000000000000000000000001e"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Deep sea/speed-2",
+      "input": {
+        "name": "Deep sea",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Deep sea",
+        "packets": [
+          "a300010402021d000000010001ffff00000000bb",
+          "a30100e532020064ff0000ff0000000000000013",
+          "a3021a00020a010201ff2801e0000000003201b4",
+          "a3ff00ff96000000000000000000000000000035",
+          "330504240800000000000000000000000000001e"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Desert/speed-0",
+      "input": {
+        "name": "Desert",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Desert",
+        "packets": [
+          "a300010502021a000100320201ff19010014146a",
+          "a30100f43201c87800030080000000002900027d",
+          "a3021e0f0001ff3200bf141400f40006ffff0031",
+          "a303ff6f00ffa000ff7300ffc200faff001401ce",
+          "a3ffc10000ff0000000000000000000000000062",
+          "330504250800000000000000000000000000001f"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Desert/speed-1",
+      "input": {
+        "name": "Desert",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Desert",
+        "packets": [
+          "a300010502021a000100320201ff19010014146a",
+          "a30100fa3201c878000300800000000029000273",
+          "a3021e0f0001ff3200c8141400fc0006ffff004e",
+          "a303ff6f00ffa000ff7300ffc200faff001401ce",
+          "a3ffcc0000ff000000000000000000000000006f",
+          "330504250800000000000000000000000000001f"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Desert/speed-2",
+      "input": {
+        "name": "Desert",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Desert",
+        "packets": [
+          "a300010502021a000100320201ff19010014146a",
+          "a30100fc3201c878000300800000000029000275",
+          "a3021e0f0001ff3200d1141400fc0006ffff0057",
+          "a303ff6f00ffa000ff7300ffc200faff001401ce",
+          "a3ffd80000ff000000000000000000000000007b",
+          "330504250800000000000000000000000000001f"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Karst Cave/speed-0",
+      "input": {
+        "name": "Karst Cave",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Karst Cave",
+        "packets": [
+          "a3000105020229000000010001ff98038c0a0a66",
+          "a30102b21406bd00ff0000ffff0000ff7f0000c2",
+          "a302ff0000ffff0001fa000000001d00020401bf",
+          "a3030001ff0000c61414007214023d69ff9f37ff",
+          "a3ffff00008000008000000000000000000000a3",
+          "330504260800000000000000000000000000001c"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Karst Cave/speed-1",
+      "input": {
+        "name": "Karst Cave",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Karst Cave",
+        "packets": [
+          "a3000105020229000000010001ff98039a0a0a70",
+          "a30102c81406bd00ff0000ffff0000ff7f0000b8",
+          "a302ff0000ffff0001fa000000001d00020401bf",
+          "a3030001ff0000cf1414008014023d69ff9f3704",
+          "a3ffff00008000008000000000000000000000a3",
+          "330504260800000000000000000000000000001c"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Karst Cave/speed-2",
+      "input": {
+        "name": "Karst Cave",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Karst Cave",
+        "packets": [
+          "a3000105020229000000010001ff9803a80a0a42",
+          "a30102d11406bd00ff0000ffff0000ff7f0000a1",
+          "a302ff0000ffff0001fa000000001d00020401bf",
+          "a3030001ff0000d31414008c14023d69ff9f3714",
+          "a3ffff00008000008000000000000000000000a3",
+          "330504260800000000000000000000000000001c"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Karst Cave/speed-3",
+      "input": {
+        "name": "Karst Cave",
+        "speed": 3
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Karst Cave",
+        "packets": [
+          "a3000105020229000000010001ff9803bf0a0a55",
+          "a30102e01406bd00ff0000ffff0000ff7f000090",
+          "a302ff0000ffff0001fa000000001d00020401bf",
+          "a3030001ff0000e01414009914023d69ff9f3732",
+          "a3ffff00008000008000000000000000000000a3",
+          "330504260800000000000000000000000000001c"
+        ],
+        "speed": 3
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Forest/speed-0",
+      "input": {
+        "name": "Forest",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Forest",
+        "packets": [
+          "a30001070203260001000a0201ff1901a80a0ac5",
+          "a30102b21405ffff0000ffffffffff00ffff9468",
+          "a302ff0014018c000000002300020f050201ff10",
+          "a3033301bf050501f40a0404ff00b4ff0047ffde",
+          "a304ffe3ff00000000000000001a00000001025d",
+          "a30501ff3201b7141402e5140100ff00000000d1",
+          "a3ff00000000000000000000000000000000005c",
+          "330504270800000000000000000000000000001d"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Forest/speed-1",
+      "input": {
+        "name": "Forest",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Forest",
+        "packets": [
+          "a30001070203260001000a0201ff1901b40a0ad9",
+          "a30102c81405ffff0000ffffffffff00ffff9412",
+          "a302ff00140196000000002300020f050201ff0a",
+          "a3033301cc050501fa0a0404ff00b4ff0047ffa3",
+          "a304ffe3ff00000000000000001a00000001025d",
+          "a30501ff3201c8141402ee140100ff00000000a5",
+          "a3ff00000000000000000000000000000000005c",
+          "330504270800000000000000000000000000001d"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Forest/speed-2",
+      "input": {
+        "name": "Forest",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Forest",
+        "packets": [
+          "a30001070203260001000a0201ff1901bf0a0ad2",
+          "a30102d81405ffff0000ffffffffff00ffff9402",
+          "a302ff001401a5000000002300020f050201ff39",
+          "a3033301d8050501fc0a0404ff00b4ff0047ffb1",
+          "a304ffe3ff00000000000000001a00000001025d",
+          "a30501ff3201d1141402f2140100ff00000000a0",
+          "a3ff00000000000000000000000000000000005c",
+          "330504270800000000000000000000000000001d"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Glacier/speed-0",
+      "input": {
+        "name": "Glacier",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Glacier",
+        "packets": [
+          "a300010602031d300000010201ff4d03ad141496",
+          "a30100b20a020783ff00ffff0400f61000e20261",
+          "a3021a000000010001ff8303b2141400801401e3",
+          "a3030000ff000080000080011d34000001020175",
+          "a304ff4d03ad141400b20a020783ff00ffff047e",
+          "a3ff00f61000e20200000000000000000000005a",
+          "3305042808000000000000000000000000000012"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Glacier/speed-1",
+      "input": {
+        "name": "Glacier",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Glacier",
+        "packets": [
+          "a300010602031d300000010201ff4d03bb141480",
+          "a30100c60a020783ff00ffff0400f61000ea021d",
+          "a3021a000000010001ff8303cc1414008014019d",
+          "a3030000ff000080000080011d34000001020175",
+          "a304ff4d03bb141400c60a020783ff00ffff041c",
+          "a3ff00f61000ea02000000000000000000000052",
+          "3305042808000000000000000000000000000012"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Glacier/speed-2",
+      "input": {
+        "name": "Glacier",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Glacier",
+        "packets": [
+          "a300010602031d300000010201ff4d03cc1414f7",
+          "a30100d80a020783ff00ffff0400f61000f2021b",
+          "a3021a000000010001ff8303d81414007f140176",
+          "a3030000ff000080000080011d34000001020175",
+          "a304ff4d03cc141400d80a020783ff00ffff0475",
+          "a3ff00f61000f20200000000000000000000004a",
+          "3305042808000000000000000000000000000012"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Cornfield/speed-0",
+      "input": {
+        "name": "Cornfield",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Cornfield",
+        "packets": [
+          "a300010802041d200100060201ff0002e0141488",
+          "a30100e51402ff4100ff82000400f81000e80096",
+          "a3021d220100080201ff0000e0141400e5140278",
+          "a303ff4100ff63000100f21000e5001d260100be",
+          "a304080201ff0000e0141400e51402ff4100ff01",
+          "a30596000100f21000e5001aa001003200013b85",
+          "a3060a0000000000e53201ff87071114e00000e3",
+          "a3ff00000000000000000000000000000000005c",
+          "3305042908000000000000000000000000000013"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Cornfield/speed-1",
+      "input": {
+        "name": "Cornfield",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Cornfield",
+        "packets": [
+          "a300010802041d200100060201ff0002ea141482",
+          "a30100ef1402ff4100ff82000400f81000ef009b",
+          "a3021d220100080201ff0000ea141400ef140278",
+          "a303ff4100ff63000100f21000ed001d260100b6",
+          "a304080201ff0000ea141400ef1402ff4100ff01",
+          "a30596000100f21000ed001aa001003200013b8d",
+          "a3060a0000000000ef3201ff87071114e50000ec",
+          "a3ff00000000000000000000000000000000005c",
+          "3305042908000000000000000000000000000013"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Cornfield/speed-2",
+      "input": {
+        "name": "Cornfield",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Cornfield",
+        "packets": [
+          "a300010802041d200100060201ff0002f214149a",
+          "a30100f41402ff4100ff82000400f81000f4009b",
+          "a3021d220100080201ff0000f2141400f414027b",
+          "a303ff4100ff63000100f21000f4001d260100af",
+          "a304080201ff0000f2141400f41402ff4100ff02",
+          "a30596000100f21000f2001aa001003200013b92",
+          "a3060a0000000000f43201ff87071114ea0000f8",
+          "a3ff00000000000000000000000000000000005c",
+          "3305042908000000000000000000000000000013"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Cornfield/speed-3",
+      "input": {
+        "name": "Cornfield",
+        "speed": 3
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Cornfield",
+        "packets": [
+          "a300010802041d200100060201ff0002ff141497",
+          "a30100ff1402ff4100ff82000400f81000f9009d",
+          "a3021d220100080201ff0000ff141400ff14027d",
+          "a303ff4100ff63000100f21000f8001d260100a3",
+          "a304080201ff0000ff141400ff1402ff4100ff04",
+          "a30596000100f21000f8001aa001003200013b98",
+          "a3060a0000000000ff3201ff87071114f00000e9",
+          "a3ff00000000000000000000000000000000005c",
+          "3305042908000000000000000000000000000013"
+        ],
+        "speed": 3
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Flower Field/speed-0",
+      "input": {
+        "name": "Flower Field",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Flower Field",
+        "packets": [
+          "a300010502022ca0021e190201ff96007a00003e",
+          "a30102cc0007d1005eff0300ff6c00ffff00ff74",
+          "a3027f00ff0000f500ff0000001000db001aa05a",
+          "a303010032000132140000000000cc1401cf00a2",
+          "a3ff62000000000000000000000000000000003e",
+          "3305042a08000000000000000000000000000010"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Flower Field/speed-1",
+      "input": {
+        "name": "Flower Field",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Flower Field",
+        "packets": [
+          "a300010502022ca0021e190201ff96008e0000ca",
+          "a30102db0007d1005eff0300ff6c00ffff00ff63",
+          "a3027f00ff0000f500ff0000001000ea001aa06b",
+          "a303010032000132140000000000e51401cf008b",
+          "a3ff62000000000000000000000000000000003e",
+          "3305042a08000000000000000000000000000010"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Flower Field/speed-2",
+      "input": {
+        "name": "Flower Field",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Flower Field",
+        "packets": [
+          "a300010502022ca0021e190201ff9600990000dd",
+          "a30102e50007d1005eff0300ff6c00ffff00ff5d",
+          "a3027f00ff0000f500ff0000001000ef001aa06e",
+          "a303010032000132140000000000ea1401cf0084",
+          "a3ff62000000000000000000000000000000003e",
+          "3305042a08000000000000000000000000000010"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Flower Field/speed-3",
+      "input": {
+        "name": "Flower Field",
+        "speed": 3
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Flower Field",
+        "packets": [
+          "a300010502022ca0021e190201ff9600a60000e2",
+          "a30102ed0007d1005eff0300ff6c00ffff00ff55",
+          "a3027f00ff0000f500ff0000001000f4001aa075",
+          "a303010032000132140000000000f01401cf009e",
+          "a3ff62000000000000000000000000000000003e",
+          "3305042a08000000000000000000000000000010"
+        ],
+        "speed": 3
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Tree shadow/speed-none",
+      "input": {
+        "name": "Tree shadow",
+        "speed": null
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Tree shadow",
+        "packets": [
+          "a300010502021d000000010001a75503be0f0ff5",
+          "a30100e914021dffb676fe9b000080000080001a",
+          "a302260002060100018f4603cb050a00e9140575",
+          "a3031dffb676fe9b000000000000ffff000500e2",
+          "a3ffe30000fb0000000000000000000000000044",
+          "3305042b08000000000000000000000000000011"
+        ],
+        "speed": null
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Cherry blossoms/speed-0",
+      "input": {
+        "name": "Cherry blossoms",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Cherry blossoms",
+        "packets": [
+          "a300010602031d000000010001ff000072141435",
+          "a30100721402ff42c8f914ff00008000008000a1",
+          "a3021d000207020001ff000000050500f41402a7",
+          "a303d706ffff19ff1000ea000080001d000206f4",
+          "a3040200017b000000050500f41402cfff0ffffd",
+          "a3ff72070400f61000e50000000000000000002e",
+          "3305042c08000000000000000000000000000016"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Cherry blossoms/speed-1",
+      "input": {
+        "name": "Cherry blossoms",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Cherry blossoms",
+        "packets": [
+          "a300010602031d000000010001ff0000801414c7",
+          "a30100801402ff42c8f914ff0000800000800053",
+          "a3021d000207020001ff000000050500fc1402af",
+          "a303d706ffff19ff1000f6000080001d000206e8",
+          "a3040200017b000000050500fc1402cfff0ffff5",
+          "a3ff72070400f61000ef00000000000000000024",
+          "3305042c08000000000000000000000000000016"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Cherry blossoms/speed-2",
+      "input": {
+        "name": "Cherry blossoms",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Cherry blossoms",
+        "packets": [
+          "a300010602031d000000010001ff0000991414de",
+          "a30100991402ff42c8f914ff000080000080004a",
+          "a3021d000207020001ff000000050500fc1402af",
+          "a303d706ffff19ff1000f7000080001d000206e9",
+          "a3040200017b000000050500fc1402cfff0ffff5",
+          "a3ff72070400f61000f40000000000000000003f",
+          "3305042c08000000000000000000000000000016"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Ripple/speed-none",
+      "input": {
+        "name": "Ripple",
+        "speed": null
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Ripple",
+        "packets": [
+          "3305042300000000000000000000000000000011"
+        ],
+        "speed": null
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Rustling leaves/speed-none",
+      "input": {
+        "name": "Rustling leaves",
+        "speed": null
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Rustling leaves",
+        "packets": [
+          "a300010402021d000000010001ffff01000000ba",
+          "a30100dc320200ff0001ff9600000000000000d9",
+          "a3021a000228010201ff2801d720140000320195",
+          "a3ffffff0000000000000000000000000000005c",
+          "3305042d08000000000000000000000000000017"
+        ],
+        "speed": null
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Devour/speed-none",
+      "input": {
+        "name": "Devour",
+        "speed": null
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Devour",
+        "packets": [
+          "3305044000000000000000000000000000000072"
+        ],
+        "speed": null
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Desert B/speed-0",
+      "input": {
+        "name": "Desert B",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Desert B",
+        "packets": [
+          "a3000106020326000000050201cb3303b21414cc",
+          "a30103001405ff1e07ff3707ff5a07ff3707ff0b",
+          "a3021e07000080000080001a500301020001ff0c",
+          "a303000066141400661401ff32071600f200009b",
+          "a30480001a550301020001ff0000661414006696",
+          "a3ff1401ff31071400f2000080000000000000e6",
+          "3305041327000000000000000000000000000006"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Desert B/speed-1",
+      "input": {
+        "name": "Desert B",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Desert B",
+        "packets": [
+          "a3000106020326000000050201cb3303c91414b7",
+          "a30103001405ff1e07ff3707ff5a07ff3707ff0b",
+          "a3021e07000080000080001a500301020001ff0c",
+          "a303000080141400801401ff32071600f9000090",
+          "a30480001a550301020001ff0000801414008096",
+          "a3ff1401ff31071400f9000080000000000000ed",
+          "3305041327000000000000000000000000000006"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Desert B/speed-2",
+      "input": {
+        "name": "Desert B",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Desert B",
+        "packets": [
+          "a3000106020326000000050201cb3303db1414a5",
+          "a30103001405ff1e07ff3707ff5a07ff3707ff0b",
+          "a3021e07000080000080001a500301020001ff0c",
+          "a303000099141400991401ff32071600fc000095",
+          "a30480001a550301020001ff0000991414009996",
+          "a3ff1401ff31071400fc000080000000000000e8",
+          "3305041327000000000000000000000000000006"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Sand Grains/speed-0",
+      "input": {
+        "name": "Sand Grains",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Sand Grains",
+        "packets": [
+          "a300010402021d000303050001a0a000001414bf",
+          "a30103001402ff8330ff85230000801001e001d2",
+          "a3021a000000010001ff8c01e514140300070129",
+          "a3ffff631a0000800000800000000000000000da",
+          "3305041427000000000000000000000000000001"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Sand Grains/speed-1",
+      "input": {
+        "name": "Sand Grains",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Sand Grains",
+        "packets": [
+          "a300010402021d000303050001a0a000001414bf",
+          "a30103001402ff8330ff85230000801001ed01df",
+          "a3021a000000010001ff8c01ef14140300070123",
+          "a3ffff631a0000800000800000000000000000da",
+          "3305041427000000000000000000000000000001"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Sand Grains/speed-2",
+      "input": {
+        "name": "Sand Grains",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Natural",
+        "name": "Sand Grains",
+        "packets": [
+          "a300010402021d000303050001a0a000001414bf",
+          "a30103001402ff8330ff85230000801001f701c5",
+          "a3021a000000010001ff8c01f914140300070135",
+          "a3ffff631a0000800000800000000000000000da",
+          "3305041427000000000000000000000000000001"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Illumination/speed-none",
+      "input": {
+        "name": "Illumination",
+        "speed": null
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Illumination",
+        "packets": [
+          "3305043f0000000000000000000000000000000d"
+        ],
+        "speed": null
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Bright/speed-0",
+      "input": {
+        "name": "Bright",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Bright",
+        "packets": [
+          "a300010402021a000000010001ff4c03b21414be",
+          "a30100d83201fff50803008000000000200002ea",
+          "a3020f0500017f4d017f141402d81403ffd8070b",
+          "a3ffff7f00f8fea20000001000d80000000000b0",
+          "3305040f08000000000000000000000000000035"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Bright/speed-1",
+      "input": {
+        "name": "Bright",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Bright",
+        "packets": [
+          "a300010402021a000000010001ff4c03cc1414c0",
+          "a30100e53201fff50803008000000000200002d7",
+          "a3020f0500017f4d0199141402e51403ffd807d0",
+          "a3ffff7f00f8fea20000001000e500000000008d",
+          "3305040f08000000000000000000000000000035"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Bright/speed-2",
+      "input": {
+        "name": "Bright",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Bright",
+        "packets": [
+          "a300010402021a000000010001ff4c03db1414d7",
+          "a30100f23201fff50803008000000000200002c0",
+          "a3020f0500017f4d01b2141402f21403ffd807ec",
+          "a3ffff7f00f8fea20000001000f200000000009a",
+          "3305040f08000000000000000000000000000035"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Bright/speed-3",
+      "input": {
+        "name": "Bright",
+        "speed": 3
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Bright",
+        "packets": [
+          "a300010402021a000000010001ff4c03e71414eb",
+          "a30100fa3201fff50803008000000000200002c8",
+          "a3020f0500017f4d01c8141402fa1403ffd8079e",
+          "a3ffff7f00f8fea20000001000fb000000000093",
+          "3305040f08000000000000000000000000000035"
+        ],
+        "speed": 3
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Colorful/speed-0",
+      "input": {
+        "name": "Colorful",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Colorful",
+        "packets": [
+          "a300010802032c00020a050202ff1900bf0000d3",
+          "a301ff1900c4000002e50a05ff3800ff7f00002f",
+          "a302ff0000ffff8b00ff00008000000000230089",
+          "a303021e0a0001ffff0084000001e00004f10027",
+          "a3041dff7500ffc000ff4b000000ff0001fa03bc",
+          "a30529000000010001c474007f141400e50a06a9",
+          "a306ff0f07ff7f00ffff0000ff0000ffff00002d",
+          "a3ffff00008000008001000000000000000000a2",
+          "330504100800000000000000000000000000002a"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Colorful/speed-1",
+      "input": {
+        "name": "Colorful",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Colorful",
+        "packets": [
+          "a300010802032c00020a050202ff1900ce0000a2",
+          "a301ff1900d3000002f20a05ff3800ff7f00002f",
+          "a302ff0000ffff8b00ff00008000000000230089",
+          "a303021e0a0001ffff0093000001ea0004f1003a",
+          "a3041dff7500ffc000ff4b000000ff0001fa03bc",
+          "a30529000000010001c4740091141400f20a0650",
+          "a306ff0f07ff7f00ffff0000ff0000ffff00002d",
+          "a3ffff00008000008001000000000000000000a2",
+          "330504100800000000000000000000000000002a"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Colorful/speed-2",
+      "input": {
+        "name": "Colorful",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Colorful",
+        "packets": [
+          "a300010802032c00020a050202ff1900d90000b5",
+          "a301ff1900dd000002fa0a05ff3800ff7f000029",
+          "a302ff0000ffff8b00ff00008000000000230089",
+          "a303021e0a0001ffff009e000001f50004f10028",
+          "a3041dff7500ffc000ff4b000000ff0001fa03bc",
+          "a30529000000010001c474009b141400f90a0651",
+          "a306ff0f07ff7f00ffff0000ff0000ffff00002d",
+          "a3ffff00008000008001000000000000000000a2",
+          "330504100800000000000000000000000000002a"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Colorful/speed-3",
+      "input": {
+        "name": "Colorful",
+        "speed": 3
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Colorful",
+        "packets": [
+          "a300010802032c00020a050202ff1900e000008c",
+          "a301ff1900e5000002fc0a05ff3800ff7f000017",
+          "a302ff0000ffff8b00ff00008000000000230089",
+          "a303021e0a0001ffff00a8000001f90004f10012",
+          "a3041dff7500ffc000ff4b000000ff0001fa03bc",
+          "a30529000000010001c47400a8141400fc0a0667",
+          "a306ff0f07ff7f00ffff0000ff0000ffff00002d",
+          "a3ffff00008000008001000000000000000000a2",
+          "330504100800000000000000000000000000002a"
+        ],
+        "speed": 3
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Candy/speed-0",
+      "input": {
+        "name": "Candy",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Candy",
+        "packets": [
+          "a300010b020429000100320201ff0003e50a0aaf",
+          "a301017f0506ff0000ff7f00ffff0000ff00005f",
+          "a302ffff8b00ff1400e5000880002900010032b6",
+          "a3030201ffb203e50a0a018c0506ff0000ff7ff9",
+          "a30400ffff0000ff0000ffff8b00ff1600e510cf",
+          "a3050166012900010032000194940066141400bd",
+          "a306cc1406ff0000ff7f00ffff0000ff0000ff04",
+          "a307ff8b00ff000080000080002900021901001c",
+          "a30801ffff0066141400e51406ff0000ff7f0044",
+          "a309ffff0000ff0000ffff8b00ff0000800000a1",
+          "a3ff8000000000000000000000000000000000dc",
+          "330504110800000000000000000000000000002b"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Candy/speed-1",
+      "input": {
+        "name": "Candy",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Candy",
+        "packets": [
+          "a300010b020429000100320201ff0003f40a0abe",
+          "a30101990506ff0000ff7f00ffff0000ff0000b9",
+          "a302ffff8b00ff1400f2000880002900010032a1",
+          "a3030201ffb203f40a0a01960506ff0000ff7ff2",
+          "a30400ffff0000ff0000ffff8b00ff1600f210d8",
+          "a3050172012900010032000194940072141400bd",
+          "a306db1406ff0000ff7f00ffff0000ff0000ff13",
+          "a307ff8b00ff000080000080002900021901001c",
+          "a30801ffff0072141400f21406ff0000ff7f0047",
+          "a309ffff0000ff0000ffff8b00ff0000800000a1",
+          "a3ff8000000000000000000000000000000000dc",
+          "330504110800000000000000000000000000002b"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Candy/speed-2",
+      "input": {
+        "name": "Candy",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Candy",
+        "packets": [
+          "a300010b020429000100320201ff0003ff0a0ab5",
+          "a30101a50506ff0000ff7f00ffff0000ff000085",
+          "a302ffff8b00ff1400fd000880002900010032ae",
+          "a3030201ffb203ff0a0a01a30506ff0000ff7fcc",
+          "a30400ffff0000ff0000ffff8b00ff1600fc10d6",
+          "a3050180012900010032000194940080141400bd",
+          "a306e71406ff0000ff7f00ffff0000ff0000ff2f",
+          "a307ff8b00ff000080000080002900021901001c",
+          "a30801ffff0080141400fc1406ff0000ff7f00bb",
+          "a309ffff0000ff0000ffff8b00ff0000800000a1",
+          "a3ff8000000000000000000000000000000000dc",
+          "330504110800000000000000000000000000002b"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Flying/speed-0",
+      "input": {
+        "name": "Flying",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Flying",
+        "packets": [
+          "a300010702031d000206030201bd6203cc0a0aad",
+          "a30103b71402ff8e07ff06150400d00100f905b3",
+          "a30223000205020201db5903cc0a0f03bc140463",
+          "a303ed38fefffb0748edfe39fe5d0400d001009c",
+          "a304f90523000000010001cccc02b20a0a00e028",
+          "a3051404ff6e98ff530dffd82f20fe140000805c",
+          "a3ff0000800100000000000000000000000000dd",
+          "3305041208000000000000000000000000000028"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Flying/speed-1",
+      "input": {
+        "name": "Flying",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Flying",
+        "packets": [
+          "a300010702031d000206030201bd6203da0a0abb",
+          "a30103c61402ff8e07ff06150400d00100f905c2",
+          "a30223000205020201db5903da0a0f03cd140404",
+          "a303ed38fefffb0748edfe39fe5d0400d001009c",
+          "a304f90523000000010001cccc02be0a0a00ee2a",
+          "a3051404ff6e98ff530dffd82f20fe140000805c",
+          "a3ff0000800100000000000000000000000000dd",
+          "3305041208000000000000000000000000000028"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Flying/speed-2",
+      "input": {
+        "name": "Flying",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Flying",
+        "packets": [
+          "a300010702031d000206030201bd6203e20a0a83",
+          "a30103cc1402ff8e07ff06150400d00100f905c8",
+          "a30223000205020201db5903e20a0f03d1140420",
+          "a303ed38fefffb0748edfe39fe5d0400d001009c",
+          "a304f90523000000010001cccc02cc0a0a00f244",
+          "a3051404ff6e98ff530dffd82f20fe140000805c",
+          "a3ff0000800100000000000000000000000000dd",
+          "3305041208000000000000000000000000000028"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Spin/speed-0",
+      "input": {
+        "name": "Spin",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Spin",
+        "packets": [
+          "a300010d020526200000010201ff7e03720a0a5c",
+          "a30100e51405ff8c07fffe0761fe0807feae07e3",
+          "a302bafe1500f20000800029220000010201ff74",
+          "a3031803720a0a00e51406ff8c07fffe07ff5eed",
+          "a30407ff063dff06d3b406fe1700f20000800067",
+          "a30529240000010201ff1903720a0a00e51406c9",
+          "a306ff8c07fffe0708ffaa06dafe087dfed706f2",
+          "a307ff1500f20000800029260000010201ff19d7",
+          "a30803720a0a00e51406ff8c07fffe07ff068523",
+          "a309f507ff5666ff07a2ff1700f200008000297e",
+          "a30a280000010201ff1903720a0a00e51406ff1c",
+          "a30b8c07fffe07f150ff0769ff08ff9108ff0f74",
+          "a3ff1500f200008000000000000000000000003b",
+          "3305041308000000000000000000000000000029"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Spin/speed-1",
+      "input": {
+        "name": "Spin",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Spin",
+        "packets": [
+          "a300010d020526200000010201ff7e03800a0aae",
+          "a30100f31405ff8c07fffe0761fe0807feae07f5",
+          "a302bafe1500f80000800029220000010201ff7e",
+          "a3031803800a0a00f31406ff8c07fffe07ff5e09",
+          "a30407ff063dff06d3b406fe1700f8000080006d",
+          "a30529240000010201ff1903800a0a00f214062c",
+          "a306ff8c07fffe0708ffaa06dafe087dfed706f2",
+          "a307ff1500f80000800029260000010201ff19dd",
+          "a30803800a0a00f31406ff8c07fffe07ff0685c7",
+          "a309f507ff5666ff07a2ff1700f8000080002974",
+          "a30a280000010201ff1903800a0a00f31406fff8",
+          "a30b8c07fffe07f150ff0769ff08ff9108ff0f74",
+          "a3ff1500f8000080000000000000000000000031",
+          "3305041308000000000000000000000000000029"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Spin/speed-2",
+      "input": {
+        "name": "Spin",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Spin",
+        "packets": [
+          "a300010d020526200000010201ff7e03990a0ab7",
+          "a30100f71405ff8c07fffe0761fe0807feae07f1",
+          "a302bafe1500fc0000800029220000010201ff7a",
+          "a3031803990a0a00f71406ff8c07fffe07ff5e14",
+          "a30407ff063dff06d3b406fe1700fc0000800069",
+          "a30529240000010201ff1903990a0a00f7140630",
+          "a306ff8c07fffe0708ffaa06dafe087dfed706f2",
+          "a307ff1500fc0000800029260000010201ff19d9",
+          "a30803990a0a00f71406ff8c07fffe07ff0685da",
+          "a309f507ff5666ff07a2ff1700fc000080002970",
+          "a30a280000010201ff1903990a0a00f71406ffe5",
+          "a30b8c07fffe07f150ff0769ff08ff9108ff0f74",
+          "a3ff1500fc000080000000000000000000000035",
+          "3305041308000000000000000000000000000029"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Dancing/speed-0",
+      "input": {
+        "name": "Dancing",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Dancing",
+        "packets": [
+          "a300010602031d000000010001ff000072521473",
+          "a30100bf03020300ff6700ff1003721003720179",
+          "a3021a280000010001ff00009b64140096010111",
+          "a303ff00dd1001bf1000f4011a200000010001f3",
+          "a304ff00007214140072010100ffda120172120e",
+          "a3ff00f2020000000000000000000000000000ac",
+          "330504140800000000000000000000000000002e"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Dancing/speed-1",
+      "input": {
+        "name": "Dancing",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Dancing",
+        "packets": [
+          "a300010602031d000000010001ff00007f52147e",
+          "a30100cd03020300ff6700ff10037f10037f010b",
+          "a3021a280000010001ff0000a9641400a0010115",
+          "a303ff00dd1001cb1000ff011a2000000100018c",
+          "a304ff00007f1414007f010100ffda12017f1203",
+          "a3ff00ff020000000000000000000000000000a1",
+          "330504140800000000000000000000000000002e"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Dancing/speed-2",
+      "input": {
+        "name": "Dancing",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Dancing",
+        "packets": [
+          "a300010602031d000000010001ff000099521498",
+          "a30100d803020300ff6700ff100399100399011e",
+          "a3021a280000010001ff0000b5641400b201011b",
+          "a303ff00dd1001d81000ff011a2000000100019f",
+          "a304ff00009914140099010100ffda12019912e5",
+          "a3ff00ff020000000000000000000000000000a1",
+          "330504140800000000000000000000000000002e"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Competition/speed-none",
+      "input": {
+        "name": "Competition",
+        "speed": null
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Life",
+        "name": "Competition",
+        "packets": [
+          "a300010402021a200000010001ffcc008014142f",
+          "a30100801401ff00000000801200ff001a280097",
+          "a30200010001ffcf00801414008014010000ff7b",
+          "a3ff0000801000ff000000000000000000000033",
+          "330504150800000000000000000000000000002f"
+        ],
+        "speed": null
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Cheerful/speed-0",
+      "input": {
+        "name": "Cheerful",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Emotion",
+        "name": "Cheerful",
+        "packets": [
+          "a300010502021d000000010001ff7d017214144b",
+          "a30100721402ff00000000ff00008000008000c6",
+          "a3022f000100320002ffff00721414ff00017241",
+          "a30314140100140600ffff00000000ffff0000b3",
+          "a3ff0000ffff0000001500f2000080000000003b",
+          "330504310800000000000000000000000000000b"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Cheerful/speed-1",
+      "input": {
+        "name": "Cheerful",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Emotion",
+        "name": "Cheerful",
+        "packets": [
+          "a300010502021d000000010001ff7d01801414b9",
+          "a30100801402ff00000000ff0000800000800034",
+          "a3022f000100320002ffff00801414ff00018041",
+          "a30314140100140600ffff00000000ffff0000b3",
+          "a3ff0000ffff0000001500fb0000800000000032",
+          "330504310800000000000000000000000000000b"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Cheerful/speed-2",
+      "input": {
+        "name": "Cheerful",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Emotion",
+        "name": "Cheerful",
+        "packets": [
+          "a300010502021d000000010001ff7d018c1414b5",
+          "a301008c1402ff00000000ff0000800000800038",
+          "a3022f000100320002ffff00991414ff00019941",
+          "a30314140100140600ffff00000000ffff0000b3",
+          "a3ff0000ffff0000001500fc0000800000000035",
+          "330504310800000000000000000000000000000b"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Meditation/speed-none",
+      "input": {
+        "name": "Meditation",
+        "speed": null
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Emotion",
+        "name": "Meditation",
+        "packets": [
+          "a3000105020223000000010201e7350000000054",
+          "a301006e53042b07ff061cfe0646fe077bff0392",
+          "a302001c000000001d000100320201ff3200005d",
+          "a303320000fa32020000780000500300800000f3",
+          "a3ff00000000000000000000000000000000005c",
+          "3305043208000000000000000000000000000008"
+        ],
+        "speed": null
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Heartbeat/speed-none",
+      "input": {
+        "name": "Heartbeat",
+        "speed": null
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Emotion",
+        "name": "Heartbeat",
+        "packets": [
+          "3305044100000000000000000000000000000073"
+        ],
+        "speed": null
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Romantic/speed-0",
+      "input": {
+        "name": "Romantic",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Emotion",
+        "name": "Romantic",
+        "packets": [
+          "a30001070203235001000f0201ff0a020000002d",
+          "a30102000004ff0000ff5a00ff7800e5003610ba",
+          "a30200e500000000230001000f0201ff0a02009d",
+          "a303000002000004ff0000ff5a00ff7800f20089",
+          "a3041c1000e5000000001a0000000102019632f2",
+          "a3050000000000ed3201ff81ff1100660000008e",
+          "a3ff00000000000000000000000000000000005c",
+          "3305042e08000000000000000000000000000014"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Romantic/speed-1",
+      "input": {
+        "name": "Romantic",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Emotion",
+        "name": "Romantic",
+        "packets": [
+          "a30001070203235001000f0201ff0a020000002d",
+          "a30102000004ff0000ff5a00ff7800e5003610ba",
+          "a30200f200000000230001000f0201ff0a02008a",
+          "a303000002000004ff0000ff5a00ff7800f20089",
+          "a3041c1000f2000000001a0000000102019632e5",
+          "a3050000000000f23201ff81ff11007200000085",
+          "a3ff00000000000000000000000000000000005c",
+          "3305042e08000000000000000000000000000014"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Romantic/speed-2",
+      "input": {
+        "name": "Romantic",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Emotion",
+        "name": "Romantic",
+        "packets": [
+          "a30001070203235001000f0201ff0a020000002d",
+          "a30102000004ff0000ff5a00ff7800e5003610ba",
+          "a30200fa00000000230001000f0201ff0a020082",
+          "a303000002000004ff0000ff5a00ff7800f20089",
+          "a3041c1000fa000000001a0000000102019632ed",
+          "a3050000000000fa3201ff81ff1100800000007f",
+          "a3ff00000000000000000000000000000000005c",
+          "3305042e08000000000000000000000000000014"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Christmas/speed-0",
+      "input": {
+        "name": "Christmas",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Christmas",
+        "packets": [
+          "a300010402021d00020a010001ff8003e505052a",
+          "a30100ef0a02ff0000ffff000000801000c902e1",
+          "a3021a000000010001ff1a00c1141401e5320148",
+          "a3ff00ff001000d8000ef901000000000000009d",
+          "3305042f08000000000000000000000000000015"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Christmas/speed-1",
+      "input": {
+        "name": "Christmas",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Christmas",
+        "packets": [
+          "a300010402021d00020a010001ff8003ef050520",
+          "a30100f70a02ff0000ffff000000801000d302e3",
+          "a3021a000000010001ff1a00cc141401ed32014d",
+          "a3ff00ff001000e2000ef90100000000000000a7",
+          "3305042f08000000000000000000000000000015"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Christmas/speed-2",
+      "input": {
+        "name": "Christmas",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Christmas",
+        "packets": [
+          "a300010402021d00020a010001ff8003f7050538",
+          "a30100ff0a02ff0000ffff000000801000db02e3",
+          "a3021a000000010001ff1a00d6141401f532014f",
+          "a3ff00ff001000eb000ef90100000000000000ae",
+          "3305042f08000000000000000000000000000015"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Christmas Tree/speed-0",
+      "input": {
+        "name": "Christmas Tree",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Christmas Tree",
+        "packets": [
+          "a300010902051a000000010201ff090366141427",
+          "a3010066140100ff00000080000080001a550362",
+          "a30203030201ff0d0366141400661401ff7f00c6",
+          "a3031000db000080001a500303030201ff0d0350",
+          "a30466141400661401ff7f001200db000080007b",
+          "a3051d000207010001ff0000d1141401d1140256",
+          "a306ff0000ff3f42000080000080001a150000d7",
+          "a307010001ff0001b2141400661401ffffff0064",
+          "a3ff00800000800100000000000000000000005d",
+          "330504b00b000000000000000000000000000089"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Christmas Tree/speed-1",
+      "input": {
+        "name": "Christmas Tree",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Christmas Tree",
+        "packets": [
+          "a300010902051a000000010201ff090372141433",
+          "a3010072140100ff00000080000080001a550376",
+          "a30203030201ff0d0372141400721401ff7f00c6",
+          "a3031000ea000080001a500303030201ff0d0361",
+          "a30472141400721401ff7f001200ea000080004a",
+          "a3051d000207010001ff0000e0141401e0140256",
+          "a306ff0000ff3f42000080000080001a150000d7",
+          "a307010001ff0001bf141400721401ffffff007d",
+          "a3ff00800000800100000000000000000000005d",
+          "330504b00b000000000000000000000000000089"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Christmas Tree/speed-2",
+      "input": {
+        "name": "Christmas Tree",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Christmas Tree",
+        "packets": [
+          "a300010902051a000000010201ff0903801414c1",
+          "a3010080140100ff00000080000080001a550384",
+          "a30203030201ff0d0380141400801401ff7f00c6",
+          "a3031000f4000080001a500303030201ff0d037f",
+          "a30480141400801401ff7f001200f40000800054",
+          "a3051d000207010001ff0000ea141401ea140256",
+          "a306ff0000ff3f42000080000080001a150000d7",
+          "a307010001ff0001cc141400801401ffffff00fc",
+          "a3ff00800000800100000000000000000000005d",
+          "330504b00b000000000000000000000000000089"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Sled/speed-0",
+      "input": {
+        "name": "Sled",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Sled",
+        "packets": [
+          "a300010602031a000000010001ff0000801414c0",
+          "a3010080140187f6fe000080000080001d4000e5",
+          "a30200020201ff0a0000141402001402ff0000be",
+          "a303ff7f000200ff1001f9011a0003030300012c",
+          "a304ff00007514140075140100ff001400f9005f",
+          "a3ff0080010000000000000000000000000000dd",
+          "330504b10b000000000000000000000000000088"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Sled/speed-1",
+      "input": {
+        "name": "Sled",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Sled",
+        "packets": [
+          "a300010602031a000000010001ff0000801414c0",
+          "a3010080140187f6fe000080000080001d4000e5",
+          "a30200020201ff0a0000141402001402ff0000be",
+          "a303ff7f000200ff1001fc011a00030303000129",
+          "a304ff00008014140080140100ff001400fc005a",
+          "a3ff0080010000000000000000000000000000dd",
+          "330504b10b000000000000000000000000000088"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Sled/speed-2",
+      "input": {
+        "name": "Sled",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Sled",
+        "packets": [
+          "a300010602031a000000010001ff0000801414c0",
+          "a3010080140187f6fe000080000080001d4000e5",
+          "a30200020201ff0a0000141402001402ff0000be",
+          "a303ff7f000200ff1001ff011a0003030300012a",
+          "a304ff00008c1414008c140100ff001400ff0059",
+          "a3ff0080010000000000000000000000000000dd",
+          "330504b10b000000000000000000000000000088"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Christmas Gift/speed-0",
+      "input": {
+        "name": "Christmas Gift",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Christmas Gift",
+        "packets": [
+          "a3000107020329000203010001ff0001d11414a3",
+          "a30101661406ff0000ff7f00ffff0000ff000057",
+          "a302ffff8b00ff000080000080002900020301fc",
+          "a3030001ff0001d81414016614068b00ff00ff79",
+          "a304ff00ff00ffff00ff7f00ff00000000800058",
+          "a3050080001a000000010001ff1c01b714140069",
+          "a3ff66140107ff1e0000800000800000000000c9",
+          "330504b20b00000000000000000000000000008b"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Christmas Gift/speed-1",
+      "input": {
+        "name": "Christmas Gift",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Christmas Gift",
+        "packets": [
+          "a3000107020329000203010001ff0001db1414a9",
+          "a30101801406ff0000ff7f00ffff0000ff0000b1",
+          "a302ffff8b00ff000080000080002900020301fc",
+          "a3030001ff0001e81414018014068b00ff00ffaf",
+          "a304ff00ff00ffff00ff7f00ff00000000800058",
+          "a3050080001a000000010001ff1c01cc14140012",
+          "a3ff80140107ff1e00008000008000000000002f",
+          "330504b20b00000000000000000000000000008b"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Christmas Gift/speed-2",
+      "input": {
+        "name": "Christmas Gift",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Christmas Gift",
+        "packets": [
+          "a3000107020329000203010001ff0001e5141497",
+          "a30101991406ff0000ff7f00ffff0000ff0000a8",
+          "a302ffff8b00ff000080000080002900020301fc",
+          "a3030001ff0001f21414019914068b00ff00ffac",
+          "a304ff00ff00ffff00ff7f00ff00000000800058",
+          "a3050080001a000000010001ff1c01d814140006",
+          "a3ff99140107ff1e000080000080000000000036",
+          "330504b20b00000000000000000000000000008b"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Carnival/speed-0",
+      "input": {
+        "name": "Carnival",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Carnival",
+        "packets": [
+          "a300010902051a200100050201ff2801e50000a2",
+          "a30102003201ff00001100f41101f4001a220154",
+          "a30200050201ff2801e5000002003201ff7f0025",
+          "a3031100f41101f4001a240100050201ff28014e",
+          "a304e5000002003201ffff001100f41101f40072",
+          "a3051a260100050201ff2801e50000020032019f",
+          "a3067fff001000f41101f4001a28010005020110",
+          "a307ff2801e500000200320100ff001100f411ad",
+          "a3ff01f4000000000000000000000000000000a9",
+          "330504300800000000000000000000000000000a"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Carnival/speed-1",
+      "input": {
+        "name": "Carnival",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Carnival",
+        "packets": [
+          "a300010902051a200100050201ff2801ea0000ad",
+          "a30102003201ff00001100f91101f9001a220154",
+          "a30200050201ff2801ea000002003201ff7f002a",
+          "a3031100f91101f9001a240100050201ff28014e",
+          "a304ea000002003201ffff001100f91101f9007d",
+          "a3051a260100050201ff2801ea00000200320190",
+          "a3067fff001000f91101f9001a28010005020110",
+          "a307ff2801ea00000200320100ff001100f911af",
+          "a3ff01f9000000000000000000000000000000a4",
+          "330504300800000000000000000000000000000a"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Carnival/speed-2",
+      "input": {
+        "name": "Carnival",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Carnival",
+        "packets": [
+          "a300010902051a200100050201ff2801f00000b7",
+          "a30102003201ff00001100fc1101fc001a220154",
+          "a30200050201ff2801f0000002003201ff7f0030",
+          "a3031100fc1101fc001a240100050201ff28014e",
+          "a304f0000002003201ffff001100fc1101fc0067",
+          "a3051a260100050201ff2801f00000020032018a",
+          "a3067fff001000fc1101fc001a28010005020110",
+          "a307ff2801f000000200320100ff001100fc11b0",
+          "a3ff01fc000000000000000000000000000000a1",
+          "330504300800000000000000000000000000000a"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Halloween/speed-0",
+      "input": {
+        "name": "Halloween",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Halloween",
+        "packets": [
+          "a3000105020223000000020202351601c4141460",
+          "a301311503c6141403bc1402ff7f008b00ff001e",
+          "a30200800000800020000208060001ff0000c9ba",
+          "a303060500f40a03ff37070000008b00ff0000e5",
+          "a3ff80000080000000000000000000000000005c",
+          "330504a70b00000000000000000000000000009e"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Halloween/speed-1",
+      "input": {
+        "name": "Halloween",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Halloween",
+        "packets": [
+          "a3000105020223000000020202351601c4141460",
+          "a301311503c6141403c61402ff7f008b00ff0064",
+          "a30200800000800020000208060001ff0000ccbf",
+          "a303060500f40a03ff37070000008b00ff0000e5",
+          "a3ff80000080000000000000000000000000005c",
+          "330504a70b00000000000000000000000000009e"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Halloween/speed-2",
+      "input": {
+        "name": "Halloween",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Halloween",
+        "packets": [
+          "a3000105020223000000020202351601c4141460",
+          "a301311503c6141403dc1402ff7f008b00ff007e",
+          "a30200800000800020000208060001ff0000d7a4",
+          "a303060500f40a03ff37070000008b00ff0000e5",
+          "a3ff80000080000000000000000000000000005c",
+          "330504a70b00000000000000000000000000009e"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Halloween B/speed-0",
+      "input": {
+        "name": "Halloween B",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Halloween B",
+        "packets": [
+          "a300010902051a0002140a0001a70003ba0a0ab5",
+          "a30100f405018b00ff0000800000800026000000",
+          "a30200010001ff0000f40a0a03f40505ff0000a2",
+          "a303000000000000000000000000000080000020",
+          "a30480001a300100020001ffff00e8141400f413",
+          "a3051401ff00001200e8000080001a340100021b",
+          "a3060001ffe60084141400f41401ff0000100037",
+          "a307ea000080001a000000010001130900ad1477",
+          "a3ff1400f414018b00ff0000f7000080000000aa",
+          "330504a80b000000000000000000000000000091"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Halloween B/speed-1",
+      "input": {
+        "name": "Halloween B",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Halloween B",
+        "packets": [
+          "a300010902051a0002140a0001a70003c10a0ace",
+          "a30100f905018b00ff000080000080002600000d",
+          "a30200010001ff0000f90a0a03f90505ff0000a2",
+          "a303000000000000000000000000000080000020",
+          "a30480001a300100020001ffff00ef141400f919",
+          "a3051401ff00001200f2000080001a3401000201",
+          "a3060001ffe6008e141400f91401ff0000100030",
+          "a307f2000080001a000000010001130900b71475",
+          "a3ff1400f914018b00ff0000f7000080000000a7",
+          "330504a80b000000000000000000000000000091"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Halloween B/speed-2",
+      "input": {
+        "name": "Halloween B",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Halloween B",
+        "packets": [
+          "a300010902051a0002140a0001a70003c90a0ac6",
+          "a30100ff05018b00ff000080000080002600000b",
+          "a30200010001ff0000ff0a0a03ff0505ff0000a2",
+          "a303000000000000000000000000000080000020",
+          "a30480001a300100020001ffff00f7141400ff07",
+          "a3051401ff00001200f7000080001a3401000204",
+          "a3060001ffe60099141400ff1401ff0000100021",
+          "a307f7000080001a000000010001130900bf1478",
+          "a3ff1400ff14018b00ff0000f7000080000000a1",
+          "330504a80b000000000000000000000000000091"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Halloween C/speed-0",
+      "input": {
+        "name": "Halloween C",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Halloween C",
+        "packets": [
+          "a3000103020129000000010001ff7f03b21414ba",
+          "a30101f714068b00ff8b00ff8b00ffff4d07ff78",
+          "a3ff4007ff41070000800100f2000000000000d1",
+          "330504a90b000000000000000000000000000090"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Halloween C/speed-1",
+      "input": {
+        "name": "Halloween C",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Halloween C",
+        "packets": [
+          "a3000103020129000000010001ff7f03bf1414b7",
+          "a30101fc14068b00ff8b00ff8b00ffff4d07ff73",
+          "a3ff4007ff41070000800100f2000000000000d1",
+          "330504a90b000000000000000000000000000090"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Halloween C/speed-2",
+      "input": {
+        "name": "Halloween C",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Halloween C",
+        "packets": [
+          "a3000103020129000000010001ff7f03d81414d0",
+          "a30101fc14068b00ff8b00ff8b00ffff4d07ff73",
+          "a3ff4007ff41070000800100f2000000000000d1",
+          "330504a90b000000000000000000000000000090"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Party/speed-0",
+      "input": {
+        "name": "Party",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Party",
+        "packets": [
+          "a300010b020429000100320201ff0003f40a0abe",
+          "a30101930506ff0000ff7f00ffff0000ff0000b3",
+          "a302ffff8b00ff1400ea000880002900010032b9",
+          "a3030201ffb203f40a0a01960506ff0000ff7ff2",
+          "a30400ffff0000ff0000ffff8b00ff1600ef10c5",
+          "a305018001290001003200019494007514140048",
+          "a306dd1406ff0000ff7f00ffff0000ff0000ff15",
+          "a307ff8b00ff000080000080002900021901001c",
+          "a30801ffff0075141400f41406ff0000ff7f0046",
+          "a309ffff0000ff0000ffff8b00ff0000800000a1",
+          "a3ff8000000000000000000000000000000000dc",
+          "330504af0b000000000000000000000000000096"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Party/speed-1",
+      "input": {
+        "name": "Party",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Party",
+        "packets": [
+          "a300010b020429000100320201ff0003ff0a0ab5",
+          "a30101a50506ff0000ff7f00ffff0000ff000085",
+          "a302ffff8b00ff1400f2000880002900010032a1",
+          "a3030201ffb203ff0a0a01a30506ff0000ff7fcc",
+          "a30400ffff0000ff0000ffff8b00ff1600f810d2",
+          "a3050180012900010032000194940080141400bd",
+          "a306e71406ff0000ff7f00ffff0000ff0000ff2f",
+          "a307ff8b00ff000080000080002900021901001c",
+          "a30801ffff0080141400ff1406ff0000ff7f00b8",
+          "a309ffff0000ff0000ffff8b00ff0000800000a1",
+          "a3ff8000000000000000000000000000000000dc",
+          "330504af0b000000000000000000000000000096"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Party/speed-2",
+      "input": {
+        "name": "Party",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Party",
+        "packets": [
+          "a300010b020429000100320201ff0003ff0a0ab5",
+          "a30101b20506ff0000ff7f00ffff0000ff000092",
+          "a302ffff8b00ff1400f7000880002900010032a4",
+          "a3030201ffb203ff0a0a01b20506ff0000ff7fdd",
+          "a30400ffff0000ff0000ffff8b00ff1600fc10d6",
+          "a305018001290001003200019494008e141400b3",
+          "a306ef1406ff0000ff7f00ffff0000ff0000ff27",
+          "a307ff8b00ff000080000080002900021901001c",
+          "a30801ffff008e141400ff1406ff0000ff7f00b6",
+          "a309ffff0000ff0000ffff8b00ff0000800000a1",
+          "a3ff8000000000000000000000000000000000dc",
+          "330504af0b000000000000000000000000000096"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Easter/speed-0",
+      "input": {
+        "name": "Easter",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Easter",
+        "packets": [
+          "a300010902051a280000010201ff0000e0141483",
+          "a30101001401ff7f001000e00000800020240042",
+          "a30200010202ff0000e01414ff000099141401d8",
+          "a303001401ff27281000e0000080011a26000008",
+          "a304010201ff0000e014140000140142fe38103b",
+          "a30500e0000080011a220000010201ff0000e0e2",
+          "a306141400001401277eff1000e0000080011a7d",
+          "a307200000010201ff0000e01414000014019e12",
+          "a3ff20fe1000e0000080010000000000000000f3",
+          "330504ce2b0000000000000000000000000000d7"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Easter/speed-1",
+      "input": {
+        "name": "Easter",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Easter",
+        "packets": [
+          "a300010902051a280000010201ff0000ea141489",
+          "a30101001401ff7f001000ea0000800020240048",
+          "a30200010202ff0000ea1414ff000099141401d2",
+          "a303001401ff27281000ea000080011a26000002",
+          "a304010201ff0000ea14140000140142fe381031",
+          "a30500ea000080011a220000010201ff0000eae2",
+          "a306141400001401277eff1000ea000080011a77",
+          "a307200000010201ff0000ea1414000014019e18",
+          "a3ff20fe1000ea000080010000000000000000f9",
+          "330504ce2b0000000000000000000000000000d7"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Easter/speed-2",
+      "input": {
+        "name": "Easter",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Easter",
+        "packets": [
+          "a300010902051a280000010201ff0000f2141491",
+          "a30101001401ff7f001000f20000800020240050",
+          "a30200010202ff0000f41414ff000099141401cc",
+          "a303001401ff27281000f2000080011a2600001a",
+          "a304010201ff0000f714140000140142fe38102c",
+          "a30500f2000080011a220000010201ff0000f7e7",
+          "a306141400001401277eff1000f2000080011a6f",
+          "a307200000010201ff0000f71414000014019e05",
+          "a3ff20fe1000f2000080010000000000000000e1",
+          "330504ce2b0000000000000000000000000000d7"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Valentine's Day/speed-0",
+      "input": {
+        "name": "Valentine's Day",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Valentine's Day",
+        "packets": [
+          "a3000105020220000000010201ff1901c832148c",
+          "a301037f3203ff0000ff2d34ff00001000e500fc",
+          "a302000000230002190f00014c0d03c614140211",
+          "a3037f1404ff4272a300ffff4effffa5ff0000b7",
+          "a3ff000000ff00000000000000000000000000a3",
+          "330504ae340000000000000000000000000000a8"
+        ],
+        "speed": 0
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Valentine's Day/speed-1",
+      "input": {
+        "name": "Valentine's Day",
+        "speed": 1
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Valentine's Day",
+        "packets": [
+          "a3000105020220000000010201ff1901c832148c",
+          "a301037f3203ff0000ff2d34ff00001000f200eb",
+          "a302000000230002190f00014c0d03c91414021e",
+          "a303961404ff4272a300ffff4effffa5ff00005e",
+          "a3ff000000ff00000000000000000000000000a3",
+          "330504ae340000000000000000000000000000a8"
+        ],
+        "speed": 1
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/Valentine's Day/speed-2",
+      "input": {
+        "name": "Valentine's Day",
+        "speed": 2
+      },
+      "kind": "scene",
+      "result": {
+        "category": "Festival",
+        "name": "Valentine's Day",
+        "packets": [
+          "a3000105020220000000010201ff1901c832148c",
+          "a30103cc3203ff0000ff2d34ff00001000fc0056",
+          "a302000000230002190f00014c0d03d314140204",
+          "a303c61404ff4272a300ffff4effffa5ff00000e",
+          "a3ff000000ff00000000000000000000000000a3",
+          "330504ae340000000000000000000000000000a8"
+        ],
+        "speed": 2
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/refused-unknown-scene",
+      "input": {
+        "name": "No Such Scene",
+        "speed": null
+      },
+      "kind": "scene",
+      "result": {
+        "error": "ValueError: unknown scene No Such Scene"
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/refused-speed-past-last-option",
+      "input": {
+        "name": "Twilight",
+        "speed": 3
+      },
+      "kind": "scene",
+      "result": {
+        "error": "ValueError: scene speed index 3 outside 0..2"
+      },
+      "strings": null
+    },
+    {
+      "id": "scene/refused-speed-on-plain-scene",
+      "input": {
+        "name": "Night",
+        "speed": 0
+      },
+      "kind": "scene",
+      "result": {
+        "error": "ValueError: This scene does not expose a documented Speed control"
+      },
+      "strings": null
+    },
+    {
+      "id": "status/power-on",
+      "input": {
+        "reply": "aa010100000000000000000000000000000000aa",
+        "source": "constructed per ksy"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "domain": "power",
+          "is_on": true
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/power-off",
+      "input": {
+        "reply": "aa010000000000000000000000000000000000ab",
+        "source": "constructed per ksy"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "domain": "power",
+          "is_on": false
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/brightness-1",
+      "input": {
+        "reply": "aa040100000000000000000000000000000000af",
+        "source": "constructed per ksy"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "brightness_pct": 1,
+          "domain": "brightness"
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/brightness-100",
+      "input": {
+        "reply": "aa046400000000000000000000000000000000ca",
+        "source": "constructed per ksy"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "brightness_pct": 100,
+          "domain": "brightness"
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/firmware-text",
+      "input": {
+        "reply": "aa06312e30322e3033000000000000000000009c",
+        "source": "constructed per ksy"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "domain": "fw_version",
+          "text": "1.02.03"
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/hardware-text",
+      "input": {
+        "reply": "aa0703322e3030000000000000000000000000b2",
+        "source": "constructed per ksy"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "domain": "hw_version",
+          "text": "2.00"
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/strings-1",
+      "input": {
+        "reply": "aa0f0100000000000000000000000000000000a4",
+        "source": "constructed per ksy"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "count": 1,
+          "domain": "configured_strings"
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/strings-2-codec-fixture",
+      "input": {
+        "reply": "aa0f02000102030405060708090a0b0c0d0e0fa7",
+        "source": "codec test_kaitai_protocol.py configured_strings"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "count": 2,
+          "domain": "configured_strings"
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/segments-codec-fixture",
+      "input": {
+        "reply": "aaa50a250102032604050627070809aabbccdd20",
+        "source": "codec test_kaitai_protocol.py segments"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "domain": "segments"
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/power-off-memory-codec-fixture",
+      "input": {
+        "reply": "aa410100000000000000000000000000000000ea",
+        "source": "codec test_kaitai_protocol.py power_off_memory"
+      },
+      "kind": "status",
+      "result": {
+        "fields": {
+          "domain": "power_off_memory"
+        }
+      },
+      "strings": null
+    },
+    {
+      "id": "status/refused-bad-checksum",
+      "input": {
+        "reply": "aa010100000000000000000000000000000000ab",
+        "source": "constructed; checksum flipped"
+      },
+      "kind": "status",
+      "result": {
+        "fields": null
+      },
+      "strings": null
+    },
+    {
+      "id": "status/refused-command-ack",
+      "input": {
+        "reply": "3341000000000000000000000000000000000072",
+        "source": "codec test_kaitai_protocol.py command ack"
+      },
+      "kind": "status",
+      "result": {
+        "fields": null
+      },
+      "strings": null
+    }
+  ]
+}

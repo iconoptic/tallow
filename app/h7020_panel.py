@@ -595,7 +595,7 @@ def create_app(
     async def read_body(request: Request) -> dict[str, Any]:
         try:
             body = await request.json()
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise HTTPException(status_code=400, detail="body must be JSON") from exc
         if not isinstance(body, dict):
             raise HTTPException(status_code=400, detail="body must be an object")
@@ -793,7 +793,7 @@ def create_app(
     async def login(request: Request, password_form: str = Form(..., alias="password")) -> RedirectResponse:
         if request.scope.get("tallow_channel") == "agent":
             raise HTTPException(status_code=404, detail="not found")
-        if len(password_form) != len(password) or not hmac.compare_digest(password_form, password):
+        if not hmac.compare_digest(password_form.encode(), password.encode()):
             return RedirectResponse("/login?error=1", status_code=303)
         response = RedirectResponse("/", status_code=303)
         response.set_cookie(
@@ -1017,9 +1017,11 @@ def build_runtime(
     preview: bool = False,
     cams: camlib.Book | list[camlib.Cam] | None = None,
     session: LightSession | None = None,
+    root: Path | None = None,
+    agents_path: Path = AGENTS_PATH,
 ) -> FastAPI:
     session = session or LightSession()
-    root = ROOT / "data" / ("panel-preview" if preview else "panel")
+    root = root or ROOT / "data" / ("panel-preview" if preview else "panel")
     catalog = library.Library(root)
     stage = playback.Show(session, catalog)
 
@@ -1044,7 +1046,7 @@ def build_runtime(
             await stage.stop()
             await session.close()
 
-    return create_app(password, session, lifespan, catalog, stage, cams=cams)
+    return create_app(password, session, lifespan, catalog, stage, agents_path=agents_path, cams=cams)
 
 
 def serve(app: FastAPI, host: str, port: int, sock_path: Path) -> None:
@@ -1106,9 +1108,13 @@ def main() -> None:
     parser.add_argument("--strings", type=int, choices=(1, 2), help="15-bulb strings. Default: device report, else 1")
     parser.add_argument("--preview", action="store_true", help="Bind 127.0.0.1 and skip BLE")
     parser.add_argument("--password-file", type=Path, help="Preview only: a throwaway password for contract tests")
+    parser.add_argument("--data-dir", type=Path, help="Preview only: use this directory instead of data/panel-preview")
+    parser.add_argument("--agents-file", type=Path, help="Preview only: agent tokens. Default: agents.json in the data directory")
     args = parser.parse_args()
     if args.password_file and not args.preview:
         raise SystemExit("--password-file needs --preview. The real panel reads secrets/panel/password.")
+    if (args.data_dir or args.agents_file) and not args.preview:
+        raise SystemExit("--data-dir and --agents-file need --preview. The real panel uses data/panel and secrets/panel.")
     password = load_password(args.password_file or PASSWORD_PATH)
     if args.preview:
         if args.host not in (None, "127.0.0.1"):
@@ -1116,9 +1122,11 @@ def main() -> None:
         host = "127.0.0.1"
     else:
         host = choose_host(args.host, default_route_ipv4(), local_ipv4())
-    data_name = "panel-preview" if args.preview else "panel"
-    sock_path = ROOT / "data" / data_name / "agent.sock"
-    cams_path = ROOT / "data" / data_name / "cams.json"
+    root = args.data_dir or ROOT / "data" / ("panel-preview" if args.preview else "panel")
+    # A preview never reads the live token hashes.
+    agents_path = (args.agents_file or root / "agents.json") if args.preview else AGENTS_PATH
+    sock_path = root / "agent.sock"
+    cams_path = root / "cams.json"
     try:
         count = len(camlib.load_cams(cams_path))
     except (OSError, ValueError) as exc:
@@ -1128,7 +1136,14 @@ def main() -> None:
     print(f"Cams {count} from {cams_path}, re-read when it changes", file=sys.stderr)
     if args.preview:
         print("Preview only. BLE is not connected.", file=sys.stderr)
-    runtime = build_runtime(password, _connect_args(args), preview=args.preview, cams=camlib.Book(cams_path))
+    runtime = build_runtime(
+        password,
+        _connect_args(args),
+        preview=args.preview,
+        cams=camlib.Book(cams_path),
+        root=root,
+        agents_path=agents_path,
+    )
     serve(runtime, host, args.port, sock_path)
 
 
