@@ -91,6 +91,6 @@ Add dependencies only where a task names them.
   - Port `--trial` with `--hold`, `--hz`, `--size`, and `--pass-mark`, and port `--set`. `delivery` in `mesh_host.py` is the logic, and its tests port across. Add any frame kind `mesh_host.py` gained since T2.3.
   - Add `tools/mesh.sh daemon run <port> [arguments]`, using `need_classic_port`.
   - Write `tools/setup_mesh_host.sh`, in the style of `tools/install_re_toolchain_fedora.sh`: a udev rule giving this user the root node's port by USB path, and a user service. Do not run it.
-  - `serialport` opens exclusively, so while the service runs, `flash`, `monitor`, and `backup` on the root's port fail. Say in the script's output to stop it first. Every restart of the service resets the root board, so use `RestartSec=10`.
+  - `serialport` opens exclusively, so while the service runs, `flash`, `monitor`, and `backup` on the root's port fail. Say in the script's output to stop it first. Every restart of the service resets the root board, so use `RestartSec=10`. Shipped as `Restart=on-failure`, `RestartSec=30`, and 5 starts in 10 minutes, which is what `tools/tallowd.service` now sets.
 - **Done when:** `tools/mesh.sh daemon check` passes. **You:** run the script, and `--trial` matches the Python's numbers within 3 points.
 - **Stop if:** the service would need root at runtime.

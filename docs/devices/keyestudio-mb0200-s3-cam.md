@@ -1,6 +1,6 @@
 # Keyestudio MB0200 S3 CAM
 
-ESP32-S3 board with an OV3660 camera, an SD slot, and two USB-C ports. Here it is a node, and `toby-cam-1` is the node that watches the dog. A second board, [`toby-cam-0`](#toby-cam-0), has an ESPHome image compiled and not flashed. A Rust image builds and is not flashed ([Rust image](#rust-image)). Node design is in [docs/01](../01-bluetooth-server-hardware-and-proxies.md#tallow-nodes). Addresses and ports are in [docs/04](../04-firmware-liberation-and-network-isolation.md#esp32-nodes).
+ESP32-S3 board with an OV3660 camera, an SD slot, and two USB-C ports. Here it is a node, and `toby-cam-1` is the node that watches the dog. A second board, [`toby-cam-0`](#toby-cam-0), has an ESPHome image compiled and not flashed (the ESPHome tree is archived in `archive/firmware/esphome/`, and the ESPHome commands in this note now run from `archive/tools/`). A Rust image builds and is not flashed ([Rust image](#rust-image)). Node design is in [docs/01](../01-bluetooth-server-hardware-and-proxies.md#tallow-nodes). Addresses and ports are in [docs/04](../04-firmware-liberation-and-network-isolation.md#esp32-nodes).
 
 On 2026-10-28 this unit ran `relay-mb0200`, then `toby-cam-1`. The relay is proven. The cam streams and the panel proxy was checked against it, but its picture is dark and the page is not checked in a browser. After the board was moved, a weak USB supply made it unreachable, and a burst of connects later jammed its web server for minutes. On 2026-10-30 the board held `10.87.0.21` and did not answer ARP for it. The cams page returned 502, and an OTA to that address timed out. On 2026-10-31 it took an esphome-mesh build and crash-looped, and it is still unreachable and not recovered ([Where it is](#where-it-is-2026-10-31)). Results are in [On the board](#on-the-board-2026-10-28), [Power](#power), and [The one-slot jam](#the-one-slot-jam).
 
@@ -17,7 +17,7 @@ On 2026-10-28 this unit ran `relay-mb0200`, then `toby-cam-1`. The relay is prov
 | Wi-Fi MAC | `44:BD:8D:7A:51:60`, on the AP accept list |
 | BLE MAC | `44:BD:8D:7A:51:62` |
 | Nodes | `node-mb0200`, static `10.87.0.20` (2026-10-28 image name `relay-mb0200`); `toby-cam-1`, static `10.87.0.21`, unreachable on 2026-10-31 |
-| ESPHome | 2026.9.1 (`tools/esphome.sh`) |
+| ESPHome | 2026.9.1 (`archive/tools/esphome.sh`; archived) |
 
 On 2026-10-28 both nodes passed `config` and `compile`. RAM and flash use: relay 41.3% / 14.3%, cam 44.9% / 15.4% (the cam figure predates the power-save fix below). On 2026-10-31 `toby-cam-1.yaml`, without esphome-mesh, compiled at RAM 45.0%, flash 15.4%. It is not flashed.
 
@@ -28,13 +28,40 @@ On 2026-10-28 both nodes passed `config` and `compile`. RAM and flash use: relay
 ```bash
 tools/mesh.sh cam-build    # release image
 tools/mesh.sh cam-size     # size against the OTA slot
+tools/mesh.sh cam-image    # write the app image to firmware/cam/target/ota.bin
 ```
 
-`tools/mesh.sh fmt` formats this crate. `tools/mesh.sh check` runs `cargo fmt --check` on it and, without `--fast`, builds it after the node firmware, so a break here shows there. `check --fast` skips the build. The same command covers the mesh, the host daemon, and the panel's tests ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh)). A single build is `cam-build`. The build does not read `firmware/mesh/mesh.key`. `target/`, `.embuild/`, and `sdkconfig` under `firmware/cam/` are gitignored.
+`tools/mesh.sh fmt` formats this crate. `tools/mesh.sh check` runs `cargo fmt --check` on it and, without `--fast`, clippy (`cargo clippy --release -- -D warnings`) and then the build, after the node firmware, so a break here shows there. `check --fast` skips that clippy and that build. The same command covers the mesh, the host daemon, the panel's tests, the cam stream test is archived (`archive/tools/tests/test_cam_stream.py`), and a host test of the push signature ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh)). After the cam firmware build, the full check runs `tools/cam_build_scan.py` on the image and the cam's stack budget (`tools/tests/stack_budget.py`, with the chains in `tools/tests/stack_chains_cam.json`). A single build is `cam-build`. The cam commands do not read `firmware/mesh/mesh.key`. `fmt`, `cam-build`, `cam-size`, and the cam half of `check` stop if `firmware/cam/secrets.yaml` or `firmware/mesh/ota.pub` is missing. `target/`, `.embuild/`, and `sdkconfig` under `firmware/cam/` are gitignored.
 
-Octal PSRAM at 80 MHz, 16 MB DIO flash at 80 MHz, Bluetooth off. The partition table is the ESPHome OTA layout on this board: `app0` and `app1` are each `0x7C0000` bytes. The image joins no network. `boot` prints free internal heap and free PSRAM on the USB Serial/JTAG port (`boot heap … psram …`). It then starts the camera, which is esp32-camera 2.1.7 through the `camera.rs` driver, and prints `frame WxH jpeg N bytes` every 5 s. If the sensor does not start, it prints `camera init failed`.
+Octal PSRAM at 80 MHz, 16 MB DIO flash at 80 MHz, Bluetooth off. The partition table is the ESPHome OTA layout on this board: `app0` and `app1` are each `0x7C0000` bytes. The CPU is 240 MHz. Rollback is enabled in the bootloader, so `cam-flash` passes the bootloader this build produces and erases otadata, so the board boots `app0`, which it just wrote. The image is not flashed. `toby-cam-1` was not touched.
 
-On 2026-10-31 `tools/mesh.sh cam-size` printed `App/part. size: 464,400/8,126,464 bytes, 5.71%`, with the camera driver in. Before the driver the image was 367,392 bytes (4.52%). The image is not flashed. `toby-cam-1` was not touched.
+`boot` prints free internal heap and free PSRAM on the USB Serial/JTAG port (`boot heap … psram …`). It then starts the camera, which is esp32-camera 2.1.7 through the `camera.rs` driver. The first frame prints `frame WxH jpeg N bytes` once. If the sensor does not start, it prints `camera init failed` and the listeners still come up.
+
+The station joins `tallow-iot` with WPA2, static `10.87.0.23/24`, gateway and DNS `10.87.0.1`. There is no DHCP client and no fallback access point. Modem sleep is `WIFI_PS_MIN_MODEM`. The SSID and password are the `wifi_ssid` and `wifi_password` keys in gitignored `firmware/cam/secrets.yaml` (moved there from `firmware/esphome/secrets.yaml`; the ESPHome file is archived). The build mounts that one file read-only and fails if it is missing or a value is empty. It does not print them. `firmware/cam/target` is mode `0700` after the build, because the password is in the image.
+
+Port `8080` serves one MJPEG client. A connection is served only when its request line starts with `GET ` and its headers end within 8 KB and 3 s; any other request is dropped with no stream. The response is `multipart/x-mixed-replace` with a `Content-Length` on each part and no chunked transfer, which is what the panel's `dial` and `frames` already parse. Port `6053` accepts a TCP connection and closes it. That is the panel's status check. It does not speak the ESPHome API.
+
+`tools/tests/cam_stream_check.py --address 10.87.0.23` counts frames for 10 s through the panel's `dial` and `frames`. It refuses `10.87.0.21` before any socket. It has not been run. `tools/mesh.sh cam-frame` prints one multipart sample built on the host from `firmware/cam/src/stream.rs`. It opens no socket.
+
+Port `3232` takes one signed image. The header is 105 bytes: a big-endian size, a product byte (`2`, the cam), a little-endian version, the 32-byte SHA-256, and a 64-byte Ed25519 signature over the product, version, and digest. Each refusal happens before `esp_ota_begin` and before any image byte is written: a size of zero or past the `0x7C0000` slot, another product, a version below the floor (the highest version this board has confirmed; an equal version is a retry), and a bad signature. The body is hashed while it is written. The next boot partition changes only when that hash is the signed digest. The cam answers with one result byte, `0` for ok, then reboots into the stored image. The public key is `firmware/mesh/ota.pub`, baked at build time. The seed is not in the image, and the cam build does not mount `firmware/mesh/` or `mesh.key`.
+
+The running image marks itself valid once, after 5 minutes of continuous Wi-Fi and a frame captured in the last 5 s, and only if the running slot is pending verify. Wi-Fi down clears that timer. The gap is a wrapping subtraction. A pending image still unmarked after 15 minutes rolls back, which also covers a hang.
+
+```bash
+tools/mesh.sh ota-sign <image> cam0 <version>
+tools/mesh.sh cam-push 10.87.0.23 <image>
+```
+
+`cam-push` allows only `10.87.0.23`. It reads the sibling `.sig` from `ota-sign`, which must be 69 bytes, and does not read `ota.key`. `tools/cam_push_send.py` repeats the checks before it opens a socket: the address, the signed product, and an image that is neither empty nor past the `0x7C0000` slot. It waits for the cam's result byte and exits non-zero on anything but ok. It has not been run.
+
+```bash
+tools/mesh.sh cam-flash /dev/ttyACM0    # hold BOOT, tap RST first; only toby-cam-0
+tools/mesh.sh cam-backup /dev/ttyACM0   # same guard, no address
+```
+
+`cam-backup` writes `data/firmware-backups/` at mode `0600` in a `0700` directory and refuses to overwrite, the same writer as `backup` ([board note](esp32-devkit.md#back-up)). The cam image holds the Wi-Fi password, so the file stays private. `cam-flash` and `cam-backup` have not been run.
+
+On 2026-10-31 `tools/mesh.sh cam-size` printed `App/part. size: 464,400/8,126,464 bytes, 5.71%`, with the camera driver in and before this network. Before the driver the image was 367,392 bytes (4.52%). On 2026-11-01 `tools/mesh.sh cam-size` printed `App/part. size: 1,071,264/8,126,464 bytes, 13.18%`, with Wi-Fi, the stream, and signed OTA in. `strings` on that image printed `no default credential`. The image is not flashed. `toby-cam-1` was not touched.
 
 ## Pins
 
@@ -57,21 +84,21 @@ The SD card uses IO38 (CMD), IO39 (CLK), and IO40 (D0). The configs do not use i
 
 ## First flash
 
-Bring up `tallow-iot` first ([docs/04](../04-firmware-liberation-and-network-isolation.md#host-access-point)). Then:
+Bring up `tallow-iot` first ([docs/04](../04-firmware-liberation-and-network-isolation.md#host-access-point)). This is the ESPHome first flash of 2026-10-28, kept as the record. The tooling is archived, so run the commands from `archive/tools/` (`archive/tools/esphome.sh`, `archive/tools/node_check.py`); nothing wires them into the tree. Then:
 
 ```bash
-tools/esphome.sh secrets
-ESPHOME_DEVICE=/dev/ttyACM0 tools/esphome.sh mac
+archive/tools/esphome.sh secrets
+ESPHOME_DEVICE=/dev/ttyACM0 archive/tools/esphome.sh mac
 sudo ./tools/setup_iot_ap.sh allow <mac>
-ESPHOME_DEVICE=/dev/ttyACM0 tools/esphome.sh run node-mb0200.yaml --device /dev/ttyACM0
-.venv/bin/python tools/node_check.py --address 10.87.0.20
-tools/esphome.sh run toby-cam-1.yaml --device 10.87.0.20
+ESPHOME_DEVICE=/dev/ttyACM0 archive/tools/esphome.sh run node-mb0200.yaml --device /dev/ttyACM0
+.venv/bin/python archive/tools/node_check.py --address 10.87.0.20
+archive/tools/esphome.sh run toby-cam-1.yaml --device 10.87.0.20
 curl -s -o /dev/null -m 5 -w '%{content_type}\n' http://10.87.0.21:8080/
 ```
 
-`secrets` writes `firmware/esphome/secrets.yaml` (mode `0600`) from `secrets/iot-ap/` and a fresh API key. If the file exists, the command stops. The API key is the OTA key for every node.
+`secrets` writes `archive/firmware/esphome/secrets.yaml` (mode `0600`) from `secrets/iot-ap/` and a fresh API key. If the file exists, the command stops. The API key is the OTA key for every node. `node_check.py` needs `aioesphomeapi`, which is no longer in `tools/requirements.txt`.
 
-The bare node goes first, over USB, and proves the base. The same board then becomes `toby-cam-1` over the air. That upload has to name the bare node's address, because `toby-cam-1.yaml` points at `10.87.0.21` and the board is still at `10.87.0.20`. Later cam updates are `tools/esphome.sh run toby-cam-1.yaml`, which dials `10.87.0.21`. On 2026-10-30 that dial timed out ([Where it is](#where-it-is-2026-10-30)). The curl line prints `multipart/x-mixed-replace;boundary=…`.
+The bare node goes first, over USB, and proves the base. The same board then becomes `toby-cam-1` over the air. That upload has to name the bare node's address, because `toby-cam-1.yaml` points at `10.87.0.21` and the board is still at `10.87.0.20`. Later cam updates were `archive/tools/esphome.sh run toby-cam-1.yaml`, which dials `10.87.0.21`. On 2026-10-30 that dial timed out ([Where it is](#where-it-is-2026-10-30)). The curl line prints `multipart/x-mixed-replace;boundary=…`.
 
 The 2026-10-28 serial flash was `relay-mb0200.yaml`, the earlier name of `node-mb0200.yaml`. It came up at `10.87.0.20`, and the cam OTA then came up at `10.87.0.21`.
 
@@ -83,12 +110,12 @@ Rollback covers only a build that fails before the 60 s safe-mode mark. ESPHome 
 
 Under ESPHome the OTG port is USB-Serial/JTAG (`303a:1001`). An RTS hard reset leaves the S3 in ROM download mode. Opening the port from the host does the same: `esphome logs --device /dev/ttyACM0` and plain serial readers both do it. The boot log shows `rst:0x15 (USB_UART_CHIP_RESET),boot:0x2 (DOWNLOAD(USB/UART0))` and `waiting for download`, and the node drops off `tallow-iot`.
 
-`tools/esphome.sh mac` passes esptool `--after watchdog-reset` for this reason. Recovery that worked on 2026-10-28: esptool `--after watchdog-reset chip-id` from the wrapper's image. `ESPHOME_DEVICE=/dev/ttyACM0 tools/esphome.sh mac` runs the same reset; it now runs `flash-id`, which also prints chip and flash size. A physical RST also works, with nothing holding the port open.
+`archive/tools/esphome.sh mac` passes esptool `--after watchdog-reset` for this reason. Recovery that worked on 2026-10-28: esptool `--after watchdog-reset chip-id` from the wrapper's image. `ESPHOME_DEVICE=/dev/ttyACM0 archive/tools/esphome.sh mac` runs the same reset; it now runs `flash-id`, which also prints chip and flash size. A physical RST also works, with nothing holding the port open.
 
 Read logs over the network, not this port:
 
 ```bash
-tools/esphome.sh logs toby-cam-1.yaml
+archive/tools/esphome.sh logs toby-cam-1.yaml
 ```
 
 ## On the board (2026-10-28)
@@ -119,7 +146,7 @@ The panel at `/` is a menu (`app/menu_page.html`): Lights at `/lights`, the came
 
 That address is the static one in `toby-cam-1.yaml`. The board is not answering there on 2026-10-31 ([Where it is](#where-it-is-2026-10-31)). `toby-cam-0` is not yet in `data/panel/cams.json`.
 
-`title` is optional, 1 to 40 characters. Omit it, or leave the file missing, and the name is `Cameras` (`DEFAULT_TITLE` in `app/cams.py`). `id` is a lowercase slug and must be unique. `name` is 1 to 40 characters. Unknown fields are refused. `address` must be a node in `10.87.0.0/24`, not `.0`, `.1`, or `.255`, so the panel cannot be pointed anywhere else. Edit the list on the settings page. A direct edit of the file is still picked up when the file changes.
+`title` is optional, 1 to 40 characters. Omit it, or leave the file missing, and the name is `Cameras` (`DEFAULT_TITLE` in the original `archive/app/cams.py`; the Rust panel is `host/tallowd/src/panel/`). `id` is a lowercase slug and must be unique. `name` is 1 to 40 characters. Unknown fields are refused. `address` must be a node in `10.87.0.0/24`, not `.0`, `.1`, or `.255`, so the panel cannot be pointed anywhere else. Edit the list on the settings page. A direct edit of the file is still picked up when the file changes.
 
 ### Inventory reload
 
@@ -139,7 +166,7 @@ The same page has Log out. `POST /logout` clears the `tallow_panel` cookie and r
 
 ESPHome's `esp32_camera_web_server` is a single-slot server: `max_open_sockets = 1`, `backlog_conn = 2`, LRU purge on, and its stream handler blocks the one httpd task until a send fails. The cam serves one connection at a time. A second client waits in the TCP backlog until the first leaves. A panel where each screen dialed the cam, "two viewers per cam", was wrong for this hardware. A burst of connects and drops can also wedge it for minutes ([The one-slot jam](#the-one-slot-jam)).
 
-So the panel dials once per cam and shares it, and is gentle about it (`Hub` and `Hubs` in `app/cams.py`):
+So the panel dials once per cam and shares it, and is gentle about it (`Hub` and `Hubs` in the original `archive/app/cams.py`):
 
 - The first viewer dials `http://<cam>:8080/`. The panel parses the cam's multipart stream by `Content-Length` and hands each frame to every viewer's own queue. A slow viewer skips frames; it does not hold the others back. There is no chunked-transfer support; the cam does not chunk.
 - Linger: after the last viewer leaves, the panel keeps the cam connection `LINGER_S = 10` s, then closes it and the cam stops sending. A tab switch, reload, or Stop then Watch inside that time reuses the connection. Frames are discarded meanwhile; nothing is stored. A viewer who joins while the socket is closing waits for it to close, then dials again. A hub with a live or lingering connection is never pruned from the list.
@@ -176,7 +203,7 @@ So the panel dials once per cam and shares it, and is gentle about it (`Hub` and
 
 ### Tests
 
-`tools/tests/test_cams.py` covers the shared feed (two screens on one cam connection under both ASGI disconnect paths, leave and rejoin, the cap, the 502s, `Book` reload and bad edits, the drop-oldest queue), status asking the node port and never the camera port, recovery when a cam hangs up mid-stream or goes quiet, and gentleness: linger reuse and hang-up, a lingering hub not pruned, the cooling-off schedule with no dial during it, and a cancelled dial closing its socket. It also covers the optional title, `save_inventory`, settings auth, addresses hidden on `GET /api/cams` and returned by the settings API, and logout clearing the cookie. `tools/tests/test_cams_page.py` runs `tools/tests/cams_page_harness.js` in node against a fake DOM and is skipped when node is absent. Its 17 checks walk watch, live, enlarge, drop and endless retry with pauses capped at 30 s, a silently ended stream, the 5 s status poll, Stop during retry, a second cam, watch all, tab away and back, a removed cam and a bad edit, and the empty state. The harness failed on deliberately broken copies of the page.
+`archive/tools/tests/test_cams.py` (archived with the Python panel; no longer run) covered the shared feed (two screens on one cam connection under both ASGI disconnect paths, leave and rejoin, the cap, the 502s, `Book` reload and bad edits, the drop-oldest queue), status asking the node port and never the camera port, recovery when a cam hangs up mid-stream or goes quiet, and gentleness: linger reuse and hang-up, a lingering hub not pruned, the cooling-off schedule with no dial during it, and a cancelled dial closing its socket. It also covers the optional title, `save_inventory`, settings auth, addresses hidden on `GET /api/cams` and returned by the settings API, and logout clearing the cookie. `tools/tests/test_cams_page.py` runs `tools/tests/cams_page_harness.js` in node against a fake DOM and is skipped when node is absent. Its 17 checks walk watch, live, enlarge, drop and endless retry with pauses capped at 30 s, a silently ended stream, the 5 s status poll, Stop during retry, a second cam, watch all, tab away and back, a removed cam and a bad edit, and the empty state. The harness failed on deliberately broken copies of the page.
 
 ### Checked on the real cam (2026-10-28, before 23:33 MDT)
 
@@ -213,7 +240,7 @@ The second MB0200, same board as `toby-cam-1`. Counting starts at 0 from here on
 
 | Field | Value |
 | --- | --- |
-| Config | `firmware/esphome/toby-cam-0.yaml`, static `10.87.0.23` |
+| Config | `archive/firmware/esphome/toby-cam-0.yaml`, static `10.87.0.23` |
 | Build | Compiled at RAM 45.0%, flash 15.4% |
 | Attached | `/dev/ttyACM0`, USB `303a:4001`, serial `123456` |
 | Running | Earlier TinyUSB firmware |
@@ -222,9 +249,9 @@ The second MB0200, same board as `toby-cam-1`. Counting starts at 0 from here on
 esptool could not connect, and a 1200-baud touch did not help. It needs BOOT+RST for the first read. The MAC must go on the AP accept list before the board can join. The board is not yet in `data/panel/cams.json`.
 
 ```bash
-ESPHOME_DEVICE=/dev/ttyACM0 tools/esphome.sh mac            # hold BOOT, tap RST first
+ESPHOME_DEVICE=/dev/ttyACM0 archive/tools/esphome.sh mac            # hold BOOT, tap RST first
 sudo ./tools/setup_iot_ap.sh allow <mac>
-ESPHOME_DEVICE=/dev/ttyACM0 tools/esphome.sh run toby-cam-0.yaml --device /dev/ttyACM0
+ESPHOME_DEVICE=/dev/ttyACM0 archive/tools/esphome.sh run toby-cam-0.yaml --device /dev/ttyACM0
 ```
 
 ## Wi-Fi
@@ -243,8 +270,8 @@ That build got past the 60 s safe-mode mark, so rollback did not apply. Then it 
 
 Recovery, not yet done, is one of two paths:
 
-- OTA with the neighbor pinned. `sudo ./tools/setup_iot_ap.sh` pins `10.87.0.21` only while this MAC is associated, and it needs the reservation line, which is still there. At 10:05 MDT on 2026-10-31 the host's entry was `INCOMPLETE`, so no pin was in place. Then `tools/esphome.sh run toby-cam-1.yaml`.
-- USB on the OTG port: `ESPHOME_DEVICE=/dev/ttyACM0 tools/esphome.sh run toby-cam-1.yaml --device /dev/ttyACM0`. Download mode may be needed: hold BOOT, tap RST.
+- OTA with the neighbor pinned. `sudo ./tools/setup_iot_ap.sh` pins `10.87.0.21` only while this MAC is associated, and it needs the reservation line, which is still there. At 10:05 MDT on 2026-10-31 the host's entry was `INCOMPLETE`, so no pin was in place. Then `archive/tools/esphome.sh run toby-cam-1.yaml`.
+- USB on the OTG port: `ESPHOME_DEVICE=/dev/ttyACM0 archive/tools/esphome.sh run toby-cam-1.yaml --device /dev/ttyACM0`. Download mode may be needed: hold BOOT, tap RST.
 
 Not proven:
 

@@ -52,7 +52,7 @@ The host Bluetooth seed is `tools/setup_iot_ble.sh`. It comes up only while this
 
 `tools/setup_iot_ap.sh` brings up this machine's IoT SSID. Run it with sudo; re-running it does not rotate the passphrase.
 
-One 2.4 GHz SSID on the Kootech adapter (USB `0bda:b812`). The default name is `tallow-iot`. WPA2-PSK, HT20, station isolation. The access point is `10.87.0.1/24`. DHCP offers no default route. DNS on this host answers every name with `0.0.0.0`. Chrony serves time to `10.87.0.0/24`. Firewall zone `tallow-iot` accepts DHCP, DNS, and NTP from that subnet and drops the rest. There is no masquerade and no port forward, so the LAN, Docker, and libvirt have no path in.
+One 2.4 GHz SSID on the Kootech adapter (USB `0bda:b812`). The default name is `tallow-iot`. WPA2-PSK, HT20, station isolation. The access point is `10.87.0.1/24`. DHCP offers no default route. DNS on this host answers every name with `0.0.0.0`. Chrony serves time to `10.87.0.0/24`. Firewall zone `tallow-iot` accepts DHCP, DNS, and NTP from that subnet and drops the rest. There is no masquerade and no port forward, so the LAN, Docker, Podman, and libvirt have no path in. `tools/setup_iot_ap.sh` refuses `docker*`, `podman*`, `virbr*`, and `br-*` interfaces.
 
 The accept list starts empty. The SSID is up, and nothing can associate until its MAC is allowed. SSID, passphrase, channel, survey advice, the accept list, and node reservations live in `secrets/iot-ap/` (gitignored, directory `0700`, files `0600`).
 
@@ -78,16 +78,16 @@ The Realtek combo (USB `0bda:d723`) is a survey radio. Its Bluetooth controller 
 
 ### ESP32 nodes
 
-ESPHome nodes join this SSID as stations and talk only to this host ([docs/01](01-bluetooth-server-hardware-and-proxies.md#tallow-nodes)). They are not a second AP on this machine. Mesh nodes do not join it at all ([Mesh nodes](#mesh-nodes)).
+ESPHome nodes (retired; configs in `archive/firmware/esphome/`) joined this SSID as stations and talked only to this host ([docs/01](01-bluetooth-server-hardware-and-proxies.md#tallow-nodes)). They are not a second AP on this machine. Mesh nodes do not join it at all ([Mesh nodes](#mesh-nodes)). The Rust cam uses `10.87.0.23` and reads its Wi-Fi from gitignored `firmware/cam/secrets.yaml`.
 
 | Address | Node | Config |
 | --- | --- | --- |
-| `10.87.0.20` | Bare `node-mb0200` | `node-mb0200.yaml` |
-| `10.87.0.21` | `toby-cam-1` | `toby-cam-1.yaml` |
-| `10.87.0.22` | `node-1`, on no board | `node-1.yaml` |
-| `10.87.0.23` | `toby-cam-0`, not flashed | `toby-cam-0.yaml` |
+| `10.87.0.20` | Bare `node-mb0200` | `archive/firmware/esphome/node-mb0200.yaml` |
+| `10.87.0.21` | `toby-cam-1` | `archive/firmware/esphome/toby-cam-1.yaml` |
+| `10.87.0.22` | `node-1`, on no board | `archive/firmware/esphome/node-1.yaml` |
+| `10.87.0.23` | `toby-cam-0`, not flashed | `archive/firmware/esphome/toby-cam-0.yaml`. The Rust image uses this address and is not flashed ([device note](devices/keyestudio-mb0200-s3-cam.md#rust-image)) |
 
-Each node's YAML sets a static address (`manual_ip`) in `10.87.0.20`–`10.87.0.49`, outside the DHCP pool. `use_address` is where the host dials. A node's mDNS stays at ESPHome's default; the host does not use it. A station MAC goes on the accept list with `allow` before it can associate. Nodes do not depend on `reserve`. It is optional. A reservation still gives a board that asks for DHCP a fixed lease, and the neighbor pin reads it.
+Each ESPHome node's YAML set a static address (`manual_ip`) in `10.87.0.20`–`10.87.0.49`, outside the DHCP pool. `use_address` is where the host dials. A node's mDNS stays at ESPHome's default; the host does not use it. A station MAC goes on the accept list with `allow` before it can associate. Nodes do not depend on `reserve`. It is optional. A reservation still gives a board that asks for DHCP a fixed lease, and the neighbor pin reads it.
 
 This host opens every connection to a node: `6053` (ESPHome API), `3232` (OTA), and `8080` (a cam's stream). The zone opens nothing from its side. `ap_isolate=1` stops node-to-node Wi-Fi through the AP. On 2026-10-28 the first node joined: one MB0200, as `relay-mb0200` at `10.87.0.20` and then `toby-cam-1` at `10.87.0.21`. The host reached it on all three ports ([device note](devices/keyestudio-mb0200-s3-cam.md#on-the-board-2026-10-28)).
 
@@ -107,6 +107,10 @@ The key sits in more places than `mesh.key`, so each one is kept private:
 
 Do not copy any of these out of the tree, and do not paste their contents anywhere.
 
+The OTA signing seed is a second file, gitignored `firmware/mesh/ota.key`, mode `0600`. `tools/mesh.sh ota-key` also writes the public half to tracked `firmware/mesh/ota.pub`, once, and refuses to overwrite either file. Both are on disk. `firmware/mesh/node/build.rs` bakes in the mesh key and the public half. The container mounts `firmware/mesh/ota.pub` read-only at `/run/ota.pub`. The build does not read the seed. Do not copy the seed or paste it.
+
+`tools/mesh.sh ota-image` writes `firmware/mesh/node/target/ota.bin` at mode `0600`. That directory is private, the same treatment as the ELF, because the image contains the mesh key. `tools/mesh.sh ota-sign <image> <node|cam0> <version>` signs the image's SHA-256 with the product and version, using `openssl pkeyutl -sign -rawin`, and writes the 69-byte `<image>.sig`. It has not been run against `firmware/mesh/ota.key`. The node behaviour is in [docs/01](01-bluetooth-server-hardware-and-proxies.md#source-ahead-of-the-boards-frame-version-0xa8).
+
 A node is never connectable, and it accepts no connection from any device. It answers Classic inquiry only for 60 s after `D` on its own serial port. Since the 2026-10-31 flash, its inquiry ends 200 ms early, so it pages no device that has no name in its EIR ([docs/01](01-bluetooth-server-hardware-and-proxies.md#flashed-2026-10-31-the-cross-check-build)). The GATT client, built and not flashed, opens connections only to addresses on its whitelist.
 
 ## tuya-cloudcutter (OTA cloud cut + flash)
@@ -124,7 +128,7 @@ No soldering when a matching **device profile** exists. Patched / newer Tuya ver
 
 ### High-level procedure
 
-1. Linux host with Wi-Fi + Docker + NetworkManager (per upstream `INSTRUCTIONS.md`).
+1. Linux host with Wi-Fi + Docker + NetworkManager (per upstream `INSTRUCTIONS.md`; the rest of this repo uses rootless Podman, and CloudCutter has not been run under it).
 2. Identify module (`WB2L` ≈ BK7231T, `CB2L` ≈ BK7231N) and Tuya firmware version from the Smart Life app.
 3. Put bulb in slow-blink AP mode (usually power-cycle 3–6 times).
 4. Run `./tuya-cloudcutter.sh`, select profile + custom firmware from `custom-firmware/`.

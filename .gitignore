@@ -62,6 +62,9 @@ secrets.env
 .vscode/
 # Local docs-reconciliation ledger (hash + summary for the next agent)
 .cursor/docs-ledger.json
+# Claude Code per-user overrides, and the cargo target dirs left at the root by doc builds
+.claude/settings.local.json
+/.scratch-docs-*/
 *.swp
 .DS_Store
 Thumbs.db
@@ -70,9 +73,6 @@ Thumbs.db
 led_discovery_*.json
 ble_capture_*.txt
 discovery*.json
-
-# ESPHome builds and toolchains (tools/esphome.sh)
-firmware/esphome/.esphome/
 
 # Rust mesh node builds, ESP-IDF, and the cargo cache (tools/mesh.sh)
 firmware/mesh/**/target/
@@ -90,3 +90,6 @@ firmware/cam/.embuild/
 firmware/cam/sdkconfig
 firmware/cam/sdkconfig.old
 firmware/cam/components_esp32s3.lock
+
+# Trail of Bits rust-review findings (may quote nearby code)
+.rust-review-results/

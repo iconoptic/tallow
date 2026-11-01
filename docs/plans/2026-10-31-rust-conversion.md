@@ -2,13 +2,14 @@
 
 Move tallow's firmware and host runtime to Rust, and finish the mesh on the way. Work is split into small tasks that a cheaper model can do from the task text alone.
 
-**Status (2026-10-31):** "Code done" means the code is in the tree and has not run on hardware. Frame version is `0xA6` in the source and `0xA1` on the boards, so flash every board together ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#source-ahead-of-the-boards-frame-version-0xa6)).
+**Status (2026-10-31):** "Code done" means the code is in the tree and has not run on hardware. Frame version is `0xA8` in the source (`0xA7` after G6 on 2026-11-01) and `0xA1` on the boards, so flash every board together ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#source-ahead-of-the-boards-frame-version-0xa8)).
 - Phase 0: done. The mesh ran on two classic ESP32s over one physical hop ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh)).
-- Phase 1: done or code done: T1.1 to T1.7, T1.8b, T1.9a, T1.10. Waiting on the user: T1.8 (a third board), T1.9 (needs T1.8), T1.11, T1.12, and the hardware checks named in the phase file.
+- Phase 1: done or code done: T1.1 to T1.7, T1.8b, T1.9, T1.9a, T1.10. T1.9 is code done (2026-11-01), not run on hardware. Waiting on the user: T1.8 (a third board), the T1.9 leaf update and rollback trial, T1.11, T1.12, and the hardware checks named in the phase file.
 - Phase 2: done or code done: T2.1 to T2.7. Waiting on the user: the T2.7 trial and service check.
 - Phase 3: done or code done: T3.1 to T3.9. Waiting on the user: the T3.7 light check, T3.10, and the hardware checks named in the phase file.
-- Phase 4: done or code done: T4.1, T4.2. Waiting on the user: T4.0, T4.3 to T4.5, and the hardware checks named in the phase file.
+- Phase 4: done or code done: T4.1, T4.2. T4.3 and T4.4 are code done (2026-11-01), not run on hardware. Waiting on the user: T4.0, the T4.3 flash and stream check, the T4.4 push and rollback trial, T4.5, and the hardware checks named in the phase file.
 - Phase 5: not started.
+- Phase 6: G1 through G6 and G11 done (2026-11-01). G7, G8, G9, and G10 are code done (2026-11-01), not run on hardware. Firmware clippy is in the non-fast check. `tools/mesh.sh mutants` stays out of `check`. Nothing in this phase was flashed. The boards still run `0xA1` ([p6-grok-run.md](rust-conversion/p6-grok-run.md)).
 
 **Cross-check (2026-10-31):** five reviewers read phases 0 to 4 against the code. The fixes are in the tree, and the tasks here were rewritten to match. Both boards run that build. The tasks done since are ahead of the boards: see the note at the top of [p1-mesh.md](rust-conversion/p1-mesh.md).
 

@@ -69,7 +69,7 @@ Before deep RE:
 | Tuya / Smart Life | `references/protocols-wifi/tinytuya` |
 | MagicHome Wi-Fi | `references/protocols-wifi/flux_led` |
 | Kasa / Tapo | `references/protocols-wifi/python-kasa` |
-| Govee H7020 | `references/protocols-ble/ha-govee-led-ble`, `tools/govee_h7020.py`, [devices/govee-h7020.md](devices/govee-h7020.md) |
+| Govee H7020 | `references/protocols-ble/ha-govee-led-ble`, `host/tallow-govee`, [devices/govee-h7020.md](devices/govee-h7020.md) |
 | Govee LAN | `references/protocols-wifi/govee2mqtt` |
 
 ## Phase 2 — Android APK static analysis (AI-assisted)

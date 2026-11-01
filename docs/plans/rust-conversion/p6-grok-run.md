@@ -10,7 +10,7 @@ Read [agent-brief.md](agent-brief.md) first. It applies, with the changes below.
 - **Run `tools/mesh.sh check --fast` before and after each task**, and `tools/mesh.sh check` after any task that touches firmware or `host/`. Paste the real output. If it fails before you start, stop.
 - **Tiers:** the user cleared Grok for every task here, including `unsafe`, crypto, OTA, and `sdkconfig.defaults`. This replaces the brief's rule that Grok stops at those areas, for the files each task names and no others.
 - **Never commit, flash, open a serial port, connect to a device, or dial a `10.87.0.x` address.** The one exception is `cam_stream_check.py`, and only the user runs that.
-- **Never run** `tools/mesh.sh flash`, `monitor`, `backup`, `host`, `bench`, `daemon run`, `ota-key`, `tools/esphome.sh run`, or `tools/setup_mesh_host.sh`.
+- **Never run** `tools/mesh.sh flash`, `monitor`, `backup`, `host`, `bench`, `daemon run`, `daemon gatt`, `daemon ota`, `ota-key`, `ota-sign`, `tools/esphome.sh run`, or `tools/setup_mesh_host.sh`.
 - **Never read or print** `firmware/mesh/mesh.key`, `firmware/mesh/ota.key`, `firmware/esphome/secrets.yaml` (a build step may read it), `secrets/`, `data/panel/`, or `data/mesh/`.
 - **Never touch `toby-cam-1` or `10.87.0.21`.**
 - **Mark each task** `**Done (date).**` here, or `**Code done (date), not run on hardware.**` if a hardware check remains. Update its T-task in the phase file the same way.
@@ -30,23 +30,27 @@ Start each task with this prompt:
 | G4 | Finish the devices page | |
 | G5 | GATT from the host | |
 | G6 | OTA transfer in the core | |
-| G7 | OTA on the node | `firmware/mesh/ota.pub` (checklist step 1) |
+| G7 | OTA on the node | |
 | G8 | OTA from the host | G6, G7 |
 | G9 | Cam network and stream | |
-| G10 | Cam OTA | G9, `firmware/mesh/ota.pub` |
+| G10 | Cam OTA | G9 |
 | G11 | Docs and status | all the others |
 
 G6 to G10 write the code for T1.9, T4.3, and T4.4 ahead of their hardware. Their phase files list hardware tasks under **Needs**. Those still gate any flash, not this code.
 
 ## G1 Lint the firmware
 
+**Done (2026-11-01).** `tools/mesh.sh check` passed. Both crates warn on `clippy::undocumented_unsafe_blocks`. A removed `SAFETY` comment made that check exit 101 at the node clippy step; the comment was restored. No flash, no serial port, no device connection. The gate is in [docs/01](../../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh).
+
 - **Files:** `tools/mesh.sh`, `firmware/mesh/node/src/main.rs`, `firmware/cam/src/main.rs`, and any firmware file the lints flag.
-- **Why:** `check` runs clippy on the core and `host/`, never on the node or the cam, which hold nearly all the `unsafe`.
+- **Why:** The node and the cam hold nearly all the `unsafe`. `check` used to lint the core and `host/` only.
 - **Do:** Add `#![warn(clippy::undocumented_unsafe_blocks)]` to both crates. Add `cargo clippy --release -- -D warnings` for the node and the cam to the part of `run_check` that `--fast` skips. Fix what it reports. A missing `SAFETY` comment must say why the block is sound, not restate it.
 - **Done when:** `tools/mesh.sh check` passes, and an `unsafe` block with its comment removed makes it fail (try it, then revert).
 - **Stop if:** clippy does not work for the xtensa target in the pinned image. Report the error and leave `tools/mesh.sh` unchanged.
 
 ## G2 Keep the mutation tests
+
+**Done (2026-11-01).** `tools/mesh.sh check --fast` passed before and after. `tools/mesh.sh mutants` exited 0 with every mutant caught. A needle of `not 1 <= level <= 999` printed `STALE brightness bound` and that command exited 1 before any panel started. `cut_inquiry` is not in the core. The window math lives in `firmware/mesh/node/src/bluetooth.rs`, and that crate does not `cargo test` on the host, so it was not mutated. No flash, no serial port, no device connection.
 
 - **Files:** `tools/tests/mutants/panel_mutants.py`, `tools/tests/mutants/core_mutants.py`, `tools/mesh.sh`.
 - **Why:** These two scripts proved the tests catch real breakage. They are throwaway copies, with paths from a past session, and code has moved since.
@@ -56,6 +60,8 @@ G6 to G10 write the code for T1.9, T4.3, and T4.4 ahead of their hardware. Their
 
 ## G3 Close the H7020 codec gaps
 
+**Done (2026-11-01).** `tools/mesh.sh daemon check` passed, and `tools/mesh.sh check` passed. The dump now writes 412 vectors. Two runs wrote identical `vectors.json` and `scenes.json`. Pact 2/1 queries match pact 1/1 byte for byte. Colour-mode bodies and an unknown domain (`{"domain": "153"}`) are in the vectors. Scene lookup casefolds sharp s, so `Cherry bloßoms` finds Cherry blossoms. No new crate, no hand-edited vector.
+
 - **Files:** `tools/dump_h7020_vectors.py`, `host/tallow-govee/tests/vectors.json`, `host/tallow-govee/src/`, `host/tallow-govee/tests/vectors.rs`.
 - **Why:** T3.3 and T3.7 left gaps no vector covers. Query frames are built for pact 1/1 only, while the Python builds them per profile. An unknown status domain gives `Reply::Unknown` where the Python gives `{"domain": "<int>"}`. Colour-mode (`AA05`) bodies are not decoded.
 - **Do:** Add vectors for pact 2/1 queries, an unknown domain, and every colour-mode body the Python parses, generated by the script as before. Make the Rust pass them. Scene lookup lowercases where the Python uses `casefold`: add a non-ASCII lookup vector and match it.
@@ -64,12 +70,16 @@ G6 to G10 write the code for T1.9, T4.3, and T4.4 ahead of their hardware. Their
 
 ## G4 Finish the devices page
 
+**Done (2026-11-01).** `tools/mesh.sh check --fast` passed. The stale block now says `tools/mesh.sh daemon run <port> --out data/mesh/map.json`. The page renders `identities` and `suggestions` as read-only text. The harness covers a named identity with two addresses, one suggestion, and a hostile name in the identity name, a key, and a suggestion reason. No new route and no POST.
+
 - **Files:** `app/devices_page.html`, `tools/tests/devices_page_harness.js`, `tools/tests/test_devices_page.py`.
 - **Do:** The stale block tells the reader to run `tools/mesh.sh host <port>`. Change it to `tools/mesh.sh daemon run <port> --out data/mesh/map.json`. Render `identities`, and `suggestions` as a list marked as suggestions. These are read only, with nothing to accept or merge. Every string uses `textContent`.
 - **Done when:** `tools/mesh.sh check --fast` passes. The harness covers a named identity with two addresses, a suggestion, and a hostile name in each new place.
 - **Stop if:** it needs a new route or a POST.
 
 ## G5 GATT from the host
+
+**Done (2026-11-01).** `tools/mesh.sh daemon check` passed, and `tools/mesh.sh check` passed. Core `encode` writes the bytes `parse` already accepts, and `Reply::decode` reads what `Reply::encode` writes. `tallowd gatt` builds the `G` line from those bytes, refuses a line over 400 characters before sending it, and the 170-byte write is 361 characters. Tests cover each request against `gatt::parse`, an answer, a notification, a closed link, a timeout, and `Status::Refused`. No wire change and no `VERSION` bump. T1.11 is still unmarked.
 
 - **Files:** `host/tallowd/src/link.rs`, `host/tallowd/src/decode.rs`, new `host/tallowd/src/gatt.rs`, `host/tallowd/src/map.rs`, `host/tallowd/src/main.rs`, `tools/mesh.sh`.
 - **Why:** T1.10 built the node side. Nothing on the host can send a request or read an answer, so T1.11 cannot start.
@@ -84,6 +94,8 @@ G6 to G10 write the code for T1.9, T4.3, and T4.4 ahead of their hardware. Their
 
 ## G6 OTA transfer in the core
 
+**Done (2026-11-01).** `tools/mesh.sh check` passed. `VERSION` is `0xA7`. The twelve frames that existed at `0xA6` differ only in byte 0 and the Poly1305 tag. `ota::Receiver` is 1,752 bytes, and with `Mesh`, the sightings table, and the GATT client the total is 10,360 bytes, under 12 KB. Sim tests cover a 400-byte image over two links, a lost chunk named by Status and resent, a bad signature, a bad hash, an oversized image, a chunk before Begin, a Commit with a hole, a chunk off a boundary, and a second Begin. No flash, no serial port, no device connection. The node did not run the receiver until G7.
+
 - **Files:** `firmware/mesh/core/src/ota.rs`, `firmware/mesh/core/src/mesh.rs`, `firmware/mesh/core/src/wire.rs`, `firmware/mesh/core/tests/sim.rs`, `firmware/mesh/core/tests/golden.rs`, `firmware/mesh/core/README.md`.
 - **Do:** Everything testable about T1.9, with no flash and no heap.
   - `FrameKind::Ota = 9` goes down with `send_down`. `FrameKind::OtaUp = 13` comes up through `send_up`. Bump `VERSION`, regenerate the goldens, and confirm only byte 0 and the tag changed.
@@ -96,8 +108,10 @@ G6 to G10 write the code for T1.9, T4.3, and T4.4 ahead of their hardware. Their
 
 ## G7 OTA on the node
 
+**Code done (2026-11-01), not run on hardware.** `tools/mesh.sh check` passed. `tools/mesh.sh size` then reported `App/part. size: 1,498,320/1,835,008 bytes, 81.65%`. G8's `O` parser moved the image to 1,498,400 bytes (81.66%). `build.rs` bakes `ota.pub` from `/run/ota.pub`, and `tools/mesh.sh` mounts that file read-only. The node queues `FrameKind::Ota` and writes it on the main loop. `Finish` is the only path through `esp_ota_end` and `esp_ota_set_boot_partition`. A new image is marked valid only after 5 minutes with a parent or as root and both heap figures at least 60 KB. `espflash flash --help` (espflash 4.4.0) has `--bootloader <FILE>` and no flag that erases otadata unless `--erase-parts` or `--erase-data-parts` is passed. `tools/mesh.sh flash` passes `target/xtensa-esp32-espidf/release/bootloader.bin` and neither erase flag. Rollback in that binary: `bootloader_utility_get_selected_boot_partition` grew from `0xde` to `0x126` bytes, and its `.iram_loader.text` stores state `4` (aborted) when the slot is `1` (pending verify) and stores state `1` when the selected slot is `0` (new), then calls `write_otadata`. No flash, no serial port, no device connection. `ed25519-compact`'s `opt_size` feature is on so verify links on Xtensa.
+
 - **Files:** new `firmware/mesh/node/src/ota.rs`, `firmware/mesh/node/src/main.rs`, `firmware/mesh/node/build.rs`, `firmware/mesh/node/sdkconfig.defaults`, `tools/mesh.sh`.
-- **Needs:** `firmware/mesh/ota.pub`. If it is missing, stop: only the user creates it.
+- **Needs:** `firmware/mesh/ota.pub`, which is on disk ([docs/04](../../04-firmware-liberation-and-network-isolation.md#mesh-nodes)). If it is missing, stop: only the user creates it.
 - **Do:**
   - `build.rs` bakes in `firmware/mesh/ota.pub`, and the build fails without it. The container must be able to read it: mount that one file read-only.
   - Drive `ota::Receiver` with `esp_ota_begin`, `esp_ota_write`, `esp_ota_end`, and `esp_ota_set_boot_partition`. Writing flash blocks, so it happens on the main loop, never in a radio callback.
@@ -108,6 +122,8 @@ G6 to G10 write the code for T1.9, T4.3, and T4.4 ahead of their hardware. Their
 
 ## G8 OTA from the host
 
+**Code done (2026-11-01), not run on hardware.** `tools/mesh.sh check` passed. `tallowd ota` sends Begin, chunks at least 50 ms apart, a Query per window, resends whatever Status marks missing, then Commit. A lossy fake drops one chunk and the image still reaches `Finish`; a bad signature does not. A throwaway Ed25519 key signed with `openssl pkeyutl -sign -rawin` verifies in `ota::verify`. `ota-sign` was not run against `firmware/mesh/ota.key`. `daemon ota` was not run. No flash, no serial port, no device connection. After the `O` parser, `tools/mesh.sh ota-image` wrote `firmware/mesh/node/target/ota.bin` at mode `0600`, 1,498,400 bytes, 81.66% of the slot.
+
 - **Files:** new `host/tallowd/src/ota.rs`, `host/tallowd/src/main.rs`, `host/tallowd/src/link.rs`, `tools/mesh.sh`, and the node's serial handling in `firmware/mesh/node/src/main.rs`.
 - **Do:**
   - Add `tools/mesh.sh ota-image`, which writes the app image to `firmware/mesh/node/target/ota.bin` with `espflash save-image`.
@@ -117,6 +133,8 @@ G6 to G10 write the code for T1.9, T4.3, and T4.4 ahead of their hardware. Their
 - **Stop if:** signing would need the private key on any path but `ota-sign`.
 
 ## G9 Cam network and stream
+
+**Code done (2026-11-01), not run on hardware.** `tools/mesh.sh check --fast` passed, and `tools/mesh.sh check` passed. The image joins `tallow-iot` with WPA2 at `10.87.0.23/24`, serves multipart MJPEG on `8080`, and accepts TCP on `6053`. `strings` on the image printed `no default credential`. The build log did not contain a credential. No flash, no serial port, no device connection. `cam-flash` passes this build's bootloader. Rollback is on, and nothing marks the image valid until G10, so do not flash this tree in between.
 
 - **Files:** as T4.3 in [p4-cams.md](p4-cams.md), which is the spec. Do all of its **Do** list except the user's flash. Also `tools/mesh.sh`, `.gitignore` if needed.
 - **Also:**
@@ -130,12 +148,16 @@ G6 to G10 write the code for T1.9, T4.3, and T4.4 ahead of their hardware. Their
 
 ## G10 Cam OTA
 
+**Code done (2026-11-01), not run on hardware.** `tools/mesh.sh check --fast` passed, and `tools/mesh.sh check` passed. `tools/mesh.sh cam-size` printed `App/part. size: 1,071,264/8,126,464 bytes, 13.18%`. The listener on `3232` checks the signature before `esp_ota_begin`. The cam build mounts `firmware/mesh/core` and `firmware/mesh/ota.pub` only. `mesh.key` is not mounted. No flash, no `cam-push`. The running image marks itself valid after 5 minutes of Wi-Fi and a captured frame, and only while the slot is pending verify. The crashing-build rollback trial stays yours.
+
 - **Files:** as T4.4 in [p4-cams.md](p4-cams.md). Do its **Do** list except the user's push.
 - **Also:** Mount only `firmware/mesh/core` and `firmware/mesh/ota.pub` into the cam build, never all of `firmware/mesh/`. Prove it: a test script lists the container's mounts for the cam build and fails if `mesh.key` is visible. `cam-push` requires an address, refuses `10.87.0.21`, and refuses any address that is not `10.87.0.23` until T4.5.
 - **Done when:** `tools/mesh.sh check` passes, and `tools/mesh.sh cam-size` fits the slot.
 - **Stop if:** the listener would accept an image before checking its signature.
 
 ## G11 Docs and status
+
+**Done (2026-11-01).** `tools/mesh.sh check --fast` passed before and after. The status paragraph says G1 through G6 and G11 are done, and G7 through G10 are code done and not run on hardware. `tools/mesh.sh mutants` is in the README, AGENTS.md, and docs/01, and it stays out of `check`. Source frame version is `0xA7`. The boards still run `0xA1`. Nothing in this run was flashed. `.cursor/hooks/docs-before-stop.py` printed `{}`.
 
 - **Files:** the docs `.cursor/skills/improve-repo-docs/SKILL.md` covers, the Status paragraph in `docs/plans/2026-10-31-rust-conversion.md`, and the stale "not flashed" and frame-version text wherever it now differs.
 - **Do:** Follow that skill. Say what is code done and what ran on hardware, and only what ran. Write the ledger last.

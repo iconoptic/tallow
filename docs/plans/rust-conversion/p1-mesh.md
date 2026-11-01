@@ -4,7 +4,7 @@ The nodes hear the house over one hop. This phase proves many hops, finds Classi
 
 Files live in `firmware/mesh/`. Read `core/src/mesh.rs` and `core/tests/sim.rs` before any routing task.
 
-**Flash state (2026-10-31).** Both boards run the cross-check build, frame version `0xA1`: Classic RSSI and class of device, inquiry cut before name requests, beacon source check, parent events. Classic readings from before that flash are meaningless. The source is ahead of them at `0xA6`, and boards on different versions refuse each other's frames, so flash every board in one pass. **You:** `tools/mesh.sh build`, then `tools/mesh.sh flash <port>` on each.
+**Flash state (2026-10-31).** Both boards run the cross-check build, frame version `0xA1`: Classic RSSI and class of device, inquiry cut before name requests, beacon source check, parent events. Classic readings from before that flash are meaningless. The source is ahead of them at `0xA8`, and boards on different versions refuse each other's frames, so flash every board in one pass. **You:** `tools/mesh.sh build`, then `tools/mesh.sh flash <port>` on each.
 
 ## T1.1 Golden frames
 
@@ -121,7 +121,7 @@ Files live in `firmware/mesh/`. Read `core/src/mesh.rs` and `core/tests/sim.rs` 
 
 ## T1.9a Signed image check
 
-**Done (2026-10-31).** Built and tested in `core`, not used by the node yet. `ota-key` is written but not run.
+**Done (2026-10-31).** Built and tested in `core`. The node uses the check through `ota::Receiver` as of G7 (2026-11-01). That image has not been flashed. The signing pair is on disk ([docs/04](../../04-firmware-liberation-and-network-isolation.md#mesh-nodes)).
 
 - **Tier:** Sonnet. **Needs:** nothing. It needs no hardware, and T4.4 reuses it.
 - **Files:** new `firmware/mesh/core/src/ota.rs`, `core/src/lib.rs`, `core/Cargo.toml`, `tools/mesh.sh`.
@@ -131,6 +131,8 @@ Files live in `firmware/mesh/`. Read `core/src/mesh.rs` and `core/tests/sim.rs` 
 - **Stop if:** either crate needs `alloc` or fails on the xtensa target. Report it and do not swap crates unasked.
 
 ## T1.9 OTA over the mesh
+
+**Code done (2026-11-01), not run on hardware.** The core, the node, and the host sender are in. No flash. The leaf update and the rollback trial are still yours.
 
 - **Tier:** Sonnet. **Needs:** T1.6, T1.8, T1.8b, T1.9a.
 - **Why:** Nodes around the house cannot be flashed over USB.

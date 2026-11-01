@@ -21,7 +21,7 @@ The review range is `git log grok-run-start..` plus the working tree. If that ta
 
 These hold for you and for any agent you start:
 
-- Do not commit, flash, open a serial port, connect to a device, or run `tools/mesh.sh flash`, `monitor`, `backup`, `host`, `bench`, `daemon run`, or `ota-key`, unless the user asks in this session.
+- Do not commit, flash, open a serial port, connect to a device, or run `tools/mesh.sh flash`, `monitor`, `backup`, `host`, `bench`, `daemon run`, `daemon gatt`, `daemon ota`, `ota-key`, or `ota-sign`, unless the user asks in this session.
 - Never read or print `firmware/mesh/mesh.key`, `firmware/mesh/ota.key`, `firmware/esphome/secrets.yaml`, or anything in `secrets/`.
 - Never touch `toby-cam-1` or `10.87.0.21`. It is taped to a wall, and a bad build already took it down once.
 - Host configuration is a script the user runs.
@@ -65,7 +65,7 @@ Haiku built these in the session before this run. They passed their tests and th
 - `firmware/mesh/core/src/gatt.rs` beyond the whitelist (T1.10): subscribe chains, timeouts, stale results.
 - `host/tallow-broker` beyond its constants and allowlists (T3.8): parsing and the token path. It is a security boundary to a guest VM.
 - `host/tallowd/src/library.rs`, `show.rs`, `irk.rs`, `identity.rs`, `rooms.rs`.
-- `tools/setup_mesh_host.sh` and `tools/tallowd.service` (T2.7). Never run. Note `Restart=always`, and that every restart resets the root board.
+- `tools/setup_mesh_host.sh` and `tools/tallowd.service` (T2.7). Never run. Check the restart policy: `Restart=on-failure`, `RestartSec=30`, and `StartLimitBurst=5` in 600 s, since every start resets the root board. Confirm the sandbox (`ProtectSystem=strict`, `ReadWritePaths=-data/mesh`, `PrivateTmp=true`) still lets tallowd write the map.
 - `firmware/mesh/node/src/gatt.rs`: stack headroom is unmeasured on the 12,000-byte main task, and on the 4,096-byte Bluedroid task, which copies buffers in its callback.
 
 ## Hardware evidence

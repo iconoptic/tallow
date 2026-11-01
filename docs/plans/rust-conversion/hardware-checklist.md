@@ -2,7 +2,7 @@
 
 The steps only you can do. Nothing here is for an agent, and each has its pass mark. Agents hand you commands, and you run them.
 
-Boards on different frame versions refuse each other. G6 bumps the version again, so flash every board in one pass, from one commit.
+Boards on different frame versions refuse each other. The source is already `0xA8` (G6 set `0xA7`, and the OTA Begin change set `0xA8`). The boards still run `0xA1`. No board was flashed in that work. Flash every board in one pass, from one commit.
 
 ## Before the Grok run
 
@@ -17,14 +17,7 @@ Boards on different frame versions refuse each other. G6 bumps the version again
 
    Read the status list before `git add`. `.gitignore` covers the keys, backups, and build trees, and `git status` should show none of them.
 
-2. **Make the signing key.** G7 and G10 stop without it. It runs once and refuses to overwrite:
-
-   ```bash
-   tools/mesh.sh ota-key
-   git add firmware/mesh/ota.pub
-   ```
-
-   Back up `firmware/mesh/ota.key` somewhere safe and offline. If it is lost, no board can be updated over the air.
+2. **Signing key.** Already written, so leave `tools/mesh.sh ota-key` alone. It refuses to overwrite. `firmware/mesh/ota.key` is mode `0600` and gitignored. `firmware/mesh/ota.pub` is in the tree. Back up `firmware/mesh/ota.key` somewhere safe and offline. If it is lost, no board can be updated over the air. Details: [docs/04](../../04-firmware-liberation-and-network-isolation.md#mesh-nodes).
 
 ## Worth doing now
 

@@ -64,7 +64,7 @@ Supports scenes/effects, HSB color, music modes on some hardware. Phone app and 
 | Field | Typical value |
 | --- | --- |
 | Transport | BLE |
-| H7020 | [devices/govee-h7020.md](devices/govee-h7020.md). Probe: `tools/govee_h7020.py`. Page: `app/h7020_panel.py` |
+| H7020 | [devices/govee-h7020.md](devices/govee-h7020.md). Codec: `host/tallow-govee`. Page: `tallowd panel` (`host/tallowd/src/panel/`). The Python probe is archived |
 | Reference | `references/protocols-ble/ha-govee-led-ble` tag `v7.14.0-rc.2.h7020` |
 | Notes | One central. Close the phone app before the host connects. The LAN page holds that central while it runs. H7020 has no Govee LAN API |
 

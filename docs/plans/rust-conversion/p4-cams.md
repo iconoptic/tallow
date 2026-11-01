@@ -43,6 +43,8 @@ Replace ESPHome on the S3 cams with Rust. This is the riskiest phase for the lea
 
 ## T4.3 Network and stream
 
+**Code done (2026-11-01), not run on hardware.** The image joins `tallow-iot` at `10.87.0.23`, serves the panel's multipart stream on `8080`, and listens on `6053`. `cam-flash` and `cam-backup` refuse every port except `toby-cam-0` and pass this build's bootloader. `tools/mesh.sh check` passed. No flash. **You:** `cam-backup`, then `cam-flash`, then `cam_stream_check.py --address 10.87.0.23`.
+
 - **Tier:** Sonnet. **Needs:** T4.0, T4.2.
 - **Files:** new `firmware/cam/src/net.rs`, `src/stream.rs`, `src/main.rs`, `firmware/cam/build.rs`, `firmware/cam/sdkconfig.defaults`, `tools/mesh.sh`, new `tools/tests/cam_stream_check.py`.
 - **Do:**
@@ -56,6 +58,8 @@ Replace ESPHome on the S3 cams with Rust. This is the riskiest phase for the lea
 - **Stop if:** the panel needs a code change to read the stream.
 
 ## T4.4 OTA with signing
+
+**Code done (2026-11-01), not run on hardware.** Port `3232` takes one signed image and refuses it before any flash write when the signature is bad. `tools/mesh.sh check` passed. `tools/mesh.sh cam-size` printed `App/part. size: 1,071,264/8,126,464 bytes, 13.18%`. No push. **You:** on `toby-cam-0`, update it, then push a build that crashes after 90 s and confirm it rolls back.
 
 - **Tier:** Sonnet. **Needs:** T4.3, T1.9a.
 - **Files:** new `firmware/cam/src/ota.rs`, `src/main.rs`, `firmware/cam/Cargo.toml`, `firmware/cam/build.rs`, `tools/mesh.sh`.

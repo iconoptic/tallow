@@ -2,7 +2,7 @@
 
 Plain ESP32 devkits with a CP2102 USB-serial chip. They are the mesh boards: no camera, no Wi-Fi join, and the same `tallow-node` image on each. Mesh design and results are in [docs/01](../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh). The shared key is in [docs/04](../04-firmware-liberation-and-network-isolation.md#mesh-nodes).
 
-Numbering starts at 0 from here on. The mesh's `node-0` is the first board, so `firmware/esphome/node-1.yaml` targets `node-0`, not the mesh's `node-1`.
+Numbering starts at 0 from here on. The mesh's `node-0` is the first board, so `archive/firmware/esphome/node-1.yaml` targets `node-0`, not the mesh's `node-1`.
 
 ## Boards
 
@@ -30,14 +30,14 @@ Full 4 MB flash backups are in gitignored `data/firmware-backups/`: `209ba9991e5
 On 2026-10-30 this note counted a pack of five and three older ESP32 boards with about the same feature set. The other boards are not attached yet. Read each one before reusing `partitions.csv` or `board-esp32.yaml`, and check chip and flash size in the output:
 
 ```bash
-ESPHOME_DEVICE=/dev/ttyUSB0 tools/esphome.sh mac
+ESPHOME_DEVICE=/dev/ttyUSB0 archive/tools/esphome.sh mac
 ```
 
-`mac` runs esptool `flash-id`: MAC, chip, and flash size.
+`tools/mesh.sh ports` lists attached boards without opening a port. `mac` (archived wrapper) runs esptool `flash-id`: MAC, chip, and flash size.
 
 ## Flash
 
-`tools/mesh.sh`'s header has the usage lines. `tools/mesh.sh key` writes the key once, and every node is built with it. The image goes on over USB. OTA over the mesh is not built. `flash` tries 3 times. It, `monitor`, `backup`, `host`, `bench`, and `daemon run` open only a `/dev/ttyUSB*` port whose USB path `firmware/mesh/boards.tsv` lists with chip `esp32`. A board that is not listed is refused until its row is added: read its MAC and chip with `tools/esphome.sh mac` ([Other boards](#other-boards)), then add a row (name, Wi-Fi MAC, chip, USB path, notes). The name `ttyUSB` alone is not enough, because the MB0200 cam's CH340 port is also a `ttyUSB`.
+`tools/mesh.sh`'s header has the usage lines. `tools/mesh.sh key` writes the key once, and every node is built with it. The boards were written over USB. Signed OTA is in the source and has not been flashed or run ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#source-ahead-of-the-boards-frame-version-0xa8)). `flash` tries 3 times. It, `monitor`, `backup`, `host`, `bench`, `daemon run`, `daemon gatt`, and `daemon ota` open only a `/dev/ttyUSB*` port whose USB path `firmware/mesh/boards.tsv` lists with chip `esp32`. A board that is not listed is refused until its row is added: read its MAC and chip with `archive/tools/esphome.sh mac` ([Other boards](#other-boards)), then add a row (name, Wi-Fi MAC, chip, USB path, notes). The name `ttyUSB` alone is not enough, because the MB0200 cam's CH340 port is also a `ttyUSB`.
 
 ```bash
 tools/mesh.sh ports
@@ -47,9 +47,9 @@ tools/mesh.sh flash /dev/ttyUSB0
 
 `tools/mesh.sh backup` is the step before a first flash ([Back up](#back-up)).
 
-`espflash` writes no otadata, so boot logs `ota data partition invalid and no factory, will try all partitions`. This is harmless: it boots `app0`.
+The boards still boot with invalid otadata. Their last flash logged `ota data partition invalid and no factory, will try all partitions`, and they boot `app0`. They have not been flashed since. The source's `flash` passes this build's bootloader and erases otadata; that command has not been run ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#source-ahead-of-the-boards-frame-version-0xa8)).
 
-Opening the port resets the board, because the CP2102's reset line is wired to it. So each `tools/mesh.sh host` run reboots the root ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#found-on-hardware-or-in-source)).
+Opening the port resets the board, because the CP2102's reset line is wired to it. So each `tools/mesh.sh daemon run` reboots the root ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#found-on-hardware-or-in-source)).
 
 A classic ESP32 has no watchdog reset. esptool falls back to an RTS reset, which works over the CP2102. The S3's native USB problem ([MB0200 note](keyestudio-mb0200-s3-cam.md#native-usb-resets-into-download-mode)) does not apply here.
 
@@ -61,19 +61,19 @@ tools/mesh.sh backup /dev/ttyUSB0
 
 This saves the board's whole flash to gitignored `data/firmware-backups/<mac>-<date>.bin`. It tries 460800 baud, then 115200, and refuses to overwrite a file. Opening the port reboots the board. It opens only a listed classic board's port, as `flash` does ([Flash](#flash)). A real run took 1m55s.
 
-A mesh board's flash holds the mesh key, so a backup is as private as `firmware/mesh/mesh.key`. The command makes `data/firmware-backups/` mode `0700` and writes each file at `0600`. The three backups already there were chmodded to match on 2026-10-31. Do not copy one out of the tree ([docs/04](../04-firmware-liberation-and-network-isolation.md#mesh-nodes)).
+A mesh board's flash holds the mesh key, so a backup is as private as `firmware/mesh/mesh.key`. The command makes `data/firmware-backups/` mode `0700` and writes each file at `0600`. The three backups already there were chmodded to match on 2026-10-31. Do not copy one out of the tree ([docs/04](../04-firmware-liberation-and-network-isolation.md#mesh-nodes)). `tools/mesh.sh cam-backup` uses this writer for the port `boards.tsv` names `toby-cam-0` ([device note](keyestudio-mb0200-s3-cam.md#rust-image)). It has not been run.
 
 ## Back to ESPHome
 
-`firmware/esphome/node-1.yaml` is on no board. It remains as a way back to ESPHome on the first board. The board package is `firmware/esphome/packages/board-esp32.yaml`: board `esp32dev`, variant `esp32`, 4 MB flash, ESPHome's default ESP-IDF (5.5.5 in the 2026-10-31 build). On 2026-10-31 `node-1.yaml` compiled at RAM 55.5% and flash 63.8%. ESPHome is 2026.9.1 (`tools/esphome.sh`), and the node is static `10.87.0.22`.
+`archive/firmware/esphome/node-1.yaml` is on no board. It remains as a way back to ESPHome on the first board; the ESPHome tree and wrapper are archived (`archive/`), so the commands below run from `archive/tools/`. The board package is `archive/firmware/esphome/packages/board-esp32.yaml`: board `esp32dev`, variant `esp32`, 4 MB flash, ESPHome's default ESP-IDF (5.5.5 in the 2026-10-31 build). On 2026-10-31 `node-1.yaml` compiled at RAM 55.5% and flash 63.8%. ESPHome is 2026.9.1 (`archive/tools/esphome.sh`), and the node is static `10.87.0.22`.
 
-Bring up `tallow-iot` first ([docs/04](../04-firmware-liberation-and-network-isolation.md#host-access-point)) and write `firmware/esphome/secrets.yaml` with `tools/esphome.sh secrets` (it stops if the file already exists). Then:
+Bring up `tallow-iot` first ([docs/04](../04-firmware-liberation-and-network-isolation.md#host-access-point)) and write `archive/firmware/esphome/secrets.yaml` with `archive/tools/esphome.sh secrets` (it stops if the file already exists). Then:
 
 ```bash
-ESPHOME_DEVICE=/dev/ttyUSB0 tools/esphome.sh mac
+ESPHOME_DEVICE=/dev/ttyUSB0 archive/tools/esphome.sh mac
 sudo ./tools/setup_iot_ap.sh allow 70:4b:ca:04:21:64
-ESPHOME_DEVICE=/dev/ttyUSB0 tools/esphome.sh run node-1.yaml --device /dev/ttyUSB0
-.venv/bin/python tools/node_check.py --address 10.87.0.22
+ESPHOME_DEVICE=/dev/ttyUSB0 archive/tools/esphome.sh run node-1.yaml --device /dev/ttyUSB0
+.venv/bin/python archive/tools/node_check.py --address 10.87.0.22
 ```
 
 `node-1.yaml` sets the static address, so no reservation is needed ([docs/04](../04-firmware-liberation-and-network-isolation.md#esp32-nodes)). The MAC is already allowed, so `allow` only confirms it.
@@ -86,7 +86,7 @@ Both boards were flashed with the cross-check build on 2026-10-31. That build fi
 
 - Classic RSSI, class of device, and `nearest` for a Classic device from before that flash are wrong. Hit counts and names are fine.
 
-**The boards and the source are on different frame versions.** The boards run frame version `0xA1`. The source is at `0xA6`, with the work from T1.2 to T1.10 in [docs/01](../01-bluetooth-server-hardware-and-proxies.md#source-ahead-of-the-boards-frame-version-0xa6). Frames between the two versions are refused, so a board on the new image and one on the old cannot talk. **Flash every board in one pass**, with `tools/mesh.sh build` and `tools/mesh.sh flash <port>` on each. That includes the third classic board that T1.8 needs. It is not attached.
+**The boards and the source are on different frame versions.** The boards run frame version `0xA1`. The source is at `0xA8`, with the work from T1.2 through T1.10, including signed OTA (T1.9), in [docs/01](../01-bluetooth-server-hardware-and-proxies.md#source-ahead-of-the-boards-frame-version-0xa8). No board was flashed with `0xA8`. Frames between the two versions are refused, so a board on the new image and one on the old cannot talk. **Flash every board in one pass**, with `tools/mesh.sh build` and `tools/mesh.sh flash <port>` on each. That includes the third classic board that T1.8 needs. It is not attached.
 
 Proven:
 

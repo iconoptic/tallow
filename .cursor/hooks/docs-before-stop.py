@@ -3,6 +3,11 @@
 
 Cursor calls this on the stop event. Stdin is JSON with status and
 loop_count. Stdout is JSON: a followup_message, or {}.
+
+Claude Code calls it on Stop through .claude/settings.json. Stdin carries
+hook_event_name and stop_hook_active. Stdout is {"decision": "block",
+"reason": ...} to continue, or {} to stop. It blocks once: when
+stop_hook_active is true the stop is already a continuation.
 """
 
 from __future__ import annotations
@@ -15,7 +20,7 @@ from pathlib import Path
 
 FOLLOWUP = (
     "The working tree differs from .cursor/docs-ledger.json. "
-    "Before any other work, launch one generalPurpose subagent and do not edit documentation yourself. "
+    "Before any other work, launch one general-purpose subagent and do not edit documentation yourself. "
     "Tell the subagent to read and follow .cursor/skills/improve-repo-docs/SKILL.md in working-tree mode. "
     "The subagent runs python3 .cursor/skills/improve-repo-docs/scripts/diff_hash.py and writes .cursor/docs-ledger.json last. "
     "If this session cannot edit files, stop now and do not write the ledger. "
@@ -29,9 +34,10 @@ def emit(payload: dict) -> None:
 
 
 def project_root() -> Path:
-    env = os.environ.get("CURSOR_PROJECT_DIR")
-    if env:
-        return Path(env)
+    for name in ("CURSOR_PROJECT_DIR", "CLAUDE_PROJECT_DIR"):
+        env = os.environ.get(name)
+        if env:
+            return Path(env)
     out = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],
         check=True,
@@ -72,7 +78,12 @@ def main() -> int:
     except json.JSONDecodeError:
         emit({})
         return 0
-    if payload.get("status") != "completed":
+    claude = "hook_event_name" in payload
+    if claude:
+        if payload.get("stop_hook_active"):
+            emit({})
+            return 0
+    elif payload.get("status") != "completed":
         emit({})
         return 0
     root = project_root()
@@ -80,7 +91,10 @@ def main() -> int:
     if state.get("clean") is True or state.get("diff_hash") == ledger_hash(root):
         emit({})
         return 0
-    emit({"followup_message": FOLLOWUP})
+    if claude:
+        emit({"decision": "block", "reason": FOLLOWUP})
+    else:
+        emit({"followup_message": FOLLOWUP})
     return 0
 
 

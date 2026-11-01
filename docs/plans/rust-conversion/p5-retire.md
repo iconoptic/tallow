@@ -1,5 +1,7 @@
 # Phase 5: retire the old stack
 
+Archived 2026-11-01 on the user's word, overruling T3.10 and T4.5: the legacy files were moved to `archive/` (same relative paths) instead of deleted, and `archive/` is to be deleted later. `firmware/cam/secrets.yaml` now holds the cam's Wi-Fi settings. T5.3 is not done: docs 01, 04, 05 and `docs/devices/` still describe the ESPHome and Python stack in places.
+
 Deletion only. Every task here needs the user's explicit say-so in that session. Git history keeps everything.
 
 ## T5.1 Retire ESPHome

@@ -57,7 +57,7 @@ Reporting a blocker is a good result. A guess in firmware costs a physical trip 
 - `unsafe` is allowed only in `firmware/mesh/node/src/radio.rs`, `bluetooth.rs`, `main.rs`, and files a task names. Each block gets a comment saying why it is sound.
 - A delay in firmware is `FreeRtos::delay_ms`. `std::thread::sleep` below one tick busy-waits and trips the watchdog.
 - Callbacks on the Wi-Fi or Bluetooth task copy data and return. No blocking, no serial writes.
-- A change to bytes on the air bumps `VERSION` in `wire.rs`, updates the golden frames, and updates `core/README.md`. Until OTA exists, every board must then be flashed together.
+- A change to bytes on the air bumps `VERSION` in `wire.rs`, updates the golden frames, and updates `core/README.md`. Boards on another version refuse the frames, so flash every board together. The source is `0xA8`, including OTA (`0xA7`) and the product and version in OTA Begin (`0xA8`), and has not been flashed. The boards run `0xA1`.
 - New tests are named as sentences, like the ones in `firmware/mesh/core/tests/sim.rs`.
 
 ## Commands
@@ -66,7 +66,8 @@ Reporting a blocker is a good result. A guess in firmware costs a physical trip 
 
 ```bash
 tools/mesh.sh check --fast      # fmt, clippy, tests for core and host, Python tests, panel contract
-tools/mesh.sh check             # the same, plus the node and cam firmware builds
+tools/mesh.sh check             # the same, plus firmware clippy and the node and cam firmware builds
+tools/mesh.sh mutants           # mutation tests; slow; not part of check
 tools/mesh.sh fmt               # format all Rust
 tools/mesh.sh daemon check      # host/ only
 tools/mesh.sh size              # image against the 1.8 MB OTA slot
