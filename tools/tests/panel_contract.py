@@ -10,18 +10,15 @@ it does not read secrets/, data/panel/, or data/panel-preview/. The seeded cam i
 script stops if the panel lists any other cam. It runs two panels: the second
 spends the rate limit. It stops both and removes the directory.
 
-A port of the panel takes the same flags and passes this file unchanged:
+The default panel is host/target/release/tallowd panel --preview (build it with
+tools/mesh.sh daemon build). Another build takes the same flags:
 
-    .venv/bin/python tools/tests/panel_contract.py --panel-command 'tallowd --preview'
+    .venv/bin/python tools/tests/panel_contract.py --panel-command 'path/to/tallowd panel --preview'
 
---rust-only adds the routes the Python panel never had: /devices and GET /api/mesh/map,
-with the map's stale states, read from a mesh-map.json the script seeds. Without it the
-run is the one Python passes:
+It also checks /devices and GET /api/mesh/map, with the map's stale states, read
+from a mesh-map.json the script seeds.
 
-    .venv/bin/python tools/tests/panel_contract.py --panel-command 'host/target/release/tallowd panel --preview' --rust-only
-
-Skipped, because preview cannot reach them. tools/tests/test_cams.py and
-test_h7020_panel.py cover these in process:
+Skipped, because preview cannot reach them:
 
     needs-cam    GET /cams/{id}/stream live body, its headers, 429 and 502
     needs-light  503 disconnected on the light routes, and an idle reconnect
@@ -50,7 +47,7 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_PANEL = f"{ROOT / '.venv' / 'bin' / 'python'} {ROOT / 'app' / 'h7020_panel.py'} --preview"
+DEFAULT_PANEL = f"{ROOT / 'host' / 'target' / 'release' / 'tallowd'} panel --preview"
 
 PHONE_HOME = (
     "This box still phones home if it remembers the house Wi-Fi. "
@@ -557,7 +554,7 @@ def refuse_real_cams(client: Client) -> None:
     body = json_of("GET /api/settings/cameras", status, payload, headers, 200)
     listed = body.get("cams") if isinstance(body, dict) else None
     if listed != [CAM]:
-        raise SystemExit(f"This panel lists cams other than the seeded one: {listed!r}. Refusing to continue.")
+        fail("GET /api/settings/cameras is the seeded inventory, or this is a real panel: stopping", listed)
 
 
 def cam_address_guard(client: Client, kept: dict[str, object]) -> None:
@@ -919,7 +916,9 @@ def agent_tokens(sock_path: str, cookie: str, data_dir: Path) -> None:
     status, payload = unix_call(sock_path, "GET", "/api/state", headers={**read, "Cookie": cookie})
     check_eq("bearer plus cookie", (status, payload), (401, b'{"detail":"login"}'))
 
-    audit = (data_dir / "audit.jsonl").read_text(encoding="utf-8")
+    audit_path = data_dir / "audit.jsonl"
+    check("the audit file exists", audit_path.exists(), audit_path)
+    audit = audit_path.read_text(encoding="utf-8")
     lines = [json.loads(line) for line in audit.splitlines()]
     check(
         "the audit names who and what",
@@ -1199,11 +1198,6 @@ def running_panel(command: str, work: Path, name: str) -> Iterator[tuple[Client,
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--panel-command", default=DEFAULT_PANEL, help="The panel in preview mode, before its flags")
-    parser.add_argument(
-        "--rust-only",
-        action="store_true",
-        help="Also check /devices and GET /api/mesh/map, which only the Rust panel serves",
-    )
     args = parser.parse_args()
     # A short path: a unix socket's name is limited to about 100 bytes.
     with tempfile.TemporaryDirectory(prefix="tallow-", dir="/tmp") as held:
@@ -1221,8 +1215,7 @@ def main() -> None:
             finally:
                 if client.cookie:
                     remove_contract_rows(client)
-            if args.rust_only:
-                devices_routes(client, sock_path, data_dir)
+            devices_routes(client, sock_path, data_dir)
             logout(client)
             agent_socket(sock_path, cookie)
             agent_tokens(sock_path, cookie, data_dir)
@@ -1230,8 +1223,8 @@ def main() -> None:
             login(client, PASSWORD)
             rate_limit(client, sock_path)
     print("ok")
-    print("skip needs-cam: GET /cams/{id}/stream live body, its headers, 429 and 502 (tools/tests/test_cams.py)")
-    print("skip needs-light: 503 disconnected, idle reconnect (tools/tests/test_h7020_panel.py)")
+    print("skip needs-cam: GET /cams/{id}/stream live body, its headers, 429 and 502")
+    print("skip needs-light: 503 disconnected, idle reconnect")
 
 
 if __name__ == "__main__":

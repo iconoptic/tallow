@@ -1,0 +1,9 @@
+[package]
+name = "cam-frame"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "cam-frame"
+path = "src/main.rs"

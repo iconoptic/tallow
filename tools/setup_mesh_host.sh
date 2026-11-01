@@ -5,8 +5,11 @@
 # The root is a board name in firmware/mesh/boards.tsv (node-0 by default). Its
 # USB path picks the port, and a board whose chip is not esp32 is refused, so a
 # cam's port is never named. This script changes:
-#   /etc/udev/rules.d/99-tallow-mesh-root.rules   (sudo) gives this user that port
-#                                                 by USB path, and links it as /dev/tallow-root
+#   /etc/udev/rules.d/70-tallow-mesh-root.rules   (sudo) gives this user that port
+#                                                 by USB path, and links it as /dev/tallow-root.
+#                                                 It sorts before 73-seat-late.rules, which is what
+#                                                 turns the uaccess tag into an ACL. An old
+#                                                 99- file never took effect and is removed
 #   ~/.config/systemd/user/tallowd.service        copied from tools/tallowd.service
 # and reloads udev and systemd --user. The service needs no root at runtime.
 #
@@ -16,7 +19,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BOARDS="${ROOT}/firmware/mesh/boards.tsv"
 UNIT_SOURCE="${ROOT}/tools/tallowd.service"
-RULE_PATH="/etc/udev/rules.d/99-tallow-mesh-root.rules"
+RULE_PATH="/etc/udev/rules.d/70-tallow-mesh-root.rules"
+OLD_RULE_PATH="/etc/udev/rules.d/99-tallow-mesh-root.rules"
 UNIT_DIR="${HOME}/.config/systemd/user"
 UNIT_PATH="${UNIT_DIR}/tallowd.service"
 DEFAULT_BOARD="node-0"
@@ -61,14 +65,22 @@ EOF
 )"
 
 rule_changed=0
+if [[ -e "$OLD_RULE_PATH" ]]; then
+  echo "udev rule: removing ${OLD_RULE_PATH} (sudo). It ran too late to grant the port."
+  sudo rm -f "$OLD_RULE_PATH"
+  sudo udevadm control --reload-rules
+  rule_changed=1
+fi
 if [[ -f "$RULE_PATH" && "$(cat "$RULE_PATH")" == "$rule" ]]; then
   echo "udev rule ${RULE_PATH}: already current."
 else
   tmp="$(mktemp)"
+  trap 'rm -f "$tmp"' EXIT
   printf '%s\n' "$rule" >"$tmp"
   echo "udev rule: writing ${RULE_PATH} (sudo)."
   sudo install -m 0644 "$tmp" "$RULE_PATH"
   rm -f "$tmp"
+  trap - EXIT
   sudo udevadm control --reload-rules
   rule_changed=1
 fi
@@ -101,7 +113,8 @@ monitor, backup, bench, and host on the root's port fail. Stop it first.
   Stop:    systemctl --user stop tallowd.service
   Start:   systemctl --user enable --now tallowd.service   (also starts at each login)
   Log:     journalctl --user -u tallowd.service -f
-Each start resets the root board. Restarts wait 10 s.
+Each start resets the root board. After a failure it waits 30 s, and it gives up
+after 5 failures in 10 minutes. Clear that with: systemctl --user reset-failed tallowd.service
 
 To run it by hand instead, without the service:
   tools/mesh.sh daemon run "\$(readlink -f /dev/tallow-root)" --out data/mesh/map.json

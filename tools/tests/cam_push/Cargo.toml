@@ -1,0 +1,9 @@
+[package]
+name = "cam-push"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+ed25519-compact = { version = "2", default-features = false, features = ["opt_size"] }
+tallow-mesh-core = { path = "../../../firmware/mesh/core" }

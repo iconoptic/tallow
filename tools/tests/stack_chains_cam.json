@@ -1,0 +1,13 @@
+{
+  "config": "firmware/cam/sdkconfig.defaults",
+  "key": "CONFIG_ESP_MAIN_TASK_STACK_SIZE",
+  "margin": 4096,
+  "chains": {
+    "main + ota verify": [
+      "tallow_cam4main",
+      "decode_point_negated",
+      "fiat_25519_carry_mul"
+    ],
+    "main + ota result": ["tallow_cam4main", "8Listener3end"]
+  }
+}

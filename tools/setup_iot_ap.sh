@@ -106,7 +106,7 @@ need_cmd() {
 
 refuse_lan() {
   case "$1" in
-    eno1 | enp5s0f1 | br0 | lo | virbr* | docker* | br-* | tailscale* | tun* | veth* | vnet*)
+    eno1 | enp5s0f1 | br0 | lo | virbr* | docker* | podman* | br-* | tailscale* | tun* | veth* | vnet*)
       die "refusing to configure ${1}"
       ;;
   esac

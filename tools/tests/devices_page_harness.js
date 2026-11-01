@@ -34,11 +34,13 @@ function element(tag) {
 }
 
 const ids = {};
-for (const id of ["error", "stale", "reason", "live", "stamp", "devices", "no-devices", "nodes", "no-nodes"]) ids[id] = element("div");
+for (const id of ["error", "stale", "reason", "live", "stamp", "devices", "no-devices", "nodes", "no-nodes", "identities", "no-identities", "suggestions", "no-suggestions"]) ids[id] = element("div");
 ids.stale.hidden = true;
 ids.live.hidden = true;
 ids["no-devices"].hidden = true;
 ids["no-nodes"].hidden = true;
+ids["no-identities"].hidden = true;
+ids["no-suggestions"].hidden = true;
 
 const docListeners = {};
 const document = {
@@ -62,7 +64,8 @@ const fakeSetInterval = (fn, ms) => { intervals.push({ fn, ms }); return interva
 new Function("document", "location", "fetch", "setInterval", script)(document, location, fetch, fakeSetInterval);
 
 const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((resolve) => setImmediate(resolve)); };
-const check = (what, fn) => { fn(); console.log("ok", what); };
+// A check runs to the end before its "ok". An async body would print "ok" first, so it is refused.
+const check = (what, fn) => { assert.ok(!(fn() instanceof Promise), `${what}: await first, then check`); console.log("ok", what); };
 const walk = (node) => [node, ...node.children.flatMap(walk)];
 const textOf = (node) => walk(node).map((n) => n.textContent).join("\n");
 const cardWith = (list, text) => list.children.find((card) => textOf(card).includes(text));
@@ -96,8 +99,22 @@ const LIVE = {
       heard_by: { "0a0b0c0e": { rssi: -61, hits: 1, last: 999960 } }, nearest: "0a0b0c0e",
     },
   },
-  identities: {},
-  suggestions: [],
+  identities: {
+    "Klipsch soundbar": {
+      type: "speaker",
+      keys: ["23:00:00:11:A0:38 classic", "DC:00:00:11:A0:38 ble-public"],
+    },
+    [NAME_FROM_THE_AIR]: {
+      type: "speaker",
+      keys: [NAME_FROM_THE_AIR, "AA:BB:CC:DD:EE:99 classic"],
+    },
+  },
+  suggestions: [
+    {
+      keys: ["AA:BB:CC:DD:EE:10 classic", "AA:BB:CC:DD:EE:11 ble-public"],
+      reason: NAME_FROM_THE_AIR,
+    },
+  ],
 };
 
 (async () => {
@@ -107,7 +124,7 @@ const LIVE = {
     assert.equal(ids.live.hidden, true);
     // The static text lives in the page source, which this fake DOM does not parse.
     assert.match(html, /<strong>The map is not running\.<\/strong>/);
-    assert.match(html, /<code>tools\/mesh\.sh host &lt;port&gt;<\/code>/);
+    assert.match(html, /<code>tools\/mesh\.sh daemon run &lt;port&gt; --out data\/mesh\/map\.json<\/code>/);
     assert.equal(ids.reason.textContent, "No map file has been written yet.");
     assert.equal(ids.devices.children.length, 0);
   });
@@ -169,6 +186,39 @@ const LIVE = {
     assert.doesNotMatch(textOf(card), /-127/);
   });
 
+  check("a named identity shows its type and both addresses", () => {
+    const card = cardWith(ids.identities, "Klipsch soundbar");
+    assert.ok(card, "the named identity has a card");
+    assert.equal(card.children[0].textContent, "Klipsch soundbar");
+    assert.match(textOf(card), /Type\nspeaker/);
+    assert.match(textOf(card), /23:00:00:11:A0:38 classic/);
+    assert.match(textOf(card), /DC:00:00:11:A0:38 ble-public/);
+    assert.equal(ids["no-identities"].hidden, true);
+  });
+
+  check("a suggestion is labelled as a suggestion and offers nothing to accept", () => {
+    assert.match(html, /These are suggestions\. Nothing here accepts or merges them\./);
+    const card = cardWith(ids.suggestions, "AA:BB:CC:DD:EE:10 classic");
+    assert.ok(card, "the suggestion has a card");
+    assert.equal(card.children[0].textContent, "Suggestion");
+    assert.match(textOf(card), /AA:BB:CC:DD:EE:11 ble-public/);
+    assert.equal(created.filter((tag) => tag === "button").length, 0, "nothing to accept or merge");
+    assert.equal(ids["no-suggestions"].hidden, true);
+  });
+
+  check("a hostile identity name, key, and suggestion reason are text", () => {
+    const named = cardWith(ids.identities, NAME_FROM_THE_AIR);
+    assert.ok(named, "the hostile identity has a card");
+    assert.equal(named.children[0].textContent, NAME_FROM_THE_AIR);
+    assert.match(textOf(named), new RegExp(NAME_FROM_THE_AIR.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    const suggestion = cardWith(ids.suggestions, "Suggestion");
+    const reason = suggestion.children[1].children.find((node) => node.textContent === NAME_FROM_THE_AIR);
+    assert.ok(reason, "the suggestion reason is text");
+    assert.equal(reason.textContent, NAME_FROM_THE_AIR);
+    assert.equal(created.filter((tag) => tag === "img").length, 0, "no img element was built");
+    assert.equal(innerHtmlWrites, 0, "innerHTML was never set");
+  });
+
   check("a name from the air is text, not markup", () => {
     const card = cardWith(ids.devices, "AA:BB:CC:DD:EE:02");
     const title = card.children[0];
@@ -178,9 +228,9 @@ const LIVE = {
     assert.equal(innerHtmlWrites, 0, "innerHTML was never set");
   });
 
-  check("a fetch that fails leaves the last view and says the panel did not answer", async () => {
-    answer = { error: "network down" };
-    await refreshNow();
+  answer = { error: "network down" };
+  await refreshNow();
+  check("a fetch that fails leaves the last view and says the panel did not answer", () => {
     assert.equal(ids.error.textContent, "The panel did not answer.");
     assert.equal(ids.live.hidden, false);
   });
