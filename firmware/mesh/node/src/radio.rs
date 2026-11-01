@@ -32,6 +32,11 @@ pub static RX_FRAMES: AtomicU32 = AtomicU32::new(0);
 pub static RX_DROPS: AtomicU32 = AtomicU32::new(0);
 
 /// Runs on the Wi-Fi task. It only copies the frame and hands it off.
+///
+/// # Safety
+/// ESP-NOW calls this with `info` and `data` valid for this call, and `data`
+/// readable for `length` bytes. Each pointer is still checked for null, and
+/// `src_addr` points at the 6-byte source address.
 unsafe extern "C" fn on_receive(info: *const esp_now_recv_info_t, data: *const u8, length: c_int) {
     let Ok(length) = usize::try_from(length) else {
         return;
@@ -65,6 +70,8 @@ unsafe extern "C" fn on_receive(info: *const esp_now_recv_info_t, data: *const u
     }
 }
 
+/// # Safety
+/// ESP-NOW calls this. It reads no pointer, only `status`.
 unsafe extern "C" fn on_sent(_info: *const esp_now_send_info_t, status: esp_now_send_status_t) {
     let result = if status == esp_now_send_status_t_ESP_NOW_SEND_SUCCESS {
         SENT
@@ -82,6 +89,8 @@ fn check(code: esp_err_t) -> Result<(), EspError> {
 pub fn start(channel: u8) -> Result<Receiver<Rx>, EspError> {
     let (sender, receiver) = sync_channel(RX_QUEUE);
     let _ = RX.set(sender);
+    // SAFETY: Wi-Fi is started, as this function requires. Both callbacks match the
+    // signatures ESP-NOW declares, are `'static`, and copy before returning.
     unsafe {
         check(esp_wifi_set_channel(
             channel,
@@ -96,6 +105,8 @@ pub fn start(channel: u8) -> Result<Receiver<Rx>, EspError> {
 }
 
 pub fn ensure_peer(mac: [u8; 6]) -> Result<(), EspError> {
+    // SAFETY: `mac` outlives each call and is the 6 bytes they read. ESP-NOW copies
+    // `peer`, which is fully initialised from its `Default`.
     unsafe {
         if esp_now_is_peer_exist(mac.as_ptr()) {
             return Ok(());
@@ -112,6 +123,7 @@ pub fn ensure_peer(mac: [u8; 6]) -> Result<(), EspError> {
 }
 
 pub fn drop_peer(mac: [u8; 6]) {
+    // SAFETY: `mac` outlives the call and is the 6 bytes it reads.
     unsafe {
         esp_now_del_peer(mac.as_ptr());
     }
@@ -120,6 +132,8 @@ pub fn drop_peer(mac: [u8; 6]) {
 pub fn send(mac: [u8; 6], data: &[u8]) -> Result<(), EspError> {
     TX_RESULT.store(NOTHING, Ordering::Release);
     ensure_peer(mac)?;
+    // SAFETY: both buffers outlive the call, the length is `data`'s, and ESP-NOW
+    // copies the payload before it returns.
     unsafe { check(esp_now_send(mac.as_ptr(), data.as_ptr(), data.len())) }
 }
 

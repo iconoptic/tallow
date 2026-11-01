@@ -6,7 +6,7 @@
 //! 2      ttl    changed by forwarders, not authenticated
 //! 3      hops   changed by forwarders, not authenticated
 //! 4..8   origin node id
-//! 8..12  origin boot id, random each boot
+//! 8..12  origin boot id: a 20-bit counter over 12 random bits, see `mesh::next_boot`
 //! 12..16 origin sequence number
 //! 16..   ciphertext
 //! end-16 Poly1305 tag
@@ -20,7 +20,7 @@
 use chacha20poly1305::aead::{AeadInPlace, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce, Tag};
 
-pub const VERSION: u8 = 0xA1;
+pub const VERSION: u8 = 0xA6;
 pub const HEADER: usize = 16;
 pub const TAG: usize = 16;
 /// ESP-NOW v1 limit. Staying here keeps airtime short on a shared radio.
@@ -36,6 +36,16 @@ pub enum FrameKind {
     Stats = 4,
     Probe = 5,
     Command = 6,
+    /// A parent change, sent up by the node that changed. See `mesh::Reason`.
+    Route = 7,
+    /// The Classic addresses to page, flooded from the root. See `Watch`.
+    Watch = 8,
+    /// A test frame sent down to one node. See `mesh::is_down`.
+    Ping = 11,
+    /// A GATT request sent down to one node. See `gatt::parse`.
+    Gatt = 10,
+    /// A GATT answer, notification, or closed link, sent up. See `gatt::Reply`.
+    GattUp = 12,
 }
 
 impl FrameKind {
@@ -47,6 +57,11 @@ impl FrameKind {
             4 => Self::Stats,
             5 => Self::Probe,
             6 => Self::Command,
+            7 => Self::Route,
+            8 => Self::Watch,
+            10 => Self::Gatt,
+            11 => Self::Ping,
+            12 => Self::GattUp,
             _ => return None,
         })
     }
@@ -145,6 +160,53 @@ impl Sealer {
             )
             .ok()?;
         Some((head, length))
+    }
+}
+
+/// Most addresses one Watch list can hold.
+pub const WATCH_MAX: usize = 16;
+
+/// The Classic addresses this mesh pages, flooded from the root. A list replaces
+/// the one before it whole, and a count of 0 clears it. Wire layout: id u16 LE,
+/// count u8, then `count` six-byte addresses. Any other length, or a count over
+/// `WATCH_MAX`, is refused rather than cut short.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct Watch {
+    pub id: u16,
+    pub count: u8,
+    pub addresses: [[u8; 6]; WATCH_MAX],
+}
+
+impl Watch {
+    pub const MAX_WIRE: usize = 3 + 6 * WATCH_MAX;
+
+    /// Writes the wire form into `out` and returns its length.
+    pub fn encode(&self, out: &mut [u8; Self::MAX_WIRE]) -> usize {
+        let count = (self.count as usize).min(WATCH_MAX);
+        out[0..2].copy_from_slice(&self.id.to_le_bytes());
+        out[2] = count as u8;
+        for (index, address) in self.addresses[..count].iter().enumerate() {
+            let at = 3 + 6 * index;
+            out[at..at + 6].copy_from_slice(address);
+        }
+        3 + 6 * count
+    }
+
+    pub fn decode(data: &[u8]) -> Option<Self> {
+        let count = *data.get(2)? as usize;
+        if count > WATCH_MAX || data.len() != 3 + 6 * count {
+            return None;
+        }
+        let mut addresses = [[0u8; 6]; WATCH_MAX];
+        for (index, address) in addresses[..count].iter_mut().enumerate() {
+            let at = 3 + 6 * index;
+            address.copy_from_slice(&data[at..at + 6]);
+        }
+        Some(Self {
+            id: u16::from_le_bytes([data[0], data[1]]),
+            count: count as u8,
+            addresses,
+        })
     }
 }
 

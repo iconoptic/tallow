@@ -6,11 +6,17 @@
 //!
 //! Serial is 115200 8N1. The host sends `H` lines as a heartbeat and
 //! `C id window interval inquiry length probe_hz probe_size` lines to set scan
-//! settings. The root prints `@` lines for `tools/mesh_host.py`. `D` makes this
-//! board visible to Classic inquiry for 60 s, not connectable, so a bench test
-//! has something to find. It only works from this board's own serial port.
+//! settings. `W <hex12> ...` sets the Classic addresses to page, up to 16, and
+//! `W` alone clears them. The root prints `@` lines for `tools/mesh_host.py`.
+//! `D` makes this board visible to Classic inquiry for 60 s, not connectable, so
+//! a bench test has something to find. `X id` refuses beacons from one board id,
+//! and `X` alone clears the list. Both are kept in RAM and only work from this
+//! board's own serial port. `G id hex` sends a GATT request, in hex, down to the
+//! board with that id. A send the root cannot route prints `@G refused`. Answers
+//! come back up as `@U 12` lines.
 
 mod bluetooth;
+mod gatt;
 mod radio;
 
 use core::fmt::Write as _;
@@ -23,10 +29,13 @@ use esp_idf_svc::hal::gpio::AnyIOPin;
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::hal::uart::{config::Config, UartDriver};
 use esp_idf_svc::hal::units::Hertz;
-use esp_idf_svc::nvs::EspDefaultNvsPartition;
+use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs};
 use esp_idf_svc::sys;
 use esp_idf_svc::wifi::{ClientConfiguration, Configuration, WifiDriver};
-use tallow_mesh_core::wire::Command;
+use tallow_mesh_core::gatt::{Client, Done, Reply};
+use tallow_mesh_core::mesh::next_boot;
+use tallow_mesh_core::stats::Stats;
+use tallow_mesh_core::wire::{Command, WATCH_MAX};
 use tallow_mesh_core::{Dest, Event, FrameKind, Mesh, MAX_PAYLOAD};
 
 const KEY: &[u8; 32] = include_bytes!(concat!(env!("OUT_DIR"), "/mesh_key.bin"));
@@ -36,6 +45,16 @@ const REPORT_MS: u32 = 5_000;
 const STATS_MS: u32 = 10_000;
 const TX_TIMEOUT_MS: u32 = 250;
 const VISIBLE_MS: u32 = 60_000;
+/// Nodes given one list together start their name requests this far apart at most.
+const PAGE_STAGGER_MS: u32 = 5_000;
+/// How soon a name request is tried again after one could not start.
+const PAGE_RETRY_MS: u32 = 250;
+/// A serial line from the host. Sixteen addresses plus `W` and the spaces is 209
+/// bytes. A `G` line for the largest GATT write is 175 request bytes, so 350 hex
+/// digits, plus the id and the words around them.
+const LINE_MAX: usize = 400;
+/// Requests that came down and wait for the GATT client. A request past this is dropped.
+const DOWN_QUEUE: usize = 4;
 
 const DEFAULTS: Command = Command {
     id: 0,
@@ -47,6 +66,16 @@ const DEFAULTS: Command = Command {
     probe_size: 8,
 };
 
+/// One hex digit, or `None` for any other byte.
+fn nibble(digit: u8) -> Option<u8> {
+    match digit {
+        b'0'..=b'9' => Some(digit - b'0'),
+        b'a'..=b'f' => Some(digit - b'a' + 10),
+        b'A'..=b'F' => Some(digit - b'A' + 10),
+        _ => None,
+    }
+}
+
 fn hex(out: &mut String, bytes: &[u8]) {
     for byte in bytes {
         let _ = write!(out, "{byte:02x}");
@@ -57,7 +86,14 @@ fn print(uart: &UartDriver, line: &str) {
     let _ = uart.write(line.as_bytes());
 }
 
-fn on_event(uart: &UartDriver, line: &mut String, command: &mut Option<Command>, event: Event) {
+fn on_event(
+    uart: &UartDriver,
+    line: &mut String,
+    command: &mut Option<Command>,
+    watch: &mut Option<(u8, [[u8; 6]; WATCH_MAX])>,
+    downs: &mut Vec<Vec<u8>>,
+    event: Event,
+) {
     line.clear();
     match event {
         Event::Up {
@@ -75,10 +111,68 @@ fn on_event(uart: &UartDriver, line: &mut String, command: &mut Option<Command>,
             print(uart, line);
         }
         Event::Command(new) => *command = Some(new),
-        Event::Parent(parent) => {
-            let _ = writeln!(line, "@P {:08x}", parent.unwrap_or(0));
+        Event::Watch { count, addresses } => *watch = Some((count, addresses)),
+        Event::Parent { new, .. } => {
+            let _ = writeln!(line, "@P {:08x}", new.unwrap_or(0));
             print(uart, line);
         }
+        // A GATT request is queued for the client, which runs it after this frame.
+        // Ping is for tests only, and nothing reads it.
+        Event::Down { frame, payload } => {
+            if frame.kind == FrameKind::Gatt && downs.len() < DOWN_QUEUE {
+                downs.push(payload.to_vec());
+            }
+        }
+    }
+}
+
+/// Sends one GATT reply up to the host.
+fn send_gatt_reply(mesh: &mut Mesh, reply: &Reply, now: u32, on_event: &mut dyn FnMut(Event)) {
+    let mut body = [0u8; MAX_PAYLOAD];
+    let length = reply.encode(&mut body);
+    mesh.send_up(FrameKind::GattUp, &body[..length], now, on_event);
+}
+
+/// Runs the GATT client's radio work until neither the radio nor the client has
+/// anything left, and sends each reply up. Inquiry and paging pause while a link
+/// is held. Scanning starts again once none is.
+fn gatt_pump(
+    client: &mut Client,
+    link: &mut gatt::Link,
+    bt: &Bluetooth,
+    mesh: &mut Mesh,
+    now: u32,
+    on_event: &mut dyn FnMut(Event),
+) {
+    loop {
+        let mut worked = false;
+        while let Some(act) = client.take_act() {
+            worked = true;
+            let mut done = link.perform(&act);
+            // A stack that refuses a connect while a scan runs gets one retry, with
+            // scanning stopped. Otherwise the scan goes on as it was.
+            if matches!(done, Some(Done::Opened(false))) && bt.pause_scan_for_connect() {
+                done = link.perform(&act);
+            }
+            if let Some(done) = done {
+                if let Some(reply) = client.done(now, done) {
+                    send_gatt_reply(mesh, &reply, now, on_event);
+                }
+            }
+        }
+        while let Some(done) = link.take() {
+            worked = true;
+            if let Some(reply) = client.done(now, done) {
+                send_gatt_reply(mesh, &reply, now, on_event);
+            }
+        }
+        if !worked {
+            break;
+        }
+    }
+    bt.set_link_busy(client.link_busy());
+    if !client.link_busy() {
+        bt.resume_scan();
     }
 }
 
@@ -94,6 +188,98 @@ fn parse_command(line: &str) -> Option<Command> {
         probe_hz: words.next()?.parse().ok()?,
         probe_size: words.next()?.parse().ok()?,
     })
+}
+
+/// `W` alone is an empty list. `W` with up to 16 addresses sets the list. Any bad
+/// address, or too many, is `None` and changes nothing.
+fn parse_watch(line: &str) -> Option<(u8, [[u8; 6]; WATCH_MAX])> {
+    let mut words = line.split_ascii_whitespace();
+    if words.next()? != "W" {
+        return None;
+    }
+    let mut addresses = [[0u8; 6]; WATCH_MAX];
+    let mut count = 0;
+    for word in words {
+        if count == WATCH_MAX {
+            return None;
+        }
+        addresses[count] = parse_address(word)?;
+        count += 1;
+    }
+    Some((count as u8, addresses))
+}
+
+/// `G <hex id> <hex request>` sends a GATT request down to the board with that id.
+/// The request is the bytes `tallow_mesh_core::gatt` reads, in hex, and it may be
+/// empty. A bad digit or an odd count is `None` and sends nothing.
+fn parse_gatt(line: &str) -> Option<(u32, [u8; MAX_PAYLOAD - 4], usize)> {
+    let mut words = line.split_ascii_whitespace();
+    if words.next()? != "G" {
+        return None;
+    }
+    let target = u32::from_str_radix(words.next()?, 16).ok()?;
+    let digits = words.next().unwrap_or("");
+    if words.next().is_some() || digits.len() % 2 != 0 || digits.len() / 2 > MAX_PAYLOAD - 4 {
+        return None;
+    }
+    let mut body = [0u8; MAX_PAYLOAD - 4];
+    for (index, pair) in digits.as_bytes().chunks_exact(2).enumerate() {
+        let &[high, low] = pair else {
+            return None;
+        };
+        *body.get_mut(index)? = (nibble(high)? << 4) | nibble(low)?;
+    }
+    Some((target, body, digits.len() / 2))
+}
+
+/// Twelve hex digits with no separators. Each byte is checked, so text off the
+/// serial line is never read as a number it is not.
+fn parse_address(word: &str) -> Option<[u8; 6]> {
+    let bytes = word.as_bytes();
+    if bytes.len() != 12 {
+        return None;
+    }
+    let mut out = [0u8; 6];
+    for (index, pair) in bytes.chunks_exact(2).enumerate() {
+        out[index] = (nibble(pair[0])? << 4) | nibble(pair[1])?;
+    }
+    Some(out)
+}
+
+/// `X` alone is `Some(None)`: clear the list. `X <hex id>` is `Some(Some(id))`.
+/// Anything else, including a bad or zero id, is `None` and changes nothing.
+fn parse_deny(line: &str) -> Option<Option<u32>> {
+    let mut words = line.split_ascii_whitespace();
+    if words.next()? != "X" {
+        return None;
+    }
+    let Some(word) = words.next() else {
+        return Some(None);
+    };
+    if words.next().is_some() {
+        return None;
+    }
+    let id = u32::from_str_radix(word, 16).ok()?;
+    (id != 0).then_some(Some(id))
+}
+
+/// This boot's id. The NVS counter in `tallow/boot` is read and raised here, once,
+/// before `Mesh::new`, and never written again. If NVS fails, the counter is seeded
+/// from `random` instead: still unique, but not ordered against earlier boots.
+fn boot_id(nvs: EspDefaultNvsPartition, random: u32) -> u32 {
+    let attempt = || -> Result<u32, sys::EspError> {
+        let store = EspNvs::new(nvs, "tallow", true)?;
+        let (counter, boot) = next_boot(store.get_u32("boot")?, random);
+        store.set_u32("boot", counter)?;
+        Ok(boot)
+    };
+    match attempt() {
+        Ok(boot) => boot,
+        Err(error) => {
+            log::warn!("boot counter unavailable ({error}), seeding from the radio");
+            next_boot(None, random).1
+        }
+    }
 }
 
 fn main() -> Result<(), sys::EspError> {
@@ -126,27 +312,34 @@ fn main() -> Result<(), sys::EspError> {
         sys::esp_wifi_get_mac(sys::wifi_interface_t_WIFI_IF_STA, mac.as_mut_ptr())
     })?;
     // SAFETY: takes no arguments and may be called from any task.
-    let boot = unsafe { sys::esp_random() };
+    let random = unsafe { sys::esp_random() };
+    let boot = boot_id(nvs.clone(), random);
     let mut mesh = Mesh::new(mac, KEY, boot);
 
     let bt = Bluetooth::start(bt_modem, nvs)?;
     let heard = bt.heard.clone();
+    gatt::start()?;
+    let mut client = Client::new();
+    let mut link = gatt::Link::default();
 
     let mut line = String::with_capacity(600);
     let mut input = [0u8; 64];
-    let mut typed = String::with_capacity(64);
+    let mut typed = String::with_capacity(LINE_MAX);
     let mut pending: Option<Command> = Some(DEFAULTS);
+    let mut pending_watch: Option<(u8, [[u8; 6]; WATCH_MAX])> = None;
     let mut settings = DEFAULTS;
     let mut in_flight: Option<u32> = None;
     let mut last_peer: Option<[u8; 6]> = None;
     let mut next_report = now_ms() + REPORT_MS;
     let mut next_stats = now_ms() + 1_000;
     let mut next_inquiry = now_ms() + 3_000;
+    let mut next_page = now_ms();
     let mut next_probe = 0u32;
     let mut probe_seq = 0u32;
     let mut tx_ok = 0u32;
     let mut tx_failed = 0u32;
     let mut visible_until: Option<u32> = None;
+    let mut downs: Vec<Vec<u8>> = Vec::new();
 
     let _ = writeln!(line, "@B {:08x} {}", mesh.id, boot);
     print(&uart, &line);
@@ -155,7 +348,16 @@ fn main() -> Result<(), sys::EspError> {
         let now = now_ms();
         macro_rules! events {
             () => {
-                &mut |event| on_event(&uart, &mut line, &mut pending, event)
+                &mut |event| {
+                    on_event(
+                        &uart,
+                        &mut line,
+                        &mut pending,
+                        &mut pending_watch,
+                        &mut downs,
+                        event,
+                    )
+                }
             };
         }
 
@@ -163,7 +365,7 @@ fn main() -> Result<(), sys::EspError> {
         let count = uart.read(&mut input, 0).unwrap_or(0);
         for &byte in &input[..count] {
             if byte != b'\n' {
-                if typed.len() < 63 {
+                if typed.len() < LINE_MAX {
                     typed.push(byte as char);
                 }
                 continue;
@@ -174,9 +376,29 @@ fn main() -> Result<(), sys::EspError> {
                 if bt.set_visible(true).is_ok() {
                     visible_until = Some(now.wrapping_add(VISIBLE_MS));
                 }
+            } else if typed.starts_with('X') {
+                match parse_deny(&typed) {
+                    Some(None) => mesh.clear_deny(),
+                    Some(Some(id)) => {
+                        mesh.deny(id);
+                    }
+                    None => {}
+                }
             } else if typed.starts_with('C') {
                 if let Some(command) = parse_command(&typed) {
                     mesh.send_command(&command, events!());
+                }
+            } else if typed.starts_with('W') {
+                if let Some((count, addresses)) = parse_watch(&typed) {
+                    if !mesh.send_watch(&addresses[..count as usize], events!()) {
+                        print(&uart, "@W refused\n");
+                    }
+                }
+            } else if typed.starts_with('G') {
+                if let Some((target, body, length)) = parse_gatt(&typed) {
+                    if !mesh.send_down(now, target, FrameKind::Gatt, &body[..length]) {
+                        print(&uart, "@G refused\n");
+                    }
                 }
             }
             typed.clear();
@@ -194,6 +416,18 @@ fn main() -> Result<(), sys::EspError> {
         }
         mesh.tick(now, events!());
 
+        // Requests that came down to this board go to the GATT client, and its
+        // timeouts and radio results follow.
+        for body in std::mem::take(&mut downs) {
+            if let Some(reply) = client.request(now, &body) {
+                send_gatt_reply(&mut mesh, &reply, now, events!());
+            }
+        }
+        if let Some(reply) = client.tick(now) {
+            send_gatt_reply(&mut mesh, &reply, now, events!());
+        }
+        gatt_pump(&mut client, &mut link, &bt, &mut mesh, now, events!());
+
         // One frame on the air at a time, so ordering and acks stay simple.
         if let Some(started) = in_flight {
             let outcome = radio::sent();
@@ -205,7 +439,7 @@ fn main() -> Result<(), sys::EspError> {
                     tx_failed = tx_failed.wrapping_add(1);
                 }
                 in_flight = None;
-                mesh.tx_done(acked, events!());
+                mesh.tx_done(now, acked, events!());
             }
         }
         if in_flight.is_none() {
@@ -223,7 +457,7 @@ fn main() -> Result<(), sys::EspError> {
                     Ok(()) => in_flight = Some(now),
                     Err(_) => {
                         tx_failed = tx_failed.wrapping_add(1);
-                        mesh.tx_done(false, events!());
+                        mesh.tx_done(now, false, events!());
                     }
                 }
             }
@@ -234,12 +468,35 @@ fn main() -> Result<(), sys::EspError> {
             settings = new;
             let _ = bt.configure_scan(new.ble_window_ms, new.ble_interval_ms);
             next_inquiry = now.wrapping_add(1_000);
+            // Spread nodes across the period so commanded nodes do not inquire together.
+            // A period of 0 means no inquiries, and `% 0` would panic, so skip the offset.
+            if new.inquiry_period_s > 0 {
+                let offset_s = mesh.id % new.inquiry_period_s as u32;
+                next_inquiry = next_inquiry.wrapping_add(offset_s * 1000);
+            }
+        }
+        if let Some((count, addresses)) = pending_watch.take() {
+            bt.set_watch(count, &addresses);
+            // Nodes given one list together must not all page at once, so each one
+            // waits its share of the stagger before its first name request.
+            next_page = now.wrapping_add(mesh.id % PAGE_STAGGER_MS);
         }
         let _ = bt.poll();
 
         if settings.inquiry_period_s > 0 && (now.wrapping_sub(next_inquiry) as i32) >= 0 {
-            next_inquiry = now.wrapping_add(settings.inquiry_period_s as u32 * 1000);
-            let _ = bt.inquire(settings.inquiry_length);
+            // A name request in flight defers the inquiry by a second, not a period.
+            next_inquiry = match bt.inquire(settings.inquiry_length) {
+                Ok(false) => now.wrapping_add(1_000),
+                _ => now.wrapping_add(settings.inquiry_period_s as u32 * 1000),
+            };
+        }
+
+        // Classic name requests, one at a time, from the host's list.
+        if (now.wrapping_sub(next_page) as i32) >= 0 {
+            next_page = match bt.page_next(now) {
+                Ok(true) => now.wrapping_add(bluetooth::PAGE_GAP_MS),
+                _ => now.wrapping_add(PAGE_RETRY_MS),
+            };
         }
 
         // What this node has heard.
@@ -276,38 +533,34 @@ fn main() -> Result<(), sys::EspError> {
                 )
             };
             let evicted = heard.sightings.lock().map_or(0, |table| table.evicted);
-            let fields = [
-                now / 1000,
-                free,
-                least,
-                block,
-                heard.adverts.load(Ordering::Relaxed),
-                heard.classic.load(Ordering::Relaxed),
-                heard.inquiries.load(Ordering::Relaxed),
-                radio::RX_FRAMES.load(Ordering::Relaxed),
-                radio::RX_DROPS.load(Ordering::Relaxed),
-                mesh.rx_bad,
-                mesh.rx_dup,
+            let stats = Stats {
+                uptime_s: now / 1000,
+                heap_free: free,
+                heap_min: least,
+                heap_block: block,
+                adverts: heard.adverts.load(Ordering::Relaxed),
+                classic: heard.classic.load(Ordering::Relaxed),
+                inquiries: heard.inquiries.load(Ordering::Relaxed),
+                rx_frames: radio::RX_FRAMES.load(Ordering::Relaxed),
+                rx_drops: radio::RX_DROPS.load(Ordering::Relaxed),
+                rx_bad: mesh.rx_bad,
+                rx_dup: mesh.rx_dup,
                 tx_ok,
                 tx_failed,
-                mesh.queue_drops,
-                mesh.parent_changes,
+                queue_drops: mesh.queue_drops,
+                parent_changes: mesh.parent_changes,
                 evicted,
-                mesh.parent().map_or(0, |parent| parent.id),
-                settings.id as u32,
-                heard.inquiry_started.load(Ordering::Relaxed),
-                heard.inquiry_stopped.load(Ordering::Relaxed),
-                heard.inquiry_errors.load(Ordering::Relaxed),
-            ];
-            let mut body = [0u8; 4 * 21 + 4];
-            for (index, field) in fields.iter().enumerate() {
-                body[index * 4..index * 4 + 4].copy_from_slice(&field.to_le_bytes());
-            }
-            body[84] = mesh.rank;
-            body[85] = mesh.neighbours().count() as u8;
-            body[86] = mesh.parent().map_or(0, |parent| parent.rssi as u8);
-            body[87] = mesh.parent().map_or(0, |parent| parent.quality() as u8);
-            mesh.send_up(FrameKind::Stats, &body, now, events!());
+                parent: mesh.parent().map_or(0, |parent| parent.id),
+                settings: settings.id as u32,
+                inquiry_started: heard.inquiry_started.load(Ordering::Relaxed),
+                inquiry_stopped: heard.inquiry_stopped.load(Ordering::Relaxed),
+                inquiry_errors: heard.inquiry_errors.load(Ordering::Relaxed),
+                rank: mesh.rank,
+                neighbours: mesh.neighbours().count() as u8,
+                parent_rssi: mesh.parent().map_or(0, |parent| parent.rssi),
+                parent_quality: mesh.parent().map_or(0, |parent| parent.quality() as u8),
+            };
+            mesh.send_up(FrameKind::Stats, &stats.encode(), now, events!());
         }
 
         // Delivery test.

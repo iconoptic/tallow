@@ -118,9 +118,121 @@ impl<const SEEN: usize, const PENDING: usize> Names<SEEN, PENDING> {
     }
 }
 
+/// One name, read back from a Name payload. `name` is the raw bytes: a name off
+/// the air need not be UTF-8, so [`NameRecord::text`] says whether it is.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct NameRecord<'a> {
+    pub addr: [u8; 6],
+    /// The raw code, as in a report.
+    pub kind: u8,
+    /// `None` where the node sent `0xFFFF`.
+    pub company: Option<u16>,
+    /// Zero when unknown.
+    pub class: u32,
+    pub name: &'a [u8],
+}
+
+impl NameRecord<'_> {
+    /// The name as text, or `None` if its bytes are not UTF-8.
+    pub fn text(&self) -> Option<&str> {
+        core::str::from_utf8(self.name).ok()
+    }
+}
+
+/// The records in a Name payload. A record whose name runs past the end stops the
+/// parse, as `parse_names` in `tools/mesh_host.py` does.
+pub struct NameRecords<'a> {
+    payload: &'a [u8],
+    at: usize,
+}
+
+impl<'a> NameRecords<'a> {
+    pub fn new(payload: &'a [u8]) -> Self {
+        Self { payload, at: 0 }
+    }
+}
+
+impl<'a> Iterator for NameRecords<'a> {
+    type Item = NameRecord<'a>;
+
+    fn next(&mut self) -> Option<NameRecord<'a>> {
+        // Each `?` returns without moving `at`, so a short record ends the
+        // iteration for good.
+        let head = self.payload.get(self.at..self.at + FIXED)?;
+        let addr = <[u8; 6]>::try_from(head.get(..6)?).ok()?;
+        let kind = *head.get(6)?;
+        let company = u16::from_le_bytes(head.get(7..9)?.try_into().ok()?);
+        let [c0, c1, c2] = <[u8; 3]>::try_from(head.get(9..12)?).ok()?;
+        let length = *head.get(12)? as usize;
+        let end = self.at + FIXED + length;
+        let name = self.payload.get(self.at + FIXED..end)?;
+        self.at = end;
+        Some(NameRecord {
+            addr,
+            kind,
+            company: (company != 0xFFFF).then_some(company),
+            class: u32::from_le_bytes([c0, c1, c2, 0]),
+            name,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_name_round_trips_through_the_queue_and_the_records() {
+        let mut names = Names::<8, 4>::new();
+        names.offer(
+            1,
+            [4; 6],
+            Kind::Classic,
+            None,
+            Some([1, 2, 3]),
+            Some(b"Flip 5"),
+        );
+        names.offer(1, [5; 6], Kind::BlePublic, Some(0x004C), None, Some(b"x"));
+        let mut out = [0u8; 200];
+        let length = names.drain(&mut out);
+        let records: Vec<NameRecord> = NameRecords::new(&out[..length]).collect();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].addr, [4; 6]);
+        assert_eq!(records[0].kind, Kind::Classic as u8);
+        assert_eq!((records[0].company, records[0].class), (None, 0x030201));
+        assert_eq!(records[0].text(), Some("Flip 5"));
+        assert_eq!(records[1].company, Some(0x004C));
+        assert_eq!(records[1].class, 0);
+    }
+
+    #[test]
+    fn a_name_past_the_end_stops_the_parse() {
+        let mut names = Names::<8, 4>::new();
+        names.offer(1, [1; 6], Kind::BleRandom, None, None, Some(b"abc"));
+        let mut out = [0u8; 200];
+        let length = names.drain(&mut out);
+        assert_eq!(NameRecords::new(&out[..length - 1]).count(), 0);
+        assert_eq!(NameRecords::new(&out[..5]).count(), 0);
+    }
+
+    #[test]
+    fn a_name_that_is_not_utf8_survives() {
+        let mut payload = [0u8; FIXED + 2];
+        payload[12] = 2;
+        payload[13..].copy_from_slice(&[0xFF, 0xFE]);
+        let mut records = NameRecords::new(&payload);
+        let record = records.next().unwrap();
+        assert_eq!(record.name, &[0xFF, 0xFE]);
+        assert_eq!(record.text(), None);
+        assert_eq!(records.next(), None);
+    }
+
+    #[test]
+    fn a_length_byte_past_the_buffer_yields_no_record() {
+        let mut payload = [0u8; FIXED + 3];
+        payload[12] = 9;
+        assert!(NameRecords::new(&payload).next().is_none());
+    }
 
     #[test]
     fn says_a_name_once_then_again_after_the_timer() {

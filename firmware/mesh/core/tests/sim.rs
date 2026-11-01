@@ -1,7 +1,13 @@
 //! The mesh on a simulated radio: virtual time, lossy links, boards that die.
 
-use tallow_mesh_core::mesh::{BEACON_MS, MAX_RANK, SEEN};
-use tallow_mesh_core::wire::Command;
+use tallow_mesh_core::gatt::{
+    Act, Client, Done, Reply, Status, CONNECT_MS, NOTIFY_MAX, REQUEST_MS, VALUE_MAX,
+};
+use tallow_mesh_core::mesh::{
+    counter_of, next_boot, Reason, BEACON_MS, MAX_RANK, NEIGHBOUR_TIMEOUT_MS, ORIGIN_SILENCE_MS,
+    PARENT_FAILURES, SEEN, TX_RETRIES,
+};
+use tallow_mesh_core::wire::{Command, Frame, Sealer, Watch, MAX_FRAME, VERSION, WATCH_MAX};
 use tallow_mesh_core::{Dest, Event, FrameKind, Mesh, Sightings, NO_RANK};
 
 const KEY: [u8; 32] = [7; 32];
@@ -31,6 +37,8 @@ struct Arrival {
     origin: u32,
     hops: u8,
     seq_value: u32,
+    kind: FrameKind,
+    payload: Vec<u8>,
 }
 
 struct Sim {
@@ -44,7 +52,12 @@ struct Sim {
     arrivals: Vec<Arrival>,
     commands: Vec<Vec<u16>>,
     parents: Vec<Vec<Option<u32>>>,
+    /// The paging list each board last applied, or `None` if it never got one.
+    watched: Vec<Option<Vec<[u8; 6]>>>,
     airtime: u64,
+    /// Ping frames sent to one neighbour, and sent to all of them.
+    unicast_pings: u64,
+    broadcast_pings: u64,
 }
 
 impl Sim {
@@ -66,7 +79,10 @@ impl Sim {
             arrivals: Vec::new(),
             commands: vec![Vec::new(); count],
             parents: vec![Vec::new(); count],
+            watched: vec![None; count],
             airtime: 0,
+            unicast_pings: 0,
+            broadcast_pings: 0,
         }
     }
 
@@ -83,12 +99,13 @@ impl Sim {
             if self.roots.contains(&index) {
                 self.nodes[index].host_heartbeat(now);
             }
-            let (arrivals, commands, parents) = (
+            let (arrivals, commands, parents, watched) = (
                 &mut self.arrivals,
                 &mut self.commands[index],
                 &mut self.parents[index],
+                &mut self.watched[index],
             );
-            let mut sink = sink(arrivals, commands, parents);
+            let mut sink = sink(arrivals, commands, parents, watched);
             self.nodes[index].tick(now, &mut sink);
         }
         for index in 0..self.nodes.len() {
@@ -99,6 +116,12 @@ impl Sim {
                 continue;
             };
             self.airtime += 1;
+            if tx.bytes()[1] == FrameKind::Ping as u8 {
+                match tx.dest {
+                    Dest::Broadcast => self.broadcast_pings += 1,
+                    Dest::Peer(_) => self.unicast_pings += 1,
+                }
+            }
             let mut acked = false;
             for other in 0..self.nodes.len() {
                 if other == index || !self.alive[other] {
@@ -115,21 +138,23 @@ impl Sim {
                     continue;
                 }
                 acked = true;
-                let (arrivals, commands, parents) = (
+                let (arrivals, commands, parents, watched) = (
                     &mut self.arrivals,
                     &mut self.commands[other],
                     &mut self.parents[other],
+                    &mut self.watched[other],
                 );
-                let mut sink = sink(arrivals, commands, parents);
+                let mut sink = sink(arrivals, commands, parents, watched);
                 self.nodes[other].receive(now, mac(index), -60, tx.bytes(), &mut sink);
             }
-            let (arrivals, commands, parents) = (
+            let (arrivals, commands, parents, watched) = (
                 &mut self.arrivals,
                 &mut self.commands[index],
                 &mut self.parents[index],
+                &mut self.watched[index],
             );
-            let mut sink = sink(arrivals, commands, parents);
-            self.nodes[index].tx_done(acked || tx.dest == Dest::Broadcast, &mut sink);
+            let mut sink = sink(arrivals, commands, parents, watched);
+            self.nodes[index].tx_done(now, acked || tx.dest == Dest::Broadcast, &mut sink);
         }
         self.now = self.now.wrapping_add(STEP_MS);
     }
@@ -142,20 +167,43 @@ impl Sim {
 
     fn report(&mut self, index: usize, value: u32) -> bool {
         let now = self.now;
-        let (arrivals, commands, parents) = (
+        let (arrivals, commands, parents, watched) = (
             &mut self.arrivals,
             &mut self.commands[index],
             &mut self.parents[index],
+            &mut self.watched[index],
         );
-        let mut sink = sink(arrivals, commands, parents);
+        let mut sink = sink(arrivals, commands, parents, watched);
         self.nodes[index].send_up(FrameKind::Probe, &value.to_le_bytes(), now, &mut sink)
     }
 
+    /// Sets the link between two boards, in percent. Zero cuts it.
+    fn set_link(&mut self, a: usize, b: usize, percent: u64) {
+        self.links[a][b] = percent;
+        self.links[b][a] = percent;
+    }
+
+    /// The root sends a Ping to `target`, with a four-byte value as its payload.
+    fn send_ping(&mut self, target: u32, value: u32) -> bool {
+        let now = self.now;
+        self.nodes[0].send_down(now, target, FrameKind::Ping, &value.to_le_bytes())
+    }
+
+    /// Ping values that reached their target, and how many times each arrived.
+    fn pings_arrived(&self, value: u32) -> Vec<u8> {
+        self.arrivals
+            .iter()
+            .filter(|entry| entry.kind == FrameKind::Ping && entry.seq_value == value)
+            .map(|entry| entry.hops)
+            .collect()
+    }
+
+    /// Probe payloads that reached the root from `index`.
     fn arrived(&self, index: usize) -> Vec<u32> {
         let id = self.id(index);
         self.arrivals
             .iter()
-            .filter(|entry| entry.origin == id)
+            .filter(|entry| entry.origin == id && entry.kind == FrameKind::Probe)
             .map(|entry| entry.seq_value)
             .collect()
     }
@@ -165,18 +213,26 @@ fn sink<'a>(
     arrivals: &'a mut Vec<Arrival>,
     commands: &'a mut Vec<u16>,
     parents: &'a mut Vec<Option<u32>>,
+    watched: &'a mut Option<Vec<[u8; 6]>>,
 ) -> impl FnMut(Event) + 'a {
     move |event| match event {
-        Event::Up { frame, payload, .. } => {
-            let seq_value = u32::from_le_bytes(payload[..4].try_into().unwrap());
+        Event::Up { frame, payload, .. } | Event::Down { frame, payload } => {
+            let seq_value = payload
+                .first_chunk::<4>()
+                .map_or(0, |bytes| u32::from_le_bytes(*bytes));
             arrivals.push(Arrival {
                 origin: frame.origin,
                 hops: frame.hops,
                 seq_value,
+                kind: frame.kind,
+                payload: payload.to_vec(),
             });
         }
         Event::Command(command) => commands.push(command.id),
-        Event::Parent(parent) => parents.push(parent),
+        Event::Parent { new, .. } => parents.push(new),
+        Event::Watch { count, addresses } => {
+            *watched = Some(addresses[..count as usize].to_vec());
+        }
     }
 }
 
@@ -206,7 +262,7 @@ fn a_report_crosses_four_hops() {
     let arrivals: Vec<_> = sim
         .arrivals
         .iter()
-        .filter(|entry| entry.origin == sim.id(4))
+        .filter(|entry| entry.origin == sim.id(4) && entry.kind == FrameKind::Probe)
         .collect();
     assert_eq!(arrivals.len(), 1);
     assert_eq!(arrivals[0].hops, 3);
@@ -282,9 +338,13 @@ fn delivers_over_bad_links() {
 fn a_command_reaches_every_board_exactly_once() {
     let mut sim = Sim::new(6, &chain(6), 100);
     sim.run_ms(20_000);
-    let (arrivals, commands, parents) =
-        (&mut sim.arrivals, &mut sim.commands[0], &mut sim.parents[0]);
-    let mut root_sink = sink(arrivals, commands, parents);
+    let (arrivals, commands, parents, watched) = (
+        &mut sim.arrivals,
+        &mut sim.commands[0],
+        &mut sim.parents[0],
+        &mut sim.watched[0],
+    );
+    let mut root_sink = sink(arrivals, commands, parents, watched);
     assert!(sim.nodes[0].send_command(&COMMAND, &mut root_sink));
     drop(root_sink);
     sim.run_ms(2_000);
@@ -407,12 +467,12 @@ fn a_replay_is_dropped_right_away_and_long_after() {
     root.receive(5, mac(1), -50, &data[..length], &mut |_| count += 1);
     assert_eq!(count, 1);
     // Push the first frame out of the fingerprint ring.
-    leaf.tx_done(true, &mut quiet);
+    leaf.tx_done(6, true, &mut quiet);
     for _ in 0..SEEN * 2 {
         assert!(leaf.send_up(FrameKind::Probe, &[0; 4], 6, &mut quiet));
         let tx = *leaf.next_tx().unwrap();
         root.receive(6, mac(1), -50, tx.bytes(), &mut quiet);
-        leaf.tx_done(true, &mut quiet);
+        leaf.tx_done(6, true, &mut quiet);
     }
     let mut late = 0;
     root.receive(7, mac(1), -50, &data[..length], &mut |_| late += 1);
@@ -429,7 +489,7 @@ fn garbage_off_the_air_never_panics() {
             *byte = rng.next() as u8;
         }
         if length > 1 {
-            data[0] = 0xA1;
+            data[0] = VERSION;
             data[1] = (length % 7) as u8;
         }
         node.receive(1, mac(1), -50, &data, &mut quiet);
@@ -445,12 +505,1137 @@ fn the_clock_can_wrap() {
 }
 
 #[test]
-fn a_node_fits_in_eight_kilobytes() {
-    let size = core::mem::size_of::<Mesh>() + core::mem::size_of::<Sightings<128>>();
-    println!(
-        "Mesh {} + Sightings<128> {} = {size} bytes",
-        core::mem::size_of::<Mesh>(),
-        core::mem::size_of::<Sightings<128>>()
+fn a_lost_parent_is_reported_with_its_timeout_once_a_route_returns() {
+    let mut sim = Sim::new(2, &chain(2), 100);
+    sim.run_ms(20_000);
+    let root_id = sim.id(0);
+    assert_eq!(sim.nodes[1].parent().unwrap().id, root_id);
+
+    // The root goes silent. Node 1 forgets it after the neighbour timeout, and
+    // has no parent, so the loss waits in its log instead of going up.
+    sim.alive[0] = false;
+    sim.run_ms(NEIGHBOUR_TIMEOUT_MS + 2_000);
+    assert!(sim.nodes[1].parent().is_none());
+
+    sim.alive[0] = true;
+    sim.run_ms(10_000);
+    assert_eq!(sim.nodes[1].parent().unwrap().id, root_id);
+
+    // (uptime_s, old, new, reason) for each Route frame node 1 sent that arrived.
+    let routes: Vec<(u32, u32, u32, u8)> = sim
+        .arrivals
+        .iter()
+        .filter(|entry| entry.origin == sim.id(1) && entry.kind == FrameKind::Route)
+        .map(|entry| {
+            let word =
+                |at: usize| u32::from_le_bytes(entry.payload[at..at + 4].try_into().unwrap());
+            (word(0), word(4), word(8), entry.payload[12])
+        })
+        .collect();
+
+    let losses: Vec<_> = routes
+        .iter()
+        .filter(|route| route.3 == Reason::BeaconTimeout as u8)
+        .collect();
+    assert_eq!(losses.len(), 1, "one loss, sent once: {routes:?}");
+    assert_eq!(losses[0].1, root_id, "old parent");
+    assert_eq!(losses[0].2, 0, "no new parent");
+
+    let (uptime, old, new, reason) = *routes.last().expect("the return reached the root");
+    assert_eq!((old, new, reason), (0, root_id, Reason::BetterPath as u8));
+    assert!(losses[0].0 <= uptime, "the loss is dated before the return");
+}
+
+#[test]
+fn a_denied_root_is_never_a_neighbour_so_the_chain_is_forced() {
+    // All three boards hear each other. Node 2 refuses the root, so its only way up is node 1.
+    let mut sim = Sim::new(3, &[(0, 1), (1, 2), (0, 2)], 100);
+    let root = sim.id(0);
+    assert!(sim.nodes[2].deny(root));
+    sim.run_ms(20_000);
+    assert_eq!(sim.nodes[2].rank, 2);
+    assert_eq!(sim.nodes[2].parent().unwrap().id, sim.id(1));
+    assert!(sim.nodes[2].neighbours().all(|entry| entry.id != root));
+    assert!(sim.report(2, 5));
+    sim.run_ms(1_000);
+    assert_eq!(sim.arrived(2), vec![5]);
+}
+
+#[test]
+fn a_full_deny_list_ignores_a_new_id_and_clearing_frees_it() {
+    let mut mesh = Mesh::new(mac(0), &KEY, 1);
+    assert!(mesh.deny(1) && mesh.deny(2) && mesh.deny(3) && mesh.deny(4));
+    assert!(mesh.deny(2), "an id already denied still reads as denied");
+    assert!(!mesh.deny(5), "a full list takes no fifth id");
+    assert!(
+        !mesh.deny(0),
+        "zero marks an empty slot and cannot be denied"
     );
-    assert!(size <= 8192, "{size} bytes");
+    mesh.clear_deny();
+    assert!(mesh.deny(5));
+}
+
+/// A budget, not a physical limit. Boards had about 106 KB of free heap in the
+/// 2026-10-31 soaks, and the plan's floor is 60 KB. It went from 8 KB to 12 KB when
+/// the route table arrived in T1.8b. The GATT client's state counts too.
+#[test]
+fn a_node_fits_in_twelve_kilobytes() {
+    let size = core::mem::size_of::<Mesh>()
+        + core::mem::size_of::<Sightings<128>>()
+        + core::mem::size_of::<Client>();
+    println!(
+        "Mesh {} + Sightings<128> {} + Client {} = {size} bytes",
+        core::mem::size_of::<Mesh>(),
+        core::mem::size_of::<Sightings<128>>(),
+        core::mem::size_of::<Client>()
+    );
+    assert!(size <= 12 * 1024, "{size} bytes");
+}
+
+/// An origin id for frames a test seals by hand. No board in these tests has it.
+const FAKE_ORIGIN: u32 = 0x0102_0304;
+
+/// A Command sealed as `origin` would send it, with this boot and sequence number.
+fn sealed_command(origin: u32, boot: u32, seq: u32) -> Vec<u8> {
+    let head = Frame {
+        kind: FrameKind::Command,
+        ttl: 16,
+        hops: 0,
+        origin,
+        boot,
+        seq,
+    };
+    let mut out = [0u8; MAX_FRAME];
+    let length = Sealer::new(&KEY)
+        .seal(&head, &COMMAND.encode(), &mut out)
+        .expect("fits");
+    out[..length].to_vec()
+}
+
+/// Hands `data` to `node` at `now` and returns how many Commands it applied.
+fn commands_applied(node: &mut Mesh, now: u32, data: &[u8]) -> usize {
+    let mut applied = 0;
+    node.receive(now, mac(0), -60, data, &mut |event| {
+        if matches!(event, Event::Command(_)) {
+            applied += 1;
+        }
+    });
+    applied
+}
+
+#[test]
+fn a_frame_from_an_older_boot_is_refused() {
+    let newer = (5 << 12) | 0x111;
+    let older = (4 << 12) | 0x222;
+    let mut node = Mesh::new(mac(1), &KEY, 77);
+    assert_eq!(
+        commands_applied(&mut node, 1_000, &sealed_command(FAKE_ORIGIN, newer, 1)),
+        1
+    );
+    let refused = node.rx_dup;
+    let data = sealed_command(FAKE_ORIGIN, older, 1);
+    assert_eq!(commands_applied(&mut node, 2_000, &data), 0);
+    assert_eq!(node.rx_dup, refused + 1);
+}
+
+#[test]
+fn an_older_boot_does_not_reopen_the_window_for_the_current_boot() {
+    let newer = (5 << 12) | 0x111;
+    let older = (4 << 12) | 0x222;
+    let mut node = Mesh::new(mac(1), &KEY, 77);
+    let mut applied = 0;
+    for seq in 1..=200 {
+        applied += commands_applied(&mut node, 1_000, &sealed_command(FAKE_ORIGIN, newer, seq));
+    }
+    assert_eq!(applied, 200);
+    // If the older boot had restarted the window, seq 1 of the newer boot would pass.
+    assert_eq!(
+        commands_applied(&mut node, 2_000, &sealed_command(FAKE_ORIGIN, older, 1)),
+        0
+    );
+    assert_eq!(
+        commands_applied(&mut node, 2_000, &sealed_command(FAKE_ORIGIN, newer, 1)),
+        0
+    );
+    assert_eq!(
+        commands_applied(&mut node, 2_000, &sealed_command(FAKE_ORIGIN, newer, 201)),
+        1
+    );
+}
+
+#[test]
+fn a_recorded_command_does_not_reapply_after_the_ring_rolls() {
+    let boot = (5 << 12) | 0x111;
+    let mut node = Mesh::new(mac(1), &KEY, 77);
+    let recorded = sealed_command(FAKE_ORIGIN, boot, 1);
+    assert_eq!(commands_applied(&mut node, 1_000, &recorded), 1);
+    // Enough newer frames that the recorded one has left the fingerprint ring.
+    for seq in 2..=(2 * SEEN as u32 + 1) {
+        assert_eq!(
+            commands_applied(&mut node, 1_000, &sealed_command(FAKE_ORIGIN, boot, seq)),
+            1
+        );
+    }
+    assert_eq!(commands_applied(&mut node, 2_000, &recorded), 0);
+}
+
+#[test]
+fn a_frame_from_a_newer_boot_is_accepted_and_replaces_the_old_window() {
+    let older = (5 << 12) | 0x111;
+    let newer = (6 << 12) | 0x222;
+    let mut node = Mesh::new(mac(1), &KEY, 77);
+    for seq in 1..=200 {
+        commands_applied(&mut node, 1_000, &sealed_command(FAKE_ORIGIN, older, seq));
+    }
+    assert_eq!(
+        commands_applied(&mut node, 2_000, &sealed_command(FAKE_ORIGIN, newer, 1)),
+        1
+    );
+    assert_eq!(
+        commands_applied(&mut node, 2_000, &sealed_command(FAKE_ORIGIN, older, 300)),
+        0
+    );
+}
+
+#[test]
+fn an_origin_silent_for_ten_minutes_is_accepted_again_on_a_wrapping_clock() {
+    let newer = (5 << 12) | 0x111;
+    let older = (4 << 12) | 0x222;
+    let start = u32::MAX - 1_000;
+    let mut node = Mesh::new(mac(1), &KEY, 77);
+    assert_eq!(
+        commands_applied(&mut node, start, &sealed_command(FAKE_ORIGIN, newer, 1)),
+        1
+    );
+    // Still within the ten minutes, so the older boot is refused.
+    let edge = start.wrapping_add(ORIGIN_SILENCE_MS);
+    assert_eq!(
+        commands_applied(&mut node, edge, &sealed_command(FAKE_ORIGIN, older, 1)),
+        0
+    );
+    // Silent past ten minutes: the documented window, where an older boot is accepted once.
+    let past = edge.wrapping_add(1);
+    assert_eq!(
+        commands_applied(&mut node, past, &sealed_command(FAKE_ORIGIN, older, 1)),
+        1
+    );
+}
+
+#[test]
+fn a_rebooted_board_is_heard_again_over_the_air() {
+    let mut sim = Sim::new(3, &chain(3), 100);
+    sim.run_ms(20_000);
+    assert!(sim.report(2, 1));
+    sim.run_ms(1_000);
+    assert_eq!(sim.arrived(2), vec![1]);
+
+    // Node 2 reboots. Its counter goes one past the one it had at its first boot.
+    let first_boot = 1000 + 2 * 137;
+    let (_, boot) = next_boot(Some(counter_of(first_boot)), 0xABC);
+    sim.nodes[2] = Mesh::new(mac(2), &KEY, boot);
+    sim.run_ms(20_000);
+    assert_eq!(sim.nodes[2].rank, 2);
+    assert!(sim.report(2, 7));
+    sim.run_ms(1_000);
+    assert!(sim.arrived(2).contains(&7), "{:?}", sim.arrived(2));
+}
+
+#[test]
+fn a_ping_crosses_four_hops_down_by_unicast_alone() {
+    let mut sim = Sim::new(5, &chain(5), 100);
+    sim.run_ms(20_000);
+    assert!(sim.report(4, 1));
+    sim.run_ms(1_000);
+    let target = sim.id(4);
+    assert!(sim.send_ping(target, 7));
+    sim.run_ms(1_000);
+    assert_eq!(
+        sim.pings_arrived(7),
+        vec![3],
+        "one arrival, after three forwards"
+    );
+    assert_eq!(sim.unicast_pings, 4, "one unicast per hop");
+    assert_eq!(sim.broadcast_pings, 0, "no broadcast carried the ping");
+}
+
+#[test]
+fn a_route_unused_for_a_minute_expires_and_the_root_counts_the_drop() {
+    let mut sim = Sim::new(5, &chain(5), 100);
+    sim.run_ms(20_000);
+    assert!(sim.report(4, 1));
+    sim.run_ms(1_000);
+    let target = sim.id(4);
+    assert!(sim.send_ping(target, 1));
+    sim.run_ms(61_000);
+    assert!(!sim.send_ping(target, 2));
+    assert_eq!(sim.nodes[0].down_drops, 1);
+    sim.run_ms(1_000);
+    assert!(sim.pings_arrived(2).is_empty());
+    assert_eq!(sim.pings_arrived(1).len(), 1, "the live route delivered");
+}
+
+#[test]
+fn a_target_that_moved_is_reached_again_after_its_next_report() {
+    // Node 4 hangs off node 1 until it moves under node 2.
+    let mut sim = Sim::new(5, &[(0, 1), (1, 2), (2, 3), (1, 4)], 100);
+    sim.run_ms(20_000);
+    assert!(sim.report(4, 1));
+    sim.run_ms(1_000);
+    sim.set_link(1, 4, 0);
+    sim.set_link(2, 4, 100);
+    // Node 4 keeps its old parent until that parent's beacons time out, and sends
+    // nothing up until then. So the root and node 1 still point the old way.
+    sim.run_ms(3_000);
+    let target = sim.id(4);
+    assert!(sim.send_ping(target, 2));
+    sim.run_ms(1_000);
+    assert!(
+        sim.pings_arrived(2).is_empty(),
+        "a ping reached a board that moved"
+    );
+    // The switch to node 2 sends a Route frame up, then the board reports.
+    sim.run_ms(12_000);
+    assert!(sim.report(4, 3), "the moved board has no parent yet");
+    sim.run_ms(1_000);
+    assert!(sim.send_ping(target, 4));
+    sim.run_ms(1_000);
+    assert_eq!(sim.pings_arrived(4).len(), 1, "the new route delivered");
+}
+
+#[test]
+fn a_failed_unicast_to_a_child_leaves_the_parent_alone() {
+    let mut sim = Sim::new(3, &chain(3), 100);
+    sim.run_ms(20_000);
+    assert!(sim.report(2, 1));
+    sim.run_ms(1_000);
+    let target = sim.id(2);
+    let parent = sim.id(0);
+    let changes = sim.parents[1].len();
+    sim.set_link(1, 2, 0);
+    // Each failed frame is tried three times, and there are more of them than
+    // `PARENT_FAILURES`, so a child's failures would drop the parent if they counted.
+    let frames = PARENT_FAILURES as u64 + 2;
+    for value in 0..frames as u32 {
+        assert!(sim.send_ping(target, value));
+        sim.run_ms(100);
+    }
+    sim.run_ms(1_000);
+    let tries = TX_RETRIES as u64 + 1;
+    assert_eq!(
+        sim.unicast_pings,
+        frames + frames * tries,
+        "each frame tried three times"
+    );
+    assert_eq!(sim.nodes[1].parent().map(|entry| entry.id), Some(parent));
+    assert_eq!(sim.parents[1].len(), changes, "node 1 changed parent");
+    assert_eq!(sim.nodes[1].rank, 1);
+}
+
+#[test]
+fn only_the_root_sends_downward_frames_of_a_downward_kind() {
+    let mut sim = Sim::new(3, &chain(3), 100);
+    sim.run_ms(20_000);
+    let now = sim.now;
+    let target = sim.id(2);
+    assert!(!sim.nodes[1].send_down(now, target, FrameKind::Ping, &[0; 4]));
+    assert!(!sim.nodes[0].send_down(now, target, FrameKind::Probe, &[0; 4]));
+    assert!(!sim.nodes[0].send_down(now, target, FrameKind::Beacon, &[0; 4]));
+    assert!(!sim.nodes[0].send_down(now, target, FrameKind::Ping, &[0; 215]));
+    assert!(sim.nodes[0].send_down(now, target, FrameKind::Ping, &[0; 214]));
+}
+
+#[test]
+fn a_downward_frame_too_short_for_a_target_is_dropped_and_counted() {
+    let mut node = Mesh::new(mac(1), &KEY, 1000);
+    let head = Frame {
+        kind: FrameKind::Ping,
+        ttl: 16,
+        hops: 0,
+        origin: FAKE_ORIGIN,
+        boot: 5,
+        seq: 1,
+    };
+    let mut out = [0u8; MAX_FRAME];
+    let length = Sealer::new(&KEY)
+        .seal(&head, &[1, 2, 3], &mut out)
+        .expect("payload fits");
+    let mut events = 0;
+    node.receive(1000, mac(0), -50, &out[..length], &mut |_| events += 1);
+    assert_eq!(node.down_drops, 1);
+    assert_eq!(events, 0);
+}
+
+/// `count` distinct test addresses, starting at `first`.
+fn addresses(first: usize, count: usize) -> Vec<[u8; 6]> {
+    (first..first + count).map(mac).collect()
+}
+
+/// A Watch frame sealed as `origin` would send it, with `payload` as the body.
+fn sealed_watch(origin: u32, boot: u32, seq: u32, payload: &[u8]) -> Vec<u8> {
+    let head = Frame {
+        kind: FrameKind::Watch,
+        ttl: 16,
+        hops: 0,
+        origin,
+        boot,
+        seq,
+    };
+    let mut out = [0u8; MAX_FRAME];
+    let length = Sealer::new(&KEY)
+        .seal(&head, payload, &mut out)
+        .expect("fits");
+    out[..length].to_vec()
+}
+
+/// A Watch body with list `id` and the given addresses, as the wire carries it.
+fn watch_body(id: u16, list: &[[u8; 6]]) -> Vec<u8> {
+    let mut addresses = [[0u8; 6]; WATCH_MAX];
+    addresses[..list.len()].copy_from_slice(list);
+    let mut out = [0u8; Watch::MAX_WIRE];
+    let length = Watch {
+        id,
+        count: list.len() as u8,
+        addresses,
+    }
+    .encode(&mut out);
+    out[..length].to_vec()
+}
+
+impl Sim {
+    /// The root floods a paging list, and records it as its own board would.
+    fn send_watch(&mut self, list: &[[u8; 6]]) -> bool {
+        let (arrivals, commands, parents, watched) = (
+            &mut self.arrivals,
+            &mut self.commands[0],
+            &mut self.parents[0],
+            &mut self.watched[0],
+        );
+        let mut root_sink = sink(arrivals, commands, parents, watched);
+        self.nodes[0].send_watch(list, &mut root_sink)
+    }
+}
+
+#[test]
+fn a_watch_list_reaches_every_board_over_hops() {
+    let mut sim = Sim::new(4, &chain(4), 100);
+    sim.run_ms(20_000);
+    let list = addresses(50, 3);
+    assert!(sim.send_watch(&list));
+    sim.run_ms(3_000);
+    for index in 0..4 {
+        assert_eq!(
+            sim.watched[index].as_deref(),
+            Some(list.as_slice()),
+            "board {index}"
+        );
+    }
+}
+
+#[test]
+fn an_empty_watch_list_clears_the_one_before() {
+    let mut sim = Sim::new(3, &chain(3), 100);
+    sim.run_ms(20_000);
+    let list = addresses(60, 2);
+    assert!(sim.send_watch(&list));
+    sim.run_ms(3_000);
+    assert_eq!(sim.watched[2].as_deref(), Some(list.as_slice()));
+
+    assert!(sim.send_watch(&[]));
+    sim.run_ms(3_000);
+    for index in 0..3 {
+        assert_eq!(
+            sim.watched[index],
+            Some(Vec::new()),
+            "board {index} cleared"
+        );
+    }
+}
+
+#[test]
+fn a_watch_of_the_wrong_length_or_count_is_refused_and_not_forwarded() {
+    let mut node = Mesh::new(mac(1), &KEY, 1000);
+    let list = addresses(70, 2);
+
+    // A count of 17, with the 102 bytes that count needs.
+    let mut over = vec![9, 0, 17];
+    over.extend_from_slice(&[0x77; 17 * 6]);
+    // A count of 2 with only one address after it.
+    let mut short = watch_body(9, &list);
+    short.truncate(3 + 6);
+    // A count of 1 with one address and one byte more.
+    let mut long = watch_body(9, &list[..1]);
+    long.push(0);
+
+    let mut events = 0;
+    for (seq, body) in [over, short, long].iter().enumerate() {
+        let frame = sealed_watch(FAKE_ORIGIN, 5, seq as u32 + 1, body);
+        node.receive(1000, mac(0), -50, &frame, &mut |_| events += 1);
+    }
+    assert_eq!(node.rx_bad, 3, "every bad list is counted");
+    assert_eq!(events, 0, "none reached the board");
+    assert!(node.next_tx().is_none(), "none was forwarded");
+}
+
+#[test]
+fn an_older_watch_list_is_ignored_and_ids_compare_across_the_wrap() {
+    let mut node = Mesh::new(mac(1), &KEY, 1000);
+    let mut applied = Vec::new();
+    // Each offer is a new frame from the same origin, so only its id decides.
+    for (seq, id) in [0xFFFE, 0x0001, 0xFFFE].into_iter().enumerate() {
+        let body = watch_body(id, &addresses(80, 1));
+        let frame = sealed_watch(FAKE_ORIGIN, 5, seq as u32 + 1, &body);
+        node.receive(1000, mac(0), -50, &frame, &mut |event| {
+            if let Event::Watch { count, addresses } = event {
+                applied.push((count, addresses[0]));
+            }
+        });
+    }
+    // 0x0001 is newer than 0xFFFE across the wrap. 0xFFFE after it is older.
+    assert_eq!(applied, vec![(1, mac(80)), (1, mac(80))]);
+    assert!(node.next_tx().is_some(), "the newer list was forwarded");
+}
+
+#[test]
+fn the_root_refuses_more_than_sixteen_addresses() {
+    let mut root = Mesh::new(mac(0), &KEY, (5 << 12) | 0x111);
+    let mut events = 0;
+    assert!(!root.send_watch(&addresses(0, WATCH_MAX + 1), &mut |_| events += 1));
+    assert_eq!(events, 0);
+    assert!(root.next_tx().is_none(), "nothing was queued");
+}
+
+#[test]
+fn the_root_numbers_at_most_sixteen_lists_in_one_boot() {
+    let mut root = Mesh::new(mac(0), &KEY, (5 << 12) | 0x111);
+    for _ in 0..16 {
+        assert!(root.send_watch(&addresses(90, 1), &mut quiet));
+        while root.next_tx().is_some() {
+            root.tx_done(0, true, &mut quiet);
+        }
+    }
+    assert!(
+        !root.send_watch(&addresses(90, 1), &mut quiet),
+        "a seventeenth list in one boot would repeat an id, so it is refused"
+    );
+}
+
+// ---- GATT client (T1.10) ----
+
+/// The address the whitelist tests connect to, and one that is never listed.
+const LISTED: [u8; 6] = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x01];
+const UNLISTED: [u8; 6] = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x02];
+
+/// A request as the host sends it: id, operation, then the body.
+fn gatt_request(id: u16, op: u8, body: &[u8]) -> Vec<u8> {
+    let mut out = id.to_le_bytes().to_vec();
+    out.push(op);
+    out.extend_from_slice(body);
+    out
+}
+
+fn connect_request(id: u16, address: [u8; 6], kind: u8) -> Vec<u8> {
+    gatt_request(id, 0, &[address.as_slice(), &[kind]].concat())
+}
+
+fn write_request(id: u16, handle: u16, value: &[u8]) -> Vec<u8> {
+    gatt_request(id, 1, &[handle.to_le_bytes().as_slice(), value].concat())
+}
+
+fn handle_request(id: u16, op: u8, handle: u16) -> Vec<u8> {
+    gatt_request(id, op, &handle.to_le_bytes())
+}
+
+fn whitelist_request(id: u16, list: &[[u8; 6]]) -> Vec<u8> {
+    let addresses: Vec<u8> = list.iter().flatten().copied().collect();
+    gatt_request(id, 5, &[&[list.len() as u8], addresses.as_slice()].concat())
+}
+
+/// The answer in `reply`, or a panic if it is not one.
+fn answered(reply: Option<Reply>) -> (u16, Status) {
+    match reply {
+        Some(Reply::Answer { id, status, .. }) => (id, status),
+        other => panic!("expected an answer, got {other:?}"),
+    }
+}
+
+/// A client whose whitelist holds `LISTED`, and that is idle.
+fn listed_client() -> Client {
+    let mut client = Client::new();
+    assert_eq!(
+        answered(client.request(0, &whitelist_request(1, &[LISTED]))),
+        (1, Status::Ok)
+    );
+    client
+}
+
+/// Connects request `id` to `LISTED` through the whole setup. Returns with the
+/// link open.
+fn open_link(client: &mut Client, now: u32, id: u16) {
+    assert!(client
+        .request(now, &connect_request(id, LISTED, 0))
+        .is_none());
+    assert_eq!(
+        client.take_act(),
+        Some(Act::Open {
+            address: LISTED,
+            address_kind: 0
+        })
+    );
+    assert!(client.done(now, Done::Opened(true)).is_none());
+    assert_eq!(client.take_act(), Some(Act::Mtu));
+    assert!(client.done(now, Done::Mtu(true)).is_none());
+    assert_eq!(client.take_act(), Some(Act::Search));
+    assert_eq!(
+        answered(client.done(now, Done::Searched(true))),
+        (id, Status::Ok)
+    );
+}
+
+#[test]
+fn a_whitelist_that_drops_the_connected_device_closes_the_link() {
+    let mut client = listed_client();
+    open_link(&mut client, 10, 2);
+    assert_eq!(
+        answered(client.request(20, &whitelist_request(3, &[UNLISTED]))),
+        (3, Status::Ok)
+    );
+    assert_eq!(client.take_act(), Some(Act::Close));
+    assert!(client.done(21, Done::Closed).is_none());
+    assert!(!client.link_busy());
+}
+
+#[test]
+fn a_whitelist_that_keeps_the_connected_device_leaves_the_link_up() {
+    let mut client = listed_client();
+    open_link(&mut client, 10, 2);
+    assert_eq!(
+        answered(client.request(20, &whitelist_request(3, &[UNLISTED, LISTED]))),
+        (3, Status::Ok)
+    );
+    assert!(client.take_act().is_none());
+    assert!(client.link_busy());
+}
+
+#[test]
+fn a_whitelist_that_drops_a_device_still_opening_cancels_it() {
+    let mut client = listed_client();
+    assert!(client.request(10, &connect_request(2, LISTED, 0)).is_none());
+    client.take_act();
+    assert_eq!(
+        answered(client.request(20, &whitelist_request(3, &[]))),
+        (3, Status::Ok)
+    );
+    assert_eq!(client.take_act(), Some(Act::Cancel));
+    // The open beat the cancel, so it is closed rather than left over.
+    assert!(client.done(21, Done::Opened(true)).is_none());
+    assert_eq!(client.take_act(), Some(Act::Close));
+    assert!(client.done(22, Done::Closed).is_none());
+    assert!(!client.link_busy());
+}
+
+#[test]
+fn a_whitelist_that_drops_a_device_in_setup_closes_it_and_setup_stops() {
+    let mut client = listed_client();
+    assert!(client.request(10, &connect_request(2, LISTED, 0)).is_none());
+    client.take_act();
+    assert!(client.done(11, Done::Opened(true)).is_none());
+    assert_eq!(client.take_act(), Some(Act::Mtu));
+    assert_eq!(
+        answered(client.request(20, &whitelist_request(3, &[]))),
+        (3, Status::Ok)
+    );
+    assert_eq!(client.take_act(), Some(Act::Close));
+    assert!(client.done(21, Done::Mtu(true)).is_none());
+    assert!(client.take_act().is_none(), "setup must not resume");
+    assert!(client.done(22, Done::Closed).is_none());
+    assert!(!client.link_busy());
+}
+
+#[test]
+fn a_connect_to_a_listed_address_runs_its_setup_and_then_answers_ok() {
+    let mut client = listed_client();
+    open_link(&mut client, 10, 2);
+    assert!(client.link_busy());
+    assert!(client.take_act().is_none());
+}
+
+#[test]
+fn an_empty_whitelist_refuses_every_connect() {
+    let mut client = Client::new();
+    assert_eq!(
+        answered(client.request(0, &connect_request(2, LISTED, 0))),
+        (2, Status::Refused)
+    );
+    assert!(client.take_act().is_none(), "no radio call was made");
+    assert!(!client.link_busy());
+}
+
+#[test]
+fn a_whitelist_of_none_clears_the_list_and_refuses_again() {
+    let mut client = listed_client();
+    assert_eq!(
+        answered(client.request(0, &whitelist_request(3, &[]))),
+        (3, Status::Ok)
+    );
+    assert_eq!(
+        answered(client.request(0, &connect_request(4, LISTED, 0))),
+        (4, Status::Refused)
+    );
+}
+
+#[test]
+fn a_connect_to_an_address_off_the_list_is_refused_and_never_opens() {
+    let mut client = listed_client();
+    assert_eq!(
+        answered(client.request(0, &connect_request(2, UNLISTED, 0))),
+        (2, Status::Refused)
+    );
+    assert!(client.take_act().is_none(), "the radio was never asked");
+    assert!(!client.link_busy());
+}
+
+#[test]
+fn a_new_whitelist_replaces_the_old_one_whole() {
+    let mut client = Client::new();
+    client.request(0, &whitelist_request(1, &[LISTED, UNLISTED]));
+    client.request(0, &whitelist_request(2, &[UNLISTED]));
+    assert_eq!(
+        answered(client.request(0, &connect_request(3, LISTED, 0))),
+        (3, Status::Refused),
+        "an address from the old list is gone"
+    );
+    assert!(client
+        .request(0, &connect_request(4, UNLISTED, 0))
+        .is_none());
+    assert!(client.take_act().is_some());
+}
+
+#[test]
+fn a_second_connect_answers_busy_while_opening_and_while_open() {
+    let mut client = listed_client();
+    assert!(client.request(0, &connect_request(2, LISTED, 0)).is_none());
+    assert_eq!(
+        answered(client.request(0, &connect_request(3, LISTED, 0))),
+        (3, Status::Busy),
+        "busy while opening"
+    );
+    client.take_act();
+    client.done(0, Done::Opened(true));
+    client.take_act();
+    client.done(0, Done::Mtu(true));
+    client.take_act();
+    client.done(0, Done::Searched(true));
+    assert_eq!(
+        answered(client.request(0, &connect_request(4, LISTED, 0))),
+        (4, Status::Busy),
+        "busy while open"
+    );
+}
+
+#[test]
+fn a_request_with_no_connection_answers_not_connected() {
+    let mut client = listed_client();
+    assert_eq!(
+        answered(client.request(0, &write_request(5, 0x21, &[1]))),
+        (5, Status::NotConnected)
+    );
+    assert_eq!(
+        answered(client.request(0, &handle_request(6, 2, 0x21))),
+        (6, Status::NotConnected),
+        "a read too"
+    );
+    assert!(client.take_act().is_none());
+}
+
+#[test]
+fn a_write_answers_once_the_radio_confirms_it() {
+    let mut client = listed_client();
+    open_link(&mut client, 0, 2);
+    assert!(client
+        .request(0, &write_request(7, 0x21, &[1, 2, 3]))
+        .is_none());
+    assert_eq!(
+        client.take_act(),
+        Some(Act::Write {
+            handle: 0x21,
+            len: 3,
+            value: with_bytes(&[1, 2, 3]),
+        })
+    );
+    assert_eq!(
+        answered(client.done(0, Done::Written(true))),
+        (7, Status::Ok)
+    );
+}
+
+fn with_bytes(bytes: &[u8]) -> [u8; VALUE_MAX] {
+    let mut out = [0u8; VALUE_MAX];
+    out[..bytes.len()].copy_from_slice(bytes);
+    out
+}
+
+#[test]
+fn a_read_returns_its_bytes_exactly_and_never_as_text() {
+    let mut client = listed_client();
+    open_link(&mut client, 0, 2);
+    assert!(client.request(0, &handle_request(8, 2, 0x30)).is_none());
+    assert_eq!(client.take_act(), Some(Act::Read { handle: 0x30 }));
+    let reply = client.done(
+        0,
+        Done::Read {
+            ok: true,
+            len: 3,
+            value: with_bytes(&[0xFF, 0x00, 0x80]),
+        },
+    );
+    let Some(Reply::Answer {
+        id,
+        status,
+        len,
+        value,
+    }) = reply
+    else {
+        panic!("expected an answer, got {reply:?}");
+    };
+    assert_eq!((id, status, len), (8, Status::Ok, 3));
+    assert_eq!(&value[..3], &[0xFF, 0x00, 0x80]);
+}
+
+#[test]
+fn a_subscribe_registers_and_then_enables_the_descriptor() {
+    let mut client = listed_client();
+    open_link(&mut client, 0, 2);
+    assert!(client.request(0, &handle_request(9, 3, 0x21)).is_none());
+    assert_eq!(client.take_act(), Some(Act::Register { handle: 0x21 }));
+    assert!(client.done(0, Done::Registered(true)).is_none());
+    assert_eq!(client.take_act(), Some(Act::Enable { handle: 0x21 }));
+    assert_eq!(
+        answered(client.done(0, Done::Written(true))),
+        (9, Status::Ok)
+    );
+}
+
+#[test]
+fn a_repeated_id_for_the_request_in_flight_is_ignored_and_not_sent_twice() {
+    let mut client = listed_client();
+    open_link(&mut client, 0, 2);
+    assert!(client.request(0, &write_request(7, 0x21, &[1])).is_none());
+    assert!(client.take_act().is_some());
+    assert!(
+        client.request(1, &write_request(7, 0x21, &[1])).is_none(),
+        "no answer yet"
+    );
+    assert!(client.take_act().is_none(), "the radio was not asked twice");
+    assert_eq!(
+        answered(client.done(2, Done::Written(true))),
+        (7, Status::Ok)
+    );
+}
+
+#[test]
+fn a_new_id_while_one_request_is_in_flight_answers_busy() {
+    let mut client = listed_client();
+    open_link(&mut client, 0, 2);
+    assert!(client.request(0, &write_request(7, 0x21, &[1])).is_none());
+    assert_eq!(
+        answered(client.request(0, &write_request(8, 0x21, &[1]))),
+        (8, Status::Busy)
+    );
+}
+
+#[test]
+fn a_lost_answer_is_sent_again_for_the_same_id_and_the_write_is_not_repeated() {
+    let mut client = listed_client();
+    open_link(&mut client, 0, 2);
+    assert!(client.request(0, &write_request(7, 0x21, &[1])).is_none());
+    client.take_act();
+    client.done(0, Done::Written(true));
+    // The host never heard the answer, so it asks again with the same id.
+    assert_eq!(
+        answered(client.request(1, &write_request(7, 0x21, &[1]))),
+        (7, Status::Ok)
+    );
+    assert!(client.take_act().is_none(), "the write was not sent again");
+}
+
+#[test]
+fn a_lost_connect_answer_is_sent_again_and_does_not_reconnect() {
+    let mut client = listed_client();
+    open_link(&mut client, 0, 2);
+    assert_eq!(
+        answered(client.request(1, &connect_request(2, LISTED, 0))),
+        (2, Status::Ok)
+    );
+    assert!(
+        client.take_act().is_none(),
+        "no second connection was opened"
+    );
+}
+
+#[test]
+fn a_request_past_its_timeout_answers_timed_out_and_drops_the_link() {
+    let mut client = listed_client();
+    open_link(&mut client, 0, 2);
+    assert!(client.request(100, &write_request(9, 0x21, &[1])).is_none());
+    client.take_act();
+    assert!(client.tick(100 + REQUEST_MS - 1).is_none(), "not yet");
+    assert_eq!(
+        answered(client.tick(100 + REQUEST_MS)),
+        (9, Status::TimedOut)
+    );
+    assert_eq!(client.take_act(), Some(Act::Close), "the link is dropped");
+    assert!(client.link_busy(), "closing until the radio confirms");
+    assert_eq!(
+        answered(client.request(5_000, &write_request(10, 0x21, &[1]))),
+        (10, Status::NotConnected)
+    );
+    assert!(client.done(5_000, Done::Closed).is_none());
+    assert!(!client.link_busy());
+}
+
+#[test]
+fn a_connect_that_never_finishes_times_out_and_cancels_the_open() {
+    let mut client = listed_client();
+    assert!(client.request(0, &connect_request(2, LISTED, 0)).is_none());
+    client.take_act();
+    assert!(client.tick(CONNECT_MS - 1).is_none());
+    assert_eq!(answered(client.tick(CONNECT_MS)), (2, Status::TimedOut));
+    assert_eq!(client.take_act(), Some(Act::Cancel));
+}
+
+#[test]
+fn a_late_result_for_a_timed_out_request_is_ignored() {
+    let mut client = listed_client();
+    open_link(&mut client, 0, 2);
+    assert!(client.request(0, &write_request(9, 0x21, &[1])).is_none());
+    client.take_act();
+    client.tick(REQUEST_MS);
+    client.take_act();
+    assert!(
+        client.done(REQUEST_MS + 1, Done::Written(true)).is_none(),
+        "the stack finished a write nobody is waiting for"
+    );
+    assert_eq!(
+        answered(client.request(REQUEST_MS + 2, &connect_request(11, LISTED, 0))),
+        (11, Status::Busy),
+        "still closing, so a connect waits"
+    );
+    client.done(REQUEST_MS + 3, Done::Closed);
+    assert!(client
+        .request(REQUEST_MS + 4, &connect_request(12, LISTED, 0))
+        .is_none());
+}
+
+#[test]
+fn a_closing_link_the_radio_never_confirms_goes_idle_after_a_timeout() {
+    let mut client = listed_client();
+    open_link(&mut client, 0, 2);
+    assert!(client.request(0, &write_request(9, 0x21, &[1])).is_none());
+    client.take_act();
+    client.tick(REQUEST_MS);
+    client.take_act();
+    assert!(client.link_busy());
+    client.tick(2 * REQUEST_MS);
+    assert!(
+        !client.link_busy(),
+        "a lost confirmation cannot block for good"
+    );
+}
+
+#[test]
+fn a_disconnect_answers_ok_once_the_radio_confirms_the_close() {
+    let mut client = listed_client();
+    open_link(&mut client, 0, 2);
+    assert!(client.request(0, &gatt_request(3, 4, &[])).is_none());
+    assert_eq!(client.take_act(), Some(Act::Close));
+    assert_eq!(answered(client.done(1, Done::Closed)), (3, Status::Ok));
+    assert!(!client.link_busy());
+}
+
+#[test]
+fn a_link_that_drops_on_its_own_is_reported_once_as_closed() {
+    let mut client = listed_client();
+    open_link(&mut client, 0, 2);
+    assert_eq!(
+        client.done(0, Done::Closed),
+        Some(Reply::Closed { link: 2 })
+    );
+    assert!(client.done(1, Done::Closed).is_none(), "reported once");
+}
+
+#[test]
+fn a_write_in_flight_when_the_link_drops_answers_not_connected() {
+    let mut client = listed_client();
+    open_link(&mut client, 0, 2);
+    client.request(0, &write_request(7, 0x21, &[1]));
+    client.take_act();
+    assert_eq!(
+        answered(client.done(1, Done::Closed)),
+        (7, Status::NotConnected)
+    );
+}
+
+#[test]
+fn a_failed_open_answers_failed_and_the_node_goes_idle() {
+    let mut client = listed_client();
+    client.request(0, &connect_request(2, LISTED, 0));
+    client.take_act();
+    assert_eq!(
+        answered(client.done(0, Done::Opened(false))),
+        (2, Status::Failed)
+    );
+    assert!(!client.link_busy());
+}
+
+#[test]
+fn a_failed_mtu_closes_the_link_it_made_and_answers_failed() {
+    let mut client = listed_client();
+    client.request(0, &connect_request(2, LISTED, 0));
+    client.take_act();
+    client.done(0, Done::Opened(true));
+    assert_eq!(client.take_act(), Some(Act::Mtu));
+    assert_eq!(
+        answered(client.done(0, Done::Mtu(false))),
+        (2, Status::Failed)
+    );
+    assert_eq!(client.take_act(), Some(Act::Close), "no link is left over");
+}
+
+#[test]
+fn an_open_that_completes_after_the_node_gave_up_is_closed() {
+    let mut client = listed_client();
+    client.request(0, &connect_request(2, LISTED, 0));
+    client.take_act();
+    client.tick(CONNECT_MS);
+    assert_eq!(client.take_act(), Some(Act::Cancel));
+    assert!(client.done(CONNECT_MS, Done::Opened(true)).is_none());
+    assert_eq!(
+        client.take_act(),
+        Some(Act::Close),
+        "the late link is closed"
+    );
+}
+
+#[test]
+fn a_stale_result_for_another_operation_is_ignored() {
+    let mut client = listed_client();
+    open_link(&mut client, 0, 2);
+    client.request(0, &write_request(7, 0x21, &[1]));
+    client.take_act();
+    let empty = Done::Read {
+        ok: true,
+        len: 0,
+        value: [0; VALUE_MAX],
+    };
+    assert!(client.done(0, empty).is_none());
+    assert_eq!(
+        answered(client.done(0, Done::Written(true))),
+        (7, Status::Ok),
+        "the write is still waiting for its own result"
+    );
+}
+
+#[test]
+fn a_notification_goes_up_as_its_bytes_only_while_connected() {
+    let mut client = listed_client();
+    let mut value = [0u8; NOTIFY_MAX];
+    value[..3].copy_from_slice(&[0xFF, 0x00, 0x80]);
+    let note = Done::Notify {
+        handle: 0x21,
+        len: 3,
+        value,
+    };
+    assert!(client.done(0, note).is_none(), "no link, no notification");
+    open_link(&mut client, 0, 2);
+    assert_eq!(
+        client.done(1, note),
+        Some(Reply::Notify {
+            link: 2,
+            handle: 0x21,
+            len: 3,
+            value,
+        })
+    );
+}
+
+#[test]
+fn a_malformed_request_answers_malformed_when_its_id_can_be_read() {
+    let mut client = listed_client();
+    // A write whose body is one byte, too short for a handle.
+    assert_eq!(
+        answered(client.request(0, &[9, 0, 1, 0x21])),
+        (9, Status::Malformed)
+    );
+    assert!(client.request(0, &[9]).is_none(), "no id, no answer");
+}
+
+#[test]
+fn a_connect_with_an_address_type_that_is_not_public_or_random_is_malformed() {
+    let mut client = listed_client();
+    assert_eq!(
+        answered(client.request(0, &connect_request(2, LISTED, 2))),
+        (2, Status::Malformed)
+    );
+    assert!(client.take_act().is_none());
+}
+
+#[test]
+fn a_whitelist_of_nine_addresses_is_malformed_and_changes_nothing() {
+    let mut client = listed_client();
+    let nine = [UNLISTED; 9];
+    assert_eq!(
+        answered(client.request(0, &whitelist_request(2, &nine))),
+        (2, Status::Malformed)
+    );
+    assert!(
+        client.request(0, &connect_request(3, LISTED, 0)).is_none(),
+        "the old list still holds, so the connect is let through"
+    );
+    assert!(client.take_act().is_some());
+}
+
+#[test]
+fn a_gatt_request_reaches_its_node_and_the_answer_comes_back_up() {
+    let mut sim = Sim::new(5, &chain(5), 100);
+    sim.run_ms(20_000);
+    assert!(sim.report(4, 1));
+    sim.run_ms(1_000);
+    let target = sim.id(4);
+    let request = gatt_request(21, 2, &0x30u16.to_le_bytes());
+    let now = sim.now;
+    assert!(sim.nodes[0].send_down(now, target, FrameKind::Gatt, &request));
+    sim.run_ms(1_000);
+    let arrived = sim
+        .arrivals
+        .iter()
+        .find(|entry| entry.kind == FrameKind::Gatt)
+        .expect("the request reached its node");
+    assert_eq!(arrived.payload, request, "the bytes are the host's bytes");
+    assert_eq!(arrived.hops, 3, "three forwards on the way down");
+
+    // The node answers, and the answer goes up as bytes, not as a Ping.
+    let answer = [21u8, 0, 1, 0, 0xde, 0xad];
+    let now = sim.now;
+    assert!(sim.nodes[4].send_up(FrameKind::GattUp, &answer, now, &mut quiet));
+    sim.run_ms(1_000);
+    let up = sim
+        .arrivals
+        .iter()
+        .find(|entry| entry.kind == FrameKind::GattUp)
+        .expect("the answer reached the root");
+    assert_eq!(up.payload, answer);
+    assert_eq!(up.origin, target);
+}
+
+#[test]
+fn only_the_root_sends_gatt_requests_and_an_answer_kind_is_never_sent_down() {
+    let mut sim = Sim::new(3, &chain(3), 100);
+    sim.run_ms(20_000);
+    assert!(sim.report(2, 1));
+    sim.run_ms(1_000);
+    let now = sim.now;
+    let target = sim.id(2);
+    assert!(!sim.nodes[1].send_down(now, target, FrameKind::Gatt, &[0; 3]));
+    assert!(!sim.nodes[0].send_down(now, target, FrameKind::GattUp, &[0; 3]));
+    assert!(sim.nodes[0].send_down(now, target, FrameKind::Gatt, &[0; 3]));
 }

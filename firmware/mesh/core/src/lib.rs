@@ -11,9 +11,12 @@
 #![cfg_attr(not(test), no_std)]
 
 pub mod ad;
+pub mod gatt;
 pub mod mesh;
 pub mod names;
+pub mod ota;
 pub mod sightings;
+pub mod stats;
 pub mod wire;
 
 pub use mesh::{Dest, Event, Mesh, Tx, NO_RANK};

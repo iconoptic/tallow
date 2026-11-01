@@ -10,6 +10,18 @@ pub enum Kind {
     Classic = 2,
 }
 
+impl Kind {
+    /// The kind a record's code names, or `None` for a code this build does not know.
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(Self::BlePublic),
+            1 => Some(Self::BleRandom),
+            2 => Some(Self::Classic),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 struct Entry {
     addr: [u8; 6],
@@ -103,7 +115,9 @@ impl<const N: usize> Sightings<N> {
             if entry.count == 0 {
                 continue;
             }
-            let age = now_ms.wrapping_sub(entry.last_ms) / 1000;
+            // The Bluetooth task can stamp a sighting after the main loop read its
+            // clock. That is no age at all, not most of a wrapped clock.
+            let age = (now_ms.wrapping_sub(entry.last_ms) as i32).max(0) as u32 / 1000;
             let record = &mut out[written..written + RECORD];
             record[..6].copy_from_slice(&entry.addr);
             record[6] = entry.kind;
@@ -117,9 +131,85 @@ impl<const N: usize> Sightings<N> {
     }
 }
 
+/// One sighting, read back from a Report payload.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct Record {
+    pub addr: [u8; 6],
+    /// The raw code, so a code this build does not know is kept, not dropped.
+    pub kind: u8,
+    pub best: i8,
+    pub count: u8,
+    pub age_s: u8,
+}
+
+/// The records in a Report payload. A partial record at the end is not returned,
+/// as `parse_report` in `tools/mesh_host.py` ignores it.
+pub struct Records<'a> {
+    chunks: core::slice::ChunksExact<'a, u8>,
+}
+
+impl<'a> Records<'a> {
+    pub fn new(payload: &'a [u8]) -> Self {
+        Self {
+            chunks: payload.chunks_exact(RECORD),
+        }
+    }
+}
+
+impl Iterator for Records<'_> {
+    type Item = Record;
+
+    fn next(&mut self) -> Option<Record> {
+        let record = self.chunks.next()?;
+        Some(Record {
+            addr: record.get(..6)?.try_into().ok()?,
+            kind: *record.get(6)?,
+            best: *record.get(7)? as i8,
+            count: *record.get(8)?,
+            age_s: *record.get(9)?,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_report_round_trips_through_the_table_and_the_records() {
+        let mut table = Sightings::<4>::new();
+        table.observe(0, [7; 6], Kind::Classic, -71);
+        table.observe(0, [7; 6], Kind::Classic, -64);
+        table.observe(0, [9; 6], Kind::BleRandom, -90);
+        let mut out = [0u8; 40];
+        let length = table.drain(3000, &mut out);
+        let records: Vec<Record> = Records::new(&out[..length]).collect();
+        assert_eq!(records.len(), 2);
+        let first = records.iter().find(|record| record.addr == [7; 6]).unwrap();
+        assert_eq!(first.kind, Kind::Classic as u8);
+        assert_eq!((first.best, first.count, first.age_s), (-64, 2, 3));
+        let second = records.iter().find(|record| record.addr == [9; 6]).unwrap();
+        assert_eq!((second.kind, second.best, second.count), (1, -90, 1));
+    }
+
+    #[test]
+    fn a_partial_report_record_is_ignored() {
+        let mut out = [0u8; RECORD + 2];
+        out[..RECORD].copy_from_slice(&[0xAA; RECORD]);
+        assert_eq!(Records::new(&out).count(), 1);
+        assert_eq!(Records::new(&[0u8; 9]).count(), 0);
+    }
+
+    #[test]
+    fn an_unknown_kind_code_is_kept_and_named_by_from_u8_as_none() {
+        let record = Records::new(&[1, 2, 3, 4, 5, 6, 9, 0xB0, 1, 0])
+            .next()
+            .unwrap();
+        assert_eq!(record.kind, 9);
+        assert_eq!(record.best, -80);
+        assert_eq!(Kind::from_u8(record.kind), None);
+        assert_eq!(Kind::from_u8(2), Some(Kind::Classic));
+    }
 
     #[test]
     fn merges_repeats_and_keeps_the_strongest_signal() {
@@ -174,6 +264,24 @@ mod tests {
             seen += written / RECORD;
         }
         assert_eq!(seen, 8);
+    }
+
+    #[test]
+    fn a_sighting_newer_than_the_drain_clock_has_no_age() {
+        let mut table = Sightings::<1>::new();
+        table.observe(1000, [1; 6], Kind::BlePublic, -80);
+        let mut out = [0u8; RECORD];
+        table.drain(990, &mut out);
+        assert_eq!(out[9], 0);
+    }
+
+    #[test]
+    fn an_old_sighting_saturates_its_age() {
+        let mut table = Sightings::<1>::new();
+        table.observe(1000, [1; 6], Kind::BlePublic, -80);
+        let mut out = [0u8; RECORD];
+        table.drain(1000 + 300_000, &mut out);
+        assert_eq!(out[9], 255);
     }
 
     #[test]
