@@ -6,6 +6,8 @@ Port the running panel with no visible change. The method: first pin the Python'
 
 ## T3.1 HTTP contract tests against the Python
 
+**Done (2026-10-31).** Passed against `--preview` on port 18765. Changing the expected capabilities `device` from `h7020` to `h7021` made it fail; that edit was reverted. The script header records the `needs-cam` skip for a live `GET /cams/{id}/stream` body. Preview served the light routes, so no case is `needs-light`.
+
 - **Tier:** Grok. **Needs:** nothing.
 - **Files:** new `tools/tests/panel_contract.py`.
 - **Do:** A standalone script taking `--base-url` and `--password-file`. It uses only the standard library. It runs against `.venv/bin/python app/h7020_panel.py --preview --port 18765 --password-file <file>`, which binds `127.0.0.1`, skips BLE, and uses `data/panel-preview/`. Write a throwaway password to a file in `/tmp` with mode 0600. Do not read `secrets/panel/`. Cover every route below: status, content type, JSON shape, the 401 without a cookie, redirects to `/login`, and bad input.
