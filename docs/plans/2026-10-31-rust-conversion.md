@@ -12,6 +12,8 @@ Move tallow's firmware and host runtime to Rust, and finish the mesh on the way.
 
 **Cross-check (2026-10-31):** five reviewers read phases 0 to 4 against the code. The fixes are in the tree, and the tasks here were rewritten to match. Both boards run that build. The tasks done since are ahead of the boards: see the note at the top of [p1-mesh.md](rust-conversion/p1-mesh.md).
 
+**Next:** [p6-grok-run.md](rust-conversion/p6-grok-run.md) has every task that needs no hardware. [hardware-checklist.md](rust-conversion/hardware-checklist.md) has the user's steps. [opus-review-prompt.md](rust-conversion/opus-review-prompt.md) goes to the planner after the run.
+
 **Agents start at [rust-conversion/agent-brief.md](rust-conversion/agent-brief.md).** It has the rules, the tiers, and the stop conditions.
 
 ## Scope

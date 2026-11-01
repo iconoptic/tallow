@@ -63,6 +63,7 @@ Enable **tallow**, a future **self-hosted universal smart-light controller** (BL
 | ESP32-S3, esp32-camera, MB0200 vendor docs | `references/vendor/` (hand-copied; `VERSIONS.tsv`) |
 | Extract ATT writes from Android HCI log | `tools/parse_btsnoop.py` |
 | Rust conversion plan | `docs/plans/2026-10-31-rust-conversion.md` (scope, settled decisions, phases); tasks in `docs/plans/rust-conversion/p0-foundation.md` to `p5-retire.md` |
+| Next work | `docs/plans/rust-conversion/p6-grok-run.md` (tasks that need no hardware), `hardware-checklist.md` (the user's steps), `opus-review-prompt.md` (review after the run); mutation scripts `tools/tests/mutants/` (G2 makes them runnable) |
 | Rust conversion agent brief | `docs/plans/rust-conversion/agent-brief.md` (rules, tiers, stop conditions; read before any task); guardrails in `.cursor/rules/rust-conversion.mdc` |
 | Every offline gate: core, daemon, host tool, panel tests, HTTP contract, node and cam fmt and builds | `tools/mesh.sh check` (`--fast` skips the node and cam firmware builds); list in `docs/01-bluetooth-server-hardware-and-proxies.md` |
 | Which board is on which port | `tools/mesh.sh ports` (opens no port, resets nothing) |
