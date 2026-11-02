@@ -1,10 +1,12 @@
 //! Firmware for the Keyestudio MB0200 camera `toby-cam-0`.
 //!
-//! It joins `tallow-iot` at `10.87.0.23` and serves MJPEG on port 8080.
+//! It joins `tallow-iot` at `10.87.0.21` and serves MJPEG on port 8080.
 //! Port 6053 accepts a TCP connection so the panel's status check can pass.
-//! Port 3232 takes one signed image, and the cam reboots into it. There is no
-//! Bluetooth and no fallback access point. Serial output is the USB Serial/JTAG
-//! port. None of this has run on a board.
+//! Port 3232 takes one signed image, and the cam reboots into it. The station
+//! and those listeners come up before the sensor starts, so a stuck sensor
+//! cannot keep the station off the air. There is no Bluetooth and no fallback
+//! access point. Serial output is the USB Serial/JTAG port. None of this has
+//! run on a board.
 
 #![warn(clippy::undocumented_unsafe_blocks)]
 
@@ -14,6 +16,10 @@ mod ota;
 mod push;
 mod serve;
 mod stream;
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
 
 use camera::Camera;
 use esp_idf_svc::hal::delay::FreeRtos;
@@ -36,6 +42,30 @@ fn boot() {
     println!("boot heap {heap} psram {psram}");
 }
 
+/// Bind 8080 and 6053. Retries until the stack accepts them.
+fn listen_panel() -> serve::Listeners {
+    loop {
+        match serve::Listeners::bind() {
+            Ok(listeners) => return listeners,
+            Err(err) => {
+                println!("listen failed: {err}");
+                FreeRtos::delay_ms(1000);
+            }
+        }
+    }
+}
+
+/// Start the sensor. A failure is a missing camera, and the station stays up.
+fn open_camera() -> Option<Camera> {
+    match Camera::init() {
+        Ok(camera) => Some(camera),
+        Err(err) => {
+            println!("camera init failed: {err}");
+            None
+        }
+    }
+}
+
 fn main() {
     sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
@@ -45,24 +75,8 @@ fn main() {
     // Without NVS, Wi-Fi still runs. The floor then refuses every push.
     let nvs = EspDefaultNvsPartition::take().ok();
     let versions = ota::Versions::open(nvs.clone());
-    let mut camera = match Camera::init() {
-        Ok(camera) => Some(camera),
-        Err(err) => {
-            println!("camera init failed: {err}");
-            None
-        }
-    };
     let mut link = net::join(nvs);
-    let mut logged_frame = false;
-    let mut listeners = loop {
-        match serve::Listeners::bind() {
-            Ok(listeners) => break listeners,
-            Err(err) => {
-                println!("listen failed: {err}");
-                FreeRtos::delay_ms(1000);
-            }
-        }
-    };
+    let mut listeners = listen_panel();
     let port = loop {
         match ota::bind() {
             Ok(port) => break port,
@@ -73,8 +87,45 @@ fn main() {
         }
     };
     let mut updates = ota::Listener::new(port, versions);
+    // The sensor can hang inside init. Accept the panel ports on another task
+    // until it returns, so that hang cannot leave the station unreachable.
+    // This task keeps the station. A second join cannot take the peripherals.
+    // OTA verify stays here too: it runs deep, and the accept stack is only
+    // for ports 8080 and 6053. The OTA socket is already bound.
+    let stop = Arc::new(AtomicBool::new(false));
+    let stop_flag = Arc::clone(&stop);
+    let accept = thread::Builder::new()
+        .name("accept".into())
+        .stack_size(8 * 1024)
+        .spawn(move || {
+            while !stop_flag.load(Ordering::Acquire) {
+                listeners.poll();
+                FreeRtos::delay_ms(200);
+            }
+            listeners
+        });
+    let (mut camera, mut listeners) = match accept {
+        Ok(handle) => {
+            let camera = open_camera();
+            stop.store(true, Ordering::Release);
+            let listeners = match handle.join() {
+                Ok(listeners) => listeners,
+                Err(_) => {
+                    println!("accept thread stopped");
+                    listen_panel()
+                }
+            };
+            (camera, listeners)
+        }
+        Err(err) => {
+            println!("accept thread failed: {err}");
+            let listeners = listen_panel();
+            (open_camera(), listeners)
+        }
+    };
+    let mut logged_frame = false;
     loop {
-        if !link.up() {
+        if !link.up() || !link.heard() {
             println!("wifi down");
             if link.reconnect().is_err() {
                 println!("wifi join failed");

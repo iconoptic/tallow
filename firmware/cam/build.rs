@@ -33,9 +33,7 @@ fn main() {
         panic!("{SECRETS_NOTE}");
     }
     if ssid.len() > 32 || password.len() > 64 {
-        panic!(
-            "firmware/cam/secrets.yaml wifi_ssid or wifi_password does not fit the Wi-Fi field"
-        );
+        panic!("firmware/cam/secrets.yaml wifi_ssid or wifi_password does not fit the Wi-Fi field");
     }
     if ssid != SSID {
         panic!("{SSID_NOTE}");

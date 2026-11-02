@@ -4,9 +4,10 @@
 //! ESPHome API, so accepting the connection is enough. The stream serves one
 //! client at a time: a second connection waits until the first one drops.
 //!
-//! All of this runs on the main task, with capture, OTA, and Wi-Fi. Socket
-//! timeouts restart on any progress, so a client that drips bytes would hold
-//! that task. The request and each frame get one whole deadline instead.
+//! Polled from one task at a time: the accept task while the sensor starts,
+//! then the main task, with capture, OTA, and Wi-Fi. Socket timeouts restart
+//! on any progress, so a client that drips bytes would hold that task. The
+//! request and each frame get one whole deadline instead.
 
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};

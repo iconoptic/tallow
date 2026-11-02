@@ -1,6 +1,6 @@
 //! Join `tallow-iot` as `toby-cam-0`.
 //!
-//! WPA2 is required. The address is static: `10.87.0.23/24`, gateway and DNS
+//! WPA2 is required. The address is static: `10.87.0.21/24`, gateway and DNS
 //! `10.87.0.1`. There is no DHCP client and no access-point configuration, so
 //! a failed join does not open a fallback network. Modem sleep stays on.
 //!
@@ -42,11 +42,23 @@ impl Link {
     pub fn reconnect(&mut self) -> Result<(), EspError> {
         self.wifi.connect()?;
         self.wifi.wait_netif_up()?;
-        modem_sleep()
+        stay_awake()
+    }
+
+    /// The driver still has an access-point record. After the AP drops the
+    /// station, this becomes false even when [`Link::up`] has not noticed yet.
+    pub fn heard(&self) -> bool {
+        // SAFETY: `info` is zeroed storage owned by this call. The getter writes
+        // that record and does not keep the pointer. Wi-Fi is already started.
+        // A failure means there is no access point.
+        unsafe {
+            let mut info: sys::wifi_ap_record_t = core::mem::zeroed();
+            sys::esp_wifi_sta_get_ap_info(&mut info) == sys::ESP_OK
+        }
     }
 }
 
-/// Start the station and return it once `10.87.0.23` is up.
+/// Start the station and return it once `10.87.0.21` is up.
 /// A bad bake spins here. It does not join an open network.
 pub fn join(nvs: Option<EspDefaultNvsPartition>) -> Link {
     let config = match client_config() {
@@ -114,7 +126,7 @@ fn start(
     let mut wifi = BlockingWifi::wrap(esp, sysloop)?;
     wifi.set_configuration(&Configuration::Client(config))?;
     wifi.start()?;
-    modem_sleep()?;
+    stay_awake()?;
     Ok(wifi)
 }
 
@@ -122,7 +134,7 @@ fn sta_netif() -> NetifConfiguration {
     let mut conf = NetifConfiguration::wifi_default_client();
     conf.ip_configuration = Some(Ipv4Configuration::Client(Ipv4Client::Fixed(
         ClientSettings {
-            ip: Ipv4Addr::new(10, 87, 0, 23),
+            ip: Ipv4Addr::new(10, 87, 0, 21),
             subnet: Subnet {
                 gateway: Ipv4Addr::new(10, 87, 0, 1),
                 mask: Mask(24),
@@ -137,16 +149,18 @@ fn sta_netif() -> NetifConfiguration {
 fn connect(wifi: &mut BlockingWifi<EspWifi<'static>>) -> Result<(), EspError> {
     wifi.connect()?;
     wifi.wait_netif_up()?;
-    modem_sleep()
+    stay_awake()
 }
 
-/// `WIFI_PS_MIN_MODEM`: the station stays associated and wakes for every DTIM
-/// beacon. That is the ESP-IDF default, and the sleep the ESPHome image used.
-fn modem_sleep() -> Result<(), EspError> {
+/// The station stays awake. On 2026-11-02 the access point removed
+/// `44:bd:8d:7a:51:60` with "disassociated due to inactivity" while this
+/// image was in modem sleep, and the station never associated again.
+/// This camera has no Bluetooth, so modem sleep is not required for coexistence.
+fn stay_awake() -> Result<(), EspError> {
     // SAFETY: esp_wifi_set_ps takes a power-save mode, not a pointer. Wi-Fi is
-    // already started, which is when ESP-IDF allows this call. The mode is the
-    // MIN_MODEM constant, not a value from the air.
-    sys::esp!(unsafe { sys::esp_wifi_set_ps(sys::wifi_ps_type_t_WIFI_PS_MIN_MODEM) })
+    // already started, which is when ESP-IDF allows this call. NONE is the
+    // mode constant, not a value from the air.
+    sys::esp!(unsafe { sys::esp_wifi_set_ps(sys::wifi_ps_type_t_WIFI_PS_NONE) })
 }
 
 fn halt() -> ! {

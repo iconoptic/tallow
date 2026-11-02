@@ -1,7 +1,7 @@
 """Send one signed image to a cam, and report what the cam said.
 
 Called by `tools/mesh.sh cam-push`, which has already refused every address but
-10.87.0.23. This repeats that check, and refuses an image signed for anything
+10.87.0.21. This repeats that check, and refuses an image signed for anything
 but the cam before it opens a socket. Run nothing else against a cam.
 
 The `.sig` file is 69 bytes: product, little-endian version, signature.
@@ -18,7 +18,7 @@ import socket
 import struct
 import sys
 
-ALLOWED = "10.87.0.23"
+ALLOWED = "10.87.0.21"
 PORT = 3232
 PRODUCT_CAM0 = 2
 # app0 and app1 in firmware/cam/partitions.csv.
