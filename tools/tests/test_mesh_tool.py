@@ -28,6 +28,79 @@ def shell(body: str, env: dict[str, str] | None = None) -> subprocess.CompletedP
     )
 
 
+class SessionGroup(unittest.TestCase):
+    def test_a_member_missing_from_this_login_is_the_group_to_join(self) -> None:
+        result = shell(
+            "group_missing_from_session dialout btgrant 'btgrant wheel' 'other,btgrant'"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr[-400:])
+        self.assertEqual(result.stdout.strip(), "dialout")
+
+    def test_a_group_already_in_this_login_is_not_joined_again(self) -> None:
+        result = shell(
+            "group_missing_from_session dialout btgrant 'btgrant dialout wheel' btgrant"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr[-400:])
+        self.assertEqual(result.stdout.strip(), "")
+
+    def test_someone_who_is_not_a_member_is_not_named(self) -> None:
+        result = shell("group_missing_from_session dialout btgrant 'btgrant wheel' other")
+        self.assertEqual(result.returncode, 0, result.stderr[-400:])
+        self.assertEqual(result.stdout.strip(), "")
+
+    def test_an_unwritable_port_is_refused_before_a_tool_starts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            port = Path(tmp) / "port"
+            port.write_text("")
+            port.chmod(0)
+            result = shell(f'take_port_group "{port}"')
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("is not writable by this login", result.stderr)
+
+    def test_a_missing_group_reexecs_once_under_sg(self) -> None:
+        # A stub sg stands in. The port is /dev/null, which is never opened.
+        with tempfile.TemporaryDirectory() as tmp:
+            stub = Path(tmp) / "sg"
+            stub.write_text("#!/bin/sh\nprintf '%s\\n' \"$1\" \"$3\" \"${MESH_PORT_GROUP:-}\"\nexit 42\n")
+            stub.chmod(0o755)
+            env = {**os.environ, "PATH": f"{tmp}{os.pathsep}{os.environ['PATH']}"}
+            result = shell(
+                'port_session_group() { printf "%s\\n" dialout; }\n'
+                "SCRIPT_ARGS=(flash /dev/ttyUSB0)\n"
+                "take_port_group /dev/null\n",
+                env=env,
+            )
+            self.assertEqual(result.returncode, 42, result.stderr[-400:])
+            lines = result.stdout.splitlines()
+            self.assertEqual(lines[0], "dialout")
+            self.assertIn("flash", lines[1])
+            self.assertIn("/dev/ttyUSB0", lines[1])
+            self.assertEqual(lines[2], "1")
+            self.assertIn("Joining group dialout", result.stderr)
+
+
+class BoardMac(unittest.TestCase):
+    def test_an_unknown_cell_accepts_the_chip(self) -> None:
+        result = shell("mac_matches_row unknown aa:bb:cc:dd:ee:ff")
+        self.assertEqual(result.returncode, 0, result.stderr[-400:])
+
+    def test_the_recorded_mac_accepts_that_chip(self) -> None:
+        result = shell("mac_matches_row 70:4B:CA:04:21:64 70:4b:ca:04:21:64")
+        self.assertEqual(result.returncode, 0, result.stderr[-400:])
+
+    def test_a_different_mac_is_a_different_board(self) -> None:
+        result = shell("mac_matches_row 70:4b:ca:04:21:64 20:9b:a9:99:1e:54")
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_the_bluetooth_address_is_the_base_plus_two(self) -> None:
+        result = shell("bt_mac 70:4b:ca:04:21:64")
+        self.assertEqual(result.returncode, 0, result.stderr[-400:])
+        self.assertEqual(result.stdout.strip(), "70:4b:ca:04:21:66")
+        result = shell("bt_mac aa:bb:cc:dd:ee:ff")
+        self.assertEqual(result.returncode, 0, result.stderr[-400:])
+        self.assertEqual(result.stdout.strip(), "aa:bb:cc:dd:ef:01")
+
+
 class PortGuards(unittest.TestCase):
     def test_a_usb_path_is_compared_as_text_not_as_a_number(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -46,6 +119,21 @@ class PortGuards(unittest.TestCase):
             self.assertEqual(shell(f'cam_port_ok "{boards}" 2.1').returncode, 0)
             self.assertNotEqual(shell(f'cam_port_ok "{boards}" 2.10').returncode, 0)
 
+    def test_a_different_usb_mac_is_not_the_path_s_board(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            boards = Path(tmp) / "boards.tsv"
+            boards.write_text(
+                "toby-cam-0\t44:bd:8d:7a:51:60\tesp32s3\t2\tnote\n"
+                "node-0\t70:4b:ca:04:21:64\tesp32\t7\tnote\n"
+            )
+            foreign = shell(f'BOARDS="{boards}"\nboard_name 2 "44:BD:8D:7C:20:C4"')
+            self.assertEqual(foreign.returncode, 0, foreign.stderr[-400:])
+            self.assertEqual(foreign.stdout.splitlines(), ["\t44:bd:8d:7c:20:c4"])
+            same = shell(f'BOARDS="{boards}"\nboard_name 9 "44:bd:8d:7a:51:60"')
+            self.assertEqual(same.stdout.splitlines(), ["toby-cam-0\t44:bd:8d:7a:51:60"])
+            shared = shell(f'BOARDS="{boards}"\nboard_name 7 0001')
+            self.assertEqual(shared.stdout.splitlines(), ["node-0\t"])
+
     def test_a_port_with_no_usb_path_matches_no_row(self) -> None:
         # A device whose USB path is unknown must not take a row that has no path.
         with tempfile.TemporaryDirectory() as tmp:
@@ -54,6 +142,23 @@ class PortGuards(unittest.TestCase):
             result = shell(f'BOARDS="{boards}"\nboard_field "" 3\necho end')
             self.assertEqual(result.stdout.split(), ["end"])
             self.assertNotEqual(shell(f'cam_port_ok "{boards}" ""').returncode, 0)
+
+
+class PanelPause(unittest.TestCase):
+    def test_a_port_command_asks_the_panel_to_pause_and_gives_the_port_back_on_exit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            pause = Path(tmp) / "data" / "mesh" / "pause"
+            result = shell(f'ROOT="{tmp}"\nPAUSE_FILE="{pause}"\nhold_port /nonexistent/port\ntest -e "$PAUSE_FILE" && echo held')
+            self.assertEqual(result.returncode, 0, result.stderr[-400:])
+            self.assertEqual(result.stdout.split(), ["held"])
+            self.assertFalse(pause.exists(), "the exit trap removes the pause file")
+
+    def test_the_pause_file_is_removed_when_the_command_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            pause = Path(tmp) / "data" / "mesh" / "pause"
+            result = shell(f'ROOT="{tmp}"\nPAUSE_FILE="{pause}"\nhold_port /nonexistent/port\ndie "stop here"')
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(pause.exists())
 
 
 class Containers(unittest.TestCase):
@@ -104,8 +209,15 @@ class Backup(unittest.TestCase):
             env = {**os.environ, "PATH": f"{fake}{os.pathsep}{os.environ['PATH']}"}
             result = shell(f'ROOT="{root}"\nrun_backup "{port}"', env=env)
             self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Serial port busy", result.stderr)
             self.assertIn("Could not read a MAC", result.stderr)
+            self.assertNotIn(", not ", result.stderr)
             self.assertEqual(list((root / "data" / "firmware-backups").glob("*")), [])
+            compared = shell(f'ROOT="{root}"\nconfirm_port_mac "{port}"', env=env)
+            self.assertNotEqual(compared.returncode, 0)
+            self.assertIn("Serial port busy", compared.stderr)
+            self.assertIn("Could not read a MAC", compared.stderr)
+            self.assertNotIn(", not ", compared.stderr)
 
 
 class CamLog(unittest.TestCase):

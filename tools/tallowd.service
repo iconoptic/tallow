@@ -1,5 +1,6 @@
-# The tallow mesh host: tallowd reads the root node's serial port and keeps
-# data/mesh/map.json in the repo. tools/setup_mesh_host.sh installs this as a user
+# The tallow mesh host for a machine with no panel: tallowd reads the root node's serial port and keeps
+# data/mesh/map.json in the repo. `tallowd panel` runs this same command itself,
+# so do not run both: the panel stands aside when the map is fresh. tools/setup_mesh_host.sh installs this as a user
 # unit, and it needs no root at runtime. It holds the root's port while it runs,
 # so tools/mesh.sh flash, monitor, and backup fail on that port until it stops:
 #   systemctl --user stop tallowd.service

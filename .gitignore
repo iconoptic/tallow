@@ -69,6 +69,9 @@ secrets.env
 .DS_Store
 Thumbs.db
 
+# fleetd debug and failure logs, repo root only
+/*.log
+
 # Tool outputs
 led_discovery_*.json
 ble_capture_*.txt

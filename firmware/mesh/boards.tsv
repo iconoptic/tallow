@@ -1,6 +1,10 @@
 # name	wifi_mac	chip	usb_path	notes
-# usb_path is the port on this host. Both CP2102s report serial 0001, so the path
-# is what tells them apart. `tools/mesh.sh ports` reads this file.
-node-0	70:4b:ca:04:21:64	esp32	12	mesh id 642104ca, root during tests
-node-1	20:9b:a9:99:1e:54	esp32	7	mesh id 541e99a9, flash manufacturer 0x5e
-toby-cam-0	unknown	esp32s3	11	MB0200 cam, not a mesh node, needs BOOT+RST for its first read
+# usb_path is where that chip was last read. CP2102 boards report serial 0001,
+# so `tools/mesh.sh ports` can only name those by this path. A USB serial that
+# is a MAC names that chip, and a new MAC is not the previous row on the path.
+node-0	70:4b:ca:04:21:64	esp32	7	mesh id 642104ca, root during tests
+node-1	20:9b:a9:99:1e:54	esp32	11	mesh id 541e99a9, flash manufacturer 0x5e
+toby-cam-0	44:bd:8d:7a:51:60	esp32s3	2	MB0200 cam, not a mesh node, needs BOOT+RST for its first read
+node-2	7c:9e:bd:ed:bd:98	esp32		mesh id 98bdedbd, flash manufacturer 0xd8, learned by fleetd
+node-3	20:9b:a9:99:32:0c	esp32		mesh id 0c3299a9, flash manufacturer 0x5e, learned by fleetd
+node-4	20:9b:a9:97:9f:28	esp32	12	mesh id 289f97a9, flash manufacturer 0x5e, learned by fleetd

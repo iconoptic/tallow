@@ -1,5 +1,5 @@
 [Unit]
-Description=H7020 agent socket broker (Rust port, not installed)
+Description=H7020 agent socket broker
 Documentation=file:///home/btgrant/Projects/tallow/docs/devices/govee-h7020.md
 # Both listen on one vsock port. Starting this one stops the Python broker.
 Conflicts=tallow-panel-broker.service
