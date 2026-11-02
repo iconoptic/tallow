@@ -39,7 +39,7 @@ Reporting a blocker is a good result. A guess in firmware costs a physical trip 
 
 - Never commit, push, or open a PR unless the user asks.
 - Never flash a board, press on with a failed flash, or run `tools/esphome.sh run`. Hardware steps belong to **You**: give the exact command and what to look for.
-- Never touch `toby-cam-1` or point any build at `10.87.0.21`.
+- Never touch the `toby-cam-1` board. The Rust cam image and `cam-push` use `10.87.0.21`. On 2026-11-02 `cam-flash` wrote a modem-sleep image; the source in the tree has not been flashed, and `cam-push` has not been run ([device note](../../devices/keyestudio-mb0200-s3-cam.md#rust-image)).
 - Never print, log, copy, or commit `firmware/mesh/mesh.key`, or anything in `secrets/`.
 - Never add an unauthenticated frame kind, a default key, or a way to build without a key.
 - Never make a mesh node join Wi-Fi or open a socket. See `.cursor/rules/iot-network-isolation.mdc`.
@@ -82,7 +82,7 @@ The first firmware build after a clean takes about 5 minutes. Later ones take un
 ## Facts that trip people up
 
 - Opening a CP2102 port resets that board, so anything sent straight after opening is lost. Wait 4 s.
-- Both CP2102s report serial `0001`. Tell them apart by USB path. `firmware/mesh/boards.tsv` has them.
+- Both CP2102s report serial `0001`. `tools/mesh.sh ports` names those by USB path and prints USB-MAC `-`. A colon USB serial is the chip: `ports` names the `boards.tsv` row with that Wi-Fi MAC, and a MAC with no row is `unknown`. [docs/01](../../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh).
 - `/dev/ttyUSB0` numbers can swap. Run `tools/mesh.sh ports` first.
 - Just opening an S3 cam's USB port drops it into download mode, and it falls off the network. `tools/mesh.sh` refuses those ports, and any port `boards.tsv` does not list as `esp32`. Read cams over the network.
 - The `secrets/` directory is root-owned, so an agent cannot write there. `tools/mesh.sh key` keeps the mesh key beside the firmware.

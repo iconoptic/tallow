@@ -78,7 +78,7 @@ The contract runs with `.venv/bin/python tools/tests/panel_contract.py`, and `to
 
 Bad input is answered, not crashed on. A non-ASCII password or cookie is a failed login, not a 500. Invalid UTF-8 in a JSON body is a 400 `body must be JSON`. A refused camera save answers `cameras: ...` and names no server path.
 
-The panel process that has been running on this host was the Python one and predates these changes. It was not restarted, and the Python panel is now archived.
+The live panel is `tallowd panel`, started as the same user that runs the broker. The Python panel is archived. A root panel locks the broker out: `data/panel/` is mode `0700` and `agent.sock` is mode `0600`, so a socket owned by root answers the broker `503` `panel socket unavailable`.
 
 `GET /` without a cookie is 200 and the login form (`text/html; charset=utf-8`). `GET /lights`, `GET /cams`, and `GET /settings` without a cookie are 303 to `/login`. `GET /panel.css` is served without a cookie: 200, `text/css; charset=utf-8`, `cache-control: no-cache`. A correct `POST /login` is 303 to `/` and sets `tallow_panel`. The value is HMAC-SHA256, key the password, message `tallow-h7020-panel`. The cookie is HttpOnly, `Max-Age=2592000`, `Path=/`, `SameSite=strict`. `POST /logout`, with or without a cookie, is 303 to `/login` and clears `tallow_panel`. The clear header is `tallow_panel=""` with `Max-Age=0`, `Path=/`, `SameSite=lax`. Logout leaves the password file alone. Cam route statuses are in [keyestudio-mb0200-s3-cam.md](keyestudio-mb0200-s3-cam.md#routes).
 
@@ -88,14 +88,14 @@ A catalogue scene, a paint, and a sequence have not been sent to this string fro
 
 `tallowd panel` without `--preview` holds the same BLE link as the Python page did. `host/tallowd/src/panel/session.rs` has the rules: one write queue, a slider keeps its latest value while a write is in flight, a script goes out whole and in order, writes are paced 0.2 s apart, a power read goes out after 4 s idle, and a dropped link is dialled again after 2 s. `host/tallowd/src/panel/bluez.rs` is the BlueZ transport over `bluer`. It finds the UB500 by USB id `2357:0604` through `/sys/class/bluetooth`, never by `hci` number. Refusals and failure text match the Python.
 
-Only one process may hold the box. Stop any other panel before `tallowd panel`. The Python panel is archived and not meant to run. Code done 2026-10-31. It has not run on this H7020 yet, so the first writes it has shown on the box are still the Python's: power, brightness, and the solid red frame. Only the T3.7 hardware check, which is the user's, will show whether it works.
+Only one process may hold the box. Stop any other panel before `tallowd panel`. Run it as the broker user, not as root. If this login's token does not include `dialout`, start it with `sg dialout` so the mesh child can open `/dev/ttyUSB0`. The account is already in that group. The Python panel is archived and not meant to run. Code done 2026-10-31. On 2026-11-01 this host's panel is that binary, and its log showed a link. On 2026-11-02 the process on port 8765 (pid 856027) was stopped. Nothing is listening on 8765. The page writes this unit has shown are still the Python's: power, brightness, and the solid red frame. The T3.7 hardware check is still the user's.
 
 ```bash
 tools/mesh.sh daemon build
 host/target/release/tallowd panel
 ```
 
-It takes the Python panel's flags (`host/tallowd/src/panel/setup.rs` lists them). The real panel reads `secrets/panel/password`, as the Python did. Its log prints `Connected ...` on a link, or `Connect failed (...)` and then `Reconnect failed (...)` while the box is out of reach.
+It takes the Python panel's flags (`host/tallowd/src/panel/setup.rs` lists them), plus `--mesh auto|off` and `--mesh-port <path>` for the mesh host it runs on the root board. That child does not pass `--bluez`; this session keeps the UB500 ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#not-built)). A preview refuses both. The real panel reads `secrets/panel/password`, as the Python did. Its log prints `Connected ...` on a link, or `Connect failed (...)` and then `Reconnect failed (...)` while the box is out of reach.
 
 ### Rust codec (`tallow-govee`)
 
@@ -111,7 +111,7 @@ Scene lookup in `src/scene.rs` maps `ß` and `ẞ` to `ss` before lowercasing, s
 
 The socket is `data/panel/agent.sock`, mode `0600`. It sees the H7020 API only. The 404 list is in [routes](keyestudio-mb0200-s3-cam.md#routes), and the body is `{"detail":"not found"}`. `POST /login` with a password field is that same 404. `GET /` on the socket is 200 and the login form. `GET /api/state` is 401 `{"detail":"login"}`, including when the browser cookie is sent. The house-LAN port accepts the browser cookie and rejects `Authorization`. The socket accepts the bearer and rejects the cookie. `tools/panel_broker.py` (now `archive/tools/panel_broker.py`; the Rust `host/tallow-broker` replaces it) is the process that calls it. The broker listens on vsock port `17620` and accepts only the `bazzite-console` guest CID in `secrets/panel/broker.json`. It adds the bearer from `secrets/panel/hermes.token` (mode `0600`) and forwards read and control routes. A client `Authorization`, `Cookie`, or library or schedule write is refused before the socket.
 
-The guest does not receive the socket file, the token, the house-LAN panel, or `10.87.0.0/24`. On the guest, `tallow-proxy` listens on `127.0.0.1:17620` and dials vsock CID 2. The Hermes container's pasta line forwards that loopback port (`-T 17620`). The container still has no route and no DNS. The user unit is `tools/tallow-panel-broker-rust.service` (written, not installed; the Python unit is `archive/tools/tallow-panel-broker.service`).
+The guest does not receive the socket file, the token, the house-LAN panel, or `10.87.0.0/24`. On the guest, `tallow-proxy` listens on `127.0.0.1:17620` and dials vsock CID 2. The Hermes container's pasta line forwards that loopback port (`-T 17620`). The container still has no route and no DNS. The user unit is `tools/tallow-panel-broker-rust.service`, installed as `~/.config/systemd/user/tallow-panel-broker-rust.service` and enabled. The Python unit is `archive/tools/tallow-panel-broker.service` and is disabled. The panel and the broker have to be the same user. A root panel leaves `agent.sock` mode `0600` owned by root, and the broker cannot open it.
 
 The token command below is the archived `archive/tools/panel_token.py`; no Rust replacement exists yet.
 
@@ -125,7 +125,7 @@ Without `--secret-file`, the command prints a bearer once. With it, the secret i
 
 State and the manifest include `"device": "h7020"`.
 
-The Rust broker is `host/tallow-broker`. It is not deployed. `tools/tallow-panel-broker-rust.service` is written and not installed. The Python broker and its unit are archived. Its 27 tests in `host/tallow-broker/tests/panel_broker.rs` cover the same rules. Its deviations from the Python are all tighter, and they are listed in [T3.8](../plans/rust-conversion/p3-panel.md#t38-agent-broker).
+The Rust broker is `host/tallow-broker`, and the user unit above is the one running. The Python broker and its unit are archived. Its 27 tests in `host/tallow-broker/tests/panel_broker.rs` cover the same rules. Its deviations from the Python are all tighter, and they are listed in [T3.8](../plans/rust-conversion/p3-panel.md#t38-agent-broker).
 
 ## Wi-Fi
 

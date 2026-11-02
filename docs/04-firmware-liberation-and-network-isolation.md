@@ -78,20 +78,20 @@ The Realtek combo (USB `0bda:d723`) is a survey radio. Its Bluetooth controller 
 
 ### ESP32 nodes
 
-ESPHome nodes (retired; configs in `archive/firmware/esphome/`) joined this SSID as stations and talked only to this host ([docs/01](01-bluetooth-server-hardware-and-proxies.md#tallow-nodes)). They are not a second AP on this machine. Mesh nodes do not join it at all ([Mesh nodes](#mesh-nodes)). The Rust cam uses `10.87.0.23` and reads its Wi-Fi from gitignored `firmware/cam/secrets.yaml`.
+ESPHome nodes (retired; configs in `archive/firmware/esphome/`) joined this SSID as stations and talked only to this host ([docs/01](01-bluetooth-server-hardware-and-proxies.md#tallow-nodes)). They are not a second AP on this machine. Mesh nodes do not join it at all ([Mesh nodes](#mesh-nodes)). The Rust cam uses `10.87.0.21` and reads its Wi-Fi from gitignored `firmware/cam/secrets.yaml`. On 2026-11-02 `cam-flash` wrote a modem-sleep image; the source in the tree has not been flashed ([device note](devices/keyestudio-mb0200-s3-cam.md#rust-image)).
 
 | Address | Node | Config |
 | --- | --- | --- |
 | `10.87.0.20` | Bare `node-mb0200` | `archive/firmware/esphome/node-mb0200.yaml` |
-| `10.87.0.21` | `toby-cam-1` | `archive/firmware/esphome/toby-cam-1.yaml` |
+| `10.87.0.21` | Reservation for `44:bd:8d:7a:51:60`. ESPHome `toby-cam-1` was unreachable here. The Rust image uses this address. The modem-sleep build was flashed on 2026-11-02 and is not associated. The source in the tree has not been flashed | `archive/firmware/esphome/toby-cam-1.yaml`. Rust image: `firmware/cam` ([device note](devices/keyestudio-mb0200-s3-cam.md#rust-image)) |
 | `10.87.0.22` | `node-1`, on no board | `archive/firmware/esphome/node-1.yaml` |
-| `10.87.0.23` | `toby-cam-0`, not flashed | `archive/firmware/esphome/toby-cam-0.yaml`. The Rust image uses this address and is not flashed ([device note](devices/keyestudio-mb0200-s3-cam.md#rust-image)) |
+| `10.87.0.23` | ESPHome `toby-cam-0`, not flashed | `archive/firmware/esphome/toby-cam-0.yaml` |
 
 Each ESPHome node's YAML set a static address (`manual_ip`) in `10.87.0.20`–`10.87.0.49`, outside the DHCP pool. `use_address` is where the host dials. A node's mDNS stays at ESPHome's default; the host does not use it. A station MAC goes on the accept list with `allow` before it can associate. Nodes do not depend on `reserve`. It is optional. A reservation still gives a board that asks for DHCP a fixed lease, and the neighbor pin reads it.
 
 This host opens every connection to a node: `6053` (ESPHome API), `3232` (OTA), and `8080` (a cam's stream). The zone opens nothing from its side. `ap_isolate=1` stops node-to-node Wi-Fi through the AP. On 2026-10-28 the first node joined: one MB0200, as `relay-mb0200` at `10.87.0.20` and then `toby-cam-1` at `10.87.0.21`. The host reached it on all three ports ([device note](devices/keyestudio-mb0200-s3-cam.md#on-the-board-2026-10-28)).
 
-`secrets/iot-ap/reservations` and `/etc/tallow/dnsmasq.hosts` list `10.87.0.21` for the MB0200 (`44:bd:8d:7a:51:60`) and `10.87.0.22` for the classic ESP32 (`70:4b:ca:04:21:64`, `node-1`). Both lines predate static addresses. They are optional now. `sudo ./tools/setup_iot_ap.sh` at 2026-10-30 20:34 set `/etc/tallow` to mode `0711`. dnsmasq could read the hosts file and DHCPACK'd the MB0200 as `10.87.0.21`. Both MACs are on the accept list. On 2026-10-31 neither board is on this SSID: the MB0200 is unreachable ([device note](devices/keyestudio-mb0200-s3-cam.md#where-it-is-2026-10-31)), and the classic ESP32 runs the mesh ([its note](devices/esp32-devkit.md#where-it-is-2026-10-31)). The second MB0200's MAC is unknown, so `toby-cam-0` cannot join until it is read and allowed ([device note](devices/keyestudio-mb0200-s3-cam.md#toby-cam-0)).
+`secrets/iot-ap/reservations` and `/etc/tallow/dnsmasq.hosts` list `10.87.0.21` for the MB0200 (`44:bd:8d:7a:51:60`) and `10.87.0.22` for the classic ESP32 (`70:4b:ca:04:21:64`, `node-1`). Both lines predate static addresses. They are optional now. `sudo ./tools/setup_iot_ap.sh` at 2026-10-30 20:34 set `/etc/tallow` to mode `0711`. dnsmasq could read the hosts file and DHCPACK'd the MB0200 as `10.87.0.21`. Both MACs are on the accept list. On 2026-10-31 neither board is on this SSID: the MB0200 is unreachable ([device note](devices/keyestudio-mb0200-s3-cam.md#where-it-is-2026-10-31)), and the classic ESP32 runs the mesh ([its note](devices/esp32-devkit.md#where-it-is-2026-10-31)). On 2026-11-02 `cam-flash` read `44:bd:8d:7a:51:60` for `toby-cam-0`, the reservation above. The station associated and was then dropped ([device note](devices/keyestudio-mb0200-s3-cam.md#rust-image)).
 
 ### Mesh nodes
 

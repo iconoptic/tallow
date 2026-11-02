@@ -2,7 +2,7 @@
 
 Replace ESPHome on the S3 cams with Rust. This is the riskiest phase for the least new function, so it runs last.
 
-**First:** T4.0. `toby-cam-1` stays out of this phase until T4.5. No tool in this phase takes `10.87.0.21` or its port: `cam-flash` and `cam-push` refuse them.
+**First:** T4.0. `toby-cam-1` stays out of this phase until T4.5. `cam-flash` takes only the port `boards.tsv` names `toby-cam-0`. `cam-push` allows only `10.87.0.21` ([device note](../../devices/keyestudio-mb0200-s3-cam.md#rust-image)).
 
 **Lessons, all from this board:**
 
@@ -16,7 +16,7 @@ Replace ESPHome on the S3 cams with Rust. This is the riskiest phase for the lea
 
 - **Tier:** You. **Needs:** nothing.
 - **Why:** The board still runs earlier TinyUSB firmware, its MAC is unknown, and it is on no list. Without an ESPHome baseline there is nothing to compare or return to.
-- **Do:** Hold BOOT, tap RST. Run `ESPHOME_DEVICE=/dev/ttyACM0 tools/esphome.sh mac`, then `sudo ./tools/setup_iot_ap.sh allow <mac>`, then `ESPHOME_DEVICE=/dev/ttyACM0 tools/esphome.sh run toby-cam-0.yaml --device /dev/ttyACM0`. Record the MAC in `boards.tsv`. Add the cam to `data/panel/cams.json` through Settings at `10.87.0.23`.
+- **Do:** Hold BOOT, tap RST. Run `ESPHOME_DEVICE=/dev/ttyACM0 tools/esphome.sh mac`, then `sudo ./tools/setup_iot_ap.sh allow <mac>`, then `ESPHOME_DEVICE=/dev/ttyACM0 tools/esphome.sh run toby-cam-0.yaml --device /dev/ttyACM0`. Record the MAC in `boards.tsv`. The live page is the catalog sync in [the device note](../../devices/keyestudio-mb0200-s3-cam.md#catalog-sync), which on 2026-11-02 left the existing `10.87.0.21` row as `toby-cam-0`. Port 6053 did not accept, and no picture is showing.
 - **Done when:** the panel shows its picture, and it has run a week. Note any wedge: T4.5 compares against this.
 
 ## T4.1 S3 build
@@ -43,18 +43,18 @@ Replace ESPHome on the S3 cams with Rust. This is the riskiest phase for the lea
 
 ## T4.3 Network and stream
 
-**Code done (2026-11-01), not run on hardware.** The image joins `tallow-iot` at `10.87.0.23`, serves the panel's multipart stream on `8080`, and listens on `6053`. `cam-flash` and `cam-backup` refuse every port except `toby-cam-0` and pass this build's bootloader. `tools/mesh.sh check` passed. No flash. **You:** `cam-backup`, then `cam-flash`, then `cam_stream_check.py --address 10.87.0.23`.
+**Code done (2026-11-01), not run on hardware.** The image joins `tallow-iot` at `10.87.0.21` ([device note](../../devices/keyestudio-mb0200-s3-cam.md#rust-image)). The station and the listeners on `8080` and `6053` come up before the sensor starts. It serves the panel's multipart stream on `8080` and listens on `6053`. `cam-flash` and `cam-backup` refuse every port except `toby-cam-0` and pass this build's bootloader. `tools/mesh.sh check` passed. The source no longer uses modem sleep. On 2026-11-02 a modem-sleep image was flashed; this source has not been flashed ([device note](../../devices/keyestudio-mb0200-s3-cam.md#rust-image)). **You:** `cam-backup` has not been run. `archive/tools/tests/cam_stream_check.py` still allows only `10.87.0.23`.
 
 - **Tier:** Sonnet. **Needs:** T4.0, T4.2.
 - **Files:** new `firmware/cam/src/net.rs`, `src/stream.rs`, `src/main.rs`, `firmware/cam/build.rs`, `firmware/cam/sdkconfig.defaults`, `tools/mesh.sh`, new `tools/tests/cam_stream_check.py`.
 - **Do:**
-  - Join `tallow-iot` with WPA2 required, static `10.87.0.23`, mask `/24`, gateway and DNS `10.87.0.1`, no fallback AP, and modem sleep on. Only `toby-cam-0` is built in this phase.
+  - Join `tallow-iot` with WPA2 required, static `10.87.0.21`, mask `/24`, gateway and DNS `10.87.0.1`, no fallback AP, and modem sleep on. Only `toby-cam-0` is built in this phase.
   - Credentials are the `wifi_ssid` and `wifi_password` keys in gitignored `firmware/esphome/secrets.yaml`. `tools/mesh.sh` mounts that one file read-only into the cam build, and `build.rs` reads it. A missing file or an empty value fails the build, and is never printed. An open or default join is the same bug as an open mesh.
   - Serve MJPEG on `8080` with the same multipart output the panel parses: `Content-Length` per part and no chunking. Keep a plain TCP listener on `6053`, because the panel's status check uses it.
   - In `sdkconfig.defaults`, set `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`, because the bootloader only changes over USB and this is the first flash. Set the CPU to 240 MHz, as the ESPHome build runs. T4.1 used 160.
   - Add `tools/mesh.sh cam-flash <port>` and `cam-backup <port>`. Each refuses any port `boards.tsv` does not name `toby-cam-0`, says to hold BOOT and tap RST first, and neither takes an address.
   - Add `tools/tests/cam_stream_check.py --address <ip>`: it uses `camlib.dial` and `frames()` from `app/cams.py`, counts frames for 10 s, and refuses `10.87.0.21`. Run it once: it takes the cam's one connection.
-- **Done when:** `tools/mesh.sh cam-build` passes. **You:** run `cam-backup`, then `cam-flash`. `cam_stream_check.py --address 10.87.0.23` counts frames, and the panel shows the picture.
+- **Done when:** `tools/mesh.sh cam-build` passes. **You:** run `cam-backup`, then `cam-flash`. The image is at `10.87.0.21`. `archive/tools/tests/cam_stream_check.py` still allows only `10.87.0.23`. The panel shows the picture.
 - **Stop if:** the panel needs a code change to read the stream.
 
 ## T4.4 OTA with signing
@@ -63,7 +63,7 @@ Replace ESPHome on the S3 cams with Rust. This is the riskiest phase for the lea
 
 - **Tier:** Sonnet. **Needs:** T4.3, T1.9a.
 - **Files:** new `firmware/cam/src/ota.rs`, `src/main.rs`, `firmware/cam/Cargo.toml`, `firmware/cam/build.rs`, `tools/mesh.sh`.
-- **Do:** Reuse T1.9a's signature check through a path dependency on `../mesh/core`. In `run_cam_image`, mount only `firmware/mesh/core` at `/mesh/core:ro` and `firmware/mesh/ota.pub` at `/run/ota.pub:ro`, never all of `firmware/mesh/`: `mesh.key` lives there, and the cam build must not see it. `build.rs` bakes in `/run/ota.pub` and fails without it. The host pushes an image over TCP to a listener on `3232`, through `tools/mesh.sh cam-push <address> <image>`, which requires an explicit address and refuses `10.87.0.21`. The image marks itself valid after 5 minutes with Wi-Fi up and a frame captured.
+- **Do:** Reuse T1.9a's signature check through a path dependency on `../mesh/core`. In `run_cam_image`, mount only `firmware/mesh/core` at `/mesh/core:ro` and `firmware/mesh/ota.pub` at `/run/ota.pub:ro`, never all of `firmware/mesh/`: `mesh.key` lives there, and the cam build must not see it. `build.rs` bakes in `/run/ota.pub` and fails without it. The host pushes an image over TCP to a listener on `3232`, through `tools/mesh.sh cam-push <address> <image>`, which requires an explicit address and allows only `10.87.0.21`. The image marks itself valid after 5 minutes with Wi-Fi up and a frame captured.
 - **Done when:** **You:** on `toby-cam-0`, update it, then push a build that crashes after 90 s and confirm it rolls back. A crash after the 60 s mark is what took out `toby-cam-1`.
 - **Stop if:** it does not roll back. Nothing moves to `toby-cam-1` until it does.
 

@@ -23,7 +23,7 @@ These hold for you and for any agent you start:
 
 - Do not commit, flash, open a serial port, connect to a device, or run `tools/mesh.sh flash`, `monitor`, `backup`, `host`, `bench`, `daemon run`, `daemon gatt`, `daemon ota`, `ota-key`, or `ota-sign`, unless the user asks in this session.
 - Never read or print `firmware/mesh/mesh.key`, `firmware/mesh/ota.key`, `firmware/esphome/secrets.yaml`, or anything in `secrets/`.
-- Never touch `toby-cam-1` or `10.87.0.21`. It is taped to a wall, and a bad build already took it down once.
+- The Rust image and `cam-push` name `10.87.0.21` ([device note](../../devices/keyestudio-mb0200-s3-cam.md#rust-image)). Do not flash, do not dial it, and do not touch the `toby-cam-1` board. It is taped to a wall, and a bad build already took it down once.
 - Host configuration is a script the user runs.
 
 ## Treat reports as claims

@@ -29,8 +29,8 @@ These check code the Grok run builds on. Doing them first gives the review real 
 4. **Find a speaker by address (T1.5).** With a paired speaker idle, then playing, run `tools/mesh.sh daemon run <port> --seconds 120 --out data/mesh/map.json --watch <addr>`.
    **Pass:** its address appears in `map.json`. Record both results in `docs/01`. Stop if `--trial` delivery falls below 95% with paging on.
 
-5. **Compare the trial (T2.7).** Run `tools/mesh.sh daemon run <port> --trial --out data/mesh/trial.json`, then `tools/mesh.sh host <port> --trial`.
-   **Pass:** rows agree within 3 points.
+5. **Compare the trial (T2.7).** Run `tools/mesh.sh daemon run <port> --trial --out data/mesh/trial.json`, then `.venv/bin/python archive/tools/mesh_host.py --port <port> --trial --out data/mesh/trial-py.json`.
+   **Pass:** rows agree within 3 points. The Python host is that archived script ([docs/01](../../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh)).
 
 6. **Try the Rust panel on the light (T3.7).** Stop the Python panel, and close Govee Home. The box takes one connection.
 
@@ -40,8 +40,8 @@ These check code the Grok run builds on. Doing them first gives the review real 
 
    **Pass:** power, brightness, and solid red work on `/lights`, and 30 s pass with no `BLE link down` line. To roll back, press Ctrl-C and run `.venv/bin/python app/h7020_panel.py`. Scenes and paints have never been sent to this string, from either language, so leave them out.
 
-7. **Set up the service (T2.7).** Run `tools/setup_mesh_host.sh`, replug the root board, and check `ls -l /dev/tallow-root`. Then run `systemctl --user enable --now tallowd.service`.
-   **Pass:** `data/mesh/map.json` stays fresh, and `/devices` on the Rust panel shows it. It holds the root's port, so stop the service before `flash`, `monitor`, or `backup` on that board.
+7. **Check the panel's mesh host (T2.7).** Skip `tools/setup_mesh_host.sh` unless you want a host with no panel: the real panel now finds the root board and keeps `data/mesh/map.json` by itself. Needs access to the port first: `sudo setfacl -m u:$USER:rw /dev/ttyUSB0` for now, or `tools/setup_mesh_host.sh` for the udev rule. Restart `host/target/release/tallowd panel` and open `/devices`.
+   **Pass:** the page shows the map within a minute, and `GET /api/mesh/map` says `host.state` is `running`. Then run `tools/mesh.sh monitor <port> 5`: the panel lets go of the port and takes it back. With no board plugged in, `host.state` is `waiting` and the panel starts no child. Plug a listed classic ESP32 in and it becomes `running`. Do not also enable `tallowd.service`. States: [docs/01](../../01-bluetooth-server-hardware-and-proxies.md#not-built).
 
 ## Any time
 
@@ -58,7 +58,7 @@ These check code the Grok run builds on. Doing them first gives the review real 
 12. **OTA a leaf (T1.9).** This needs G7, G8, and a USB flash of every board, because the bootloader changes. Update a leaf one hop away, then push a build that crashes after 90 s.
     **Pass:** it updates, then rolls back. Do not roll out to any board that is not on a desk.
 
-13. **Rust on `toby-cam-0` (T4.3, T4.4).** Run `cam-backup`, then `cam-flash`, then `cam_stream_check.py --address 10.87.0.23`. Then push a crashing build. **Pass:** the panel shows the picture, and the crash rolls back. Nothing moves to `toby-cam-1` until it does.
+13. **Rust on `toby-cam-0` (T4.3, T4.4).** On 2026-11-02 `cam-flash` of `/dev/ttyACM0` wrote the modem-sleep image and exited success. The station associated, then hostapd dropped it for inactivity, and it has not associated again. The source now uses `WIFI_PS_NONE` and has not been flashed ([device note](../../devices/keyestudio-mb0200-s3-cam.md#rust-image)). `cam-backup` has not been run. The image address is `10.87.0.21`. `archive/tools/tests/cam_stream_check.py` still allows only `10.87.0.23` and refuses `10.87.0.21` before any socket, so it will not count frames from this image. Then push a crashing build. **Pass:** the panel shows the picture, and the crash rolls back. Nothing moves to `toby-cam-1` until it does. `cam-push` has not been run.
 
 14. **Fleet, cut-over, wall cam (T1.12, T3.10, T4.5).** In that order, each when the one before has held for its full soak.
 

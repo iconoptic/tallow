@@ -12,7 +12,7 @@ Read [agent-brief.md](agent-brief.md) first. It applies, with the changes below.
 - **Never commit, flash, open a serial port, connect to a device, or dial a `10.87.0.x` address.** The one exception is `cam_stream_check.py`, and only the user runs that.
 - **Never run** `tools/mesh.sh flash`, `monitor`, `backup`, `host`, `bench`, `daemon run`, `daemon gatt`, `daemon ota`, `ota-key`, `ota-sign`, `tools/esphome.sh run`, or `tools/setup_mesh_host.sh`.
 - **Never read or print** `firmware/mesh/mesh.key`, `firmware/mesh/ota.key`, `firmware/esphome/secrets.yaml` (a build step may read it), `secrets/`, `data/panel/`, or `data/mesh/`.
-- **Never touch `toby-cam-1` or `10.87.0.21`.**
+- **Never touch the `toby-cam-1` board.** The Rust image and `cam-push` use `10.87.0.21` ([device note](../../devices/keyestudio-mb0200-s3-cam.md#rust-image)). Do not dial that address.
 - **Mark each task** `**Done (date).**` here, or `**Code done (date), not run on hardware.**` if a hardware check remains. Update its T-task in the phase file the same way.
 - **Report blockers.** The brief's stop rules still hold. A stop is a good result.
 
@@ -134,7 +134,7 @@ G6 to G10 write the code for T1.9, T4.3, and T4.4 ahead of their hardware. Their
 
 ## G9 Cam network and stream
 
-**Code done (2026-11-01), not run on hardware.** `tools/mesh.sh check --fast` passed, and `tools/mesh.sh check` passed. The image joins `tallow-iot` with WPA2 at `10.87.0.23/24`, serves multipart MJPEG on `8080`, and accepts TCP on `6053`. `strings` on the image printed `no default credential`. The build log did not contain a credential. No flash, no serial port, no device connection. `cam-flash` passes this build's bootloader. Rollback is on, and nothing marks the image valid until G10, so do not flash this tree in between.
+**Code done (2026-11-01), not run on hardware.** `tools/mesh.sh check --fast` passed, and `tools/mesh.sh check` passed. The image joins `tallow-iot` with WPA2 at `10.87.0.21/24` ([device note](../../devices/keyestudio-mb0200-s3-cam.md#rust-image)). The station and the listeners on `8080` and `6053` come up before the sensor starts. It serves multipart MJPEG on `8080` and accepts TCP on `6053`. `strings` on the image printed `no default credential`. The build log did not contain a credential. That pass did not flash. On 2026-11-02 `cam-flash` wrote a modem-sleep image; the source in the tree has not been flashed ([device note](../../devices/keyestudio-mb0200-s3-cam.md#rust-image)). `cam-flash` passes this build's bootloader. Rollback is on, and nothing marks the image valid until G10, so do not flash this tree in between.
 
 - **Files:** as T4.3 in [p4-cams.md](p4-cams.md), which is the spec. Do all of its **Do** list except the user's flash. Also `tools/mesh.sh`, `.gitignore` if needed.
 - **Also:**
@@ -142,16 +142,16 @@ G6 to G10 write the code for T1.9, T4.3, and T4.4 ahead of their hardware. Their
   - `cam-flash` must pass the built bootloader, as in G7, or rollback will not be on.
   - `cam-flash` and `cam-backup` refuse every port except the one `boards.tsv` names `toby-cam-0`. Prove it with the guard's logic and a stub table, without opening a port.
   - `check` now needs `firmware/esphome/secrets.yaml` to build the cam. If it is missing, the build must fail with a message naming the file and the two keys.
-  - `cam_stream_check.py` refuses `10.87.0.21`, tested without a socket. Do not run it against any address.
+  - `archive/tools/tests/cam_stream_check.py` still allows only `10.87.0.23` and refuses `10.87.0.21`, tested without a socket. The image is at `10.87.0.21`, so the checker does not accept it. Do not run it against any address.
 - **Done when:** `tools/mesh.sh check` passes. A unit test feeds this firmware's multipart output, built on the host, through `camlib` frame parsing. `strings` on the built image finds no default credential, and no credential appears in the build's output.
 - **Stop if:** the panel would need a code change to read the stream.
 
 ## G10 Cam OTA
 
-**Code done (2026-11-01), not run on hardware.** `tools/mesh.sh check --fast` passed, and `tools/mesh.sh check` passed. `tools/mesh.sh cam-size` printed `App/part. size: 1,071,264/8,126,464 bytes, 13.18%`. The listener on `3232` checks the signature before `esp_ota_begin`. The cam build mounts `firmware/mesh/core` and `firmware/mesh/ota.pub` only. `mesh.key` is not mounted. No flash, no `cam-push`. The running image marks itself valid after 5 minutes of Wi-Fi and a captured frame, and only while the slot is pending verify. The crashing-build rollback trial stays yours.
+**Code done (2026-11-01), not run on hardware.** `tools/mesh.sh check --fast` passed, and `tools/mesh.sh check` passed. `tools/mesh.sh cam-size` printed `App/part. size: 1,071,264/8,126,464 bytes, 13.18%`. The listener on `3232` checks the signature before `esp_ota_begin`. The cam build mounts `firmware/mesh/core` and `firmware/mesh/ota.pub` only. `mesh.key` is not mounted. `cam-push` has not been run. A later USB `cam-flash` wrote a modem-sleep image; this source has not been flashed ([device note](../../devices/keyestudio-mb0200-s3-cam.md#rust-image)). The running image marks itself valid after 5 minutes of Wi-Fi and a captured frame, and only while the slot is pending verify. The crashing-build rollback trial stays yours.
 
 - **Files:** as T4.4 in [p4-cams.md](p4-cams.md). Do its **Do** list except the user's push.
-- **Also:** Mount only `firmware/mesh/core` and `firmware/mesh/ota.pub` into the cam build, never all of `firmware/mesh/`. Prove it: a test script lists the container's mounts for the cam build and fails if `mesh.key` is visible. `cam-push` requires an address, refuses `10.87.0.21`, and refuses any address that is not `10.87.0.23` until T4.5.
+- **Also:** Mount only `firmware/mesh/core` and `firmware/mesh/ota.pub` into the cam build, never all of `firmware/mesh/`. Prove it: a test script lists the container's mounts for the cam build and fails if `mesh.key` is visible. `cam-push` requires an address and allows only `10.87.0.21` ([device note](../../devices/keyestudio-mb0200-s3-cam.md#rust-image)).
 - **Done when:** `tools/mesh.sh check` passes, and `tools/mesh.sh cam-size` fits the slot.
 - **Stop if:** the listener would accept an image before checking its signature.
 

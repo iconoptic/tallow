@@ -1,6 +1,6 @@
 # Keyestudio MB0200 S3 CAM
 
-ESP32-S3 board with an OV3660 camera, an SD slot, and two USB-C ports. Here it is a node, and `toby-cam-1` is the node that watches the dog. A second board, [`toby-cam-0`](#toby-cam-0), has an ESPHome image compiled and not flashed (the ESPHome tree is archived in `archive/firmware/esphome/`, and the ESPHome commands in this note now run from `archive/tools/`). A Rust image builds and is not flashed ([Rust image](#rust-image)). Node design is in [docs/01](../01-bluetooth-server-hardware-and-proxies.md#tallow-nodes). Addresses and ports are in [docs/04](../04-firmware-liberation-and-network-isolation.md#esp32-nodes).
+ESP32-S3 board with an OV3660 camera, an SD slot, and two USB-C ports. Here it is a node, and `toby-cam-1` is the node that watches the dog. A second board, [`toby-cam-0`](#toby-cam-0), has an ESPHome image compiled and not flashed (the ESPHome tree is archived in `archive/firmware/esphome/`, and the ESPHome commands in this note now run from `archive/tools/`). On 2026-11-02 `cam-flash` wrote a modem-sleep Rust image to that board. The source in the tree has not been flashed ([Rust image](#rust-image)). Node design is in [docs/01](../01-bluetooth-server-hardware-and-proxies.md#tallow-nodes). Addresses and ports are in [docs/04](../04-firmware-liberation-and-network-isolation.md#esp32-nodes).
 
 On 2026-10-28 this unit ran `relay-mb0200`, then `toby-cam-1`. The relay is proven. The cam streams and the panel proxy was checked against it, but its picture is dark and the page is not checked in a browser. After the board was moved, a weak USB supply made it unreachable, and a burst of connects later jammed its web server for minutes. On 2026-10-30 the board held `10.87.0.21` and did not answer ARP for it. The cams page returned 502, and an OTA to that address timed out. On 2026-10-31 it took an esphome-mesh build and crash-looped, and it is still unreachable and not recovered ([Where it is](#where-it-is-2026-10-31)). Results are in [On the board](#on-the-board-2026-10-28), [Power](#power), and [The one-slot jam](#the-one-slot-jam).
 
@@ -33,15 +33,15 @@ tools/mesh.sh cam-image    # write the app image to firmware/cam/target/ota.bin
 
 `tools/mesh.sh fmt` formats this crate. `tools/mesh.sh check` runs `cargo fmt --check` on it and, without `--fast`, clippy (`cargo clippy --release -- -D warnings`) and then the build, after the node firmware, so a break here shows there. `check --fast` skips that clippy and that build. The same command covers the mesh, the host daemon, the panel's tests, the cam stream test is archived (`archive/tools/tests/test_cam_stream.py`), and a host test of the push signature ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh)). After the cam firmware build, the full check runs `tools/cam_build_scan.py` on the image and the cam's stack budget (`tools/tests/stack_budget.py`, with the chains in `tools/tests/stack_chains_cam.json`). A single build is `cam-build`. The cam commands do not read `firmware/mesh/mesh.key`. `fmt`, `cam-build`, `cam-size`, and the cam half of `check` stop if `firmware/cam/secrets.yaml` or `firmware/mesh/ota.pub` is missing. `target/`, `.embuild/`, and `sdkconfig` under `firmware/cam/` are gitignored.
 
-Octal PSRAM at 80 MHz, 16 MB DIO flash at 80 MHz, Bluetooth off. The partition table is the ESPHome OTA layout on this board: `app0` and `app1` are each `0x7C0000` bytes. The CPU is 240 MHz. Rollback is enabled in the bootloader, so `cam-flash` passes the bootloader this build produces and erases otadata, so the board boots `app0`, which it just wrote. The image is not flashed. `toby-cam-1` was not touched.
+Octal PSRAM at 80 MHz, 16 MB DIO flash at 80 MHz, Bluetooth off. The partition table is the ESPHome OTA layout on this board: `app0` and `app1` are each `0x7C0000` bytes. The CPU is 240 MHz. Rollback is enabled in the bootloader, so `cam-flash` passes the bootloader this build produces and erases otadata, so the board boots `app0`, which it just wrote. The source in this tree has not been flashed. The board still holds the modem-sleep image from the 2026-11-02 `cam-flash`, below. `toby-cam-1` was not touched.
 
-`boot` prints free internal heap and free PSRAM on the USB Serial/JTAG port (`boot heap … psram …`). It then starts the camera, which is esp32-camera 2.1.7 through the `camera.rs` driver. The first frame prints `frame WxH jpeg N bytes` once. If the sensor does not start, it prints `camera init failed` and the listeners still come up.
+`boot` prints free internal heap and free PSRAM on the USB Serial/JTAG port (`boot heap … psram …`). Rollback is armed next, before the station, so a hang below still rolls back. The station joins, then ports `8080` and `6053` bind, then port `3232`. An `accept` thread with an 8 KiB stack polls `8080` and `6053` while the sensor starts, so a stuck `camera init` cannot leave the station unreachable. That thread does not run OTA verify. The OTA socket is already bound, and verify stays on the main task. When the sensor returns, the main task takes the listeners back. If the thread cannot start it prints `accept thread failed`; if it stops it prints `accept thread stopped`; either way the panel ports are bound again. The cam stack-budget chains name the main task. This thread is separate. The camera is esp32-camera 2.1.7 through the `camera.rs` driver. The first frame prints `frame WxH jpeg N bytes` once. If the sensor does not start, it prints `camera init failed` and the station stays up.
 
-The station joins `tallow-iot` with WPA2, static `10.87.0.23/24`, gateway and DNS `10.87.0.1`. There is no DHCP client and no fallback access point. Modem sleep is `WIFI_PS_MIN_MODEM`. The SSID and password are the `wifi_ssid` and `wifi_password` keys in gitignored `firmware/cam/secrets.yaml` (moved there from `firmware/esphome/secrets.yaml`; the ESPHome file is archived). The build mounts that one file read-only and fails if it is missing or a value is empty. It does not print them. `firmware/cam/target` is mode `0700` after the build, because the password is in the image.
+The station joins `tallow-iot` with WPA2, static `10.87.0.21/24`, gateway and DNS `10.87.0.1`. There is no DHCP client and no fallback access point. The source calls `esp_wifi_set_ps(WIFI_PS_NONE)` from `stay_awake` after the station starts and after each join. `Link::heard` is `esp_wifi_sta_get_ap_info` returning success, and `firmware/cam/src/main.rs` reconnects when `up` or `heard` is false. That source has not been flashed. At 06:56 UTC on 2026-11-02 `cam-flash` of `/dev/ttyACM0` (USB path 2, MAC `44:bd:8d:7a:51:60`, ESP32-S3) exited success. That MAC is the reservation for `10.87.0.21`. The image on the board is that modem-sleep build. hostapd on `wlp0s20u6` logged the association and a completed WPA handshake at 00:27 local, then `disassociated due to inactivity` at 00:40 local. It has not associated again. `iw` shows no stations. A later `tools/mesh.sh ports` the same day, with no identify, `fleetd`, or flash, printed `/dev/ttyUSB0` `node-0` path `7` USB-MAC `-` and `/dev/ttyACM0` `unknown` path `2` USB-MAC `44:bd:8d:7c:20:c4`. The catalog still names `toby-cam-0` as `44:bd:8d:7a:51:60` on path `2`. That ACM chip was not written into `devices.jsonl` or `boards.tsv`. TCP to `10.87.0.21:8080` and `:6053` has no route. The `WIFI_PS_NONE` source is not on the board until the next `cam-flash`. The SSID and password are the `wifi_ssid` and `wifi_password` keys in gitignored `firmware/cam/secrets.yaml` (moved there from `firmware/esphome/secrets.yaml`; the ESPHome file is archived). The build mounts that one file read-only and fails if it is missing or a value is empty. It does not print them. `firmware/cam/target` is mode `0700` after the build, because the password is in the image.
 
 Port `8080` serves one MJPEG client. A connection is served only when its request line starts with `GET ` and its headers end within 8 KB and 3 s; any other request is dropped with no stream. The response is `multipart/x-mixed-replace` with a `Content-Length` on each part and no chunked transfer, which is what the panel's `dial` and `frames` already parse. Port `6053` accepts a TCP connection and closes it. That is the panel's status check. It does not speak the ESPHome API.
 
-`tools/tests/cam_stream_check.py --address 10.87.0.23` counts frames for 10 s through the panel's `dial` and `frames`. It refuses `10.87.0.21` before any socket. It has not been run. `tools/mesh.sh cam-frame` prints one multipart sample built on the host from `firmware/cam/src/stream.rs`. It opens no socket.
+`archive/tools/tests/cam_stream_check.py` counts frames for 10 s through the panel's `dial` and `frames`. It allows only `10.87.0.23`, checked as text before any socket, and refuses `10.87.0.21`. It has not been run. The Rust image is at `10.87.0.21`, so this checker does not accept the image's address. `tools/mesh.sh cam-frame` prints one multipart sample built on the host from `firmware/cam/src/stream.rs`. It opens no socket.
 
 Port `3232` takes one signed image. The header is 105 bytes: a big-endian size, a product byte (`2`, the cam), a little-endian version, the 32-byte SHA-256, and a 64-byte Ed25519 signature over the product, version, and digest. Each refusal happens before `esp_ota_begin` and before any image byte is written: a size of zero or past the `0x7C0000` slot, another product, a version below the floor (the highest version this board has confirmed; an equal version is a retry), and a bad signature. The body is hashed while it is written. The next boot partition changes only when that hash is the signed digest. The cam answers with one result byte, `0` for ok, then reboots into the stored image. The public key is `firmware/mesh/ota.pub`, baked at build time. The seed is not in the image, and the cam build does not mount `firmware/mesh/` or `mesh.key`.
 
@@ -49,19 +49,22 @@ The running image marks itself valid once, after 5 minutes of continuous Wi-Fi a
 
 ```bash
 tools/mesh.sh ota-sign <image> cam0 <version>
-tools/mesh.sh cam-push 10.87.0.23 <image>
+tools/mesh.sh cam-push 10.87.0.21 <image>
 ```
 
-`cam-push` allows only `10.87.0.23`. It reads the sibling `.sig` from `ota-sign`, which must be 69 bytes, and does not read `ota.key`. `tools/cam_push_send.py` repeats the checks before it opens a socket: the address, the signed product, and an image that is neither empty nor past the `0x7C0000` slot. It waits for the cam's result byte and exits non-zero on anything but ok. It has not been run.
+`cam-push` allows only `10.87.0.21`. It reads the sibling `.sig` from `ota-sign`, which must be 69 bytes, and does not read `ota.key`. `tools/cam_push_send.py` repeats the checks before it opens a socket: the address, the signed product, and an image that is neither empty nor past the `0x7C0000` slot. It waits for the cam's result byte and exits non-zero on anything but ok. It has not been run.
 
 ```bash
 tools/mesh.sh cam-flash /dev/ttyACM0    # hold BOOT, tap RST first; only toby-cam-0
 tools/mesh.sh cam-backup /dev/ttyACM0   # same guard, no address
+tools/fleetd.sh                         # cam-flash for toby-cam-0 after the chip read; hold BOOT, tap RST
 ```
 
-`cam-backup` writes `data/firmware-backups/` at mode `0600` in a `0700` directory and refuses to overwrite, the same writer as `backup` ([board note](esp32-devkit.md#back-up)). The cam image holds the Wi-Fi password, so the file stays private. `cam-flash` and `cam-backup` have not been run.
+`tools/fleetd.sh` calls `cam-flash` for the port whose USB serial MAC is `toby-cam-0`, including when that cable is on another path. A USB serial MAC that is not that row is refused and is not flashed as `toby-cam-0`. The first ESP32-S3 fills `toby-cam-0` only while that row's Wi-Fi MAC is empty or `unknown`. The files now name `toby-cam-0` on USB path `2` with Wi-Fi MAC `44:bd:8d:7a:51:60`. Hold BOOT and tap RST first. Once that MAC is real, a later S3 is stored as `cam-N` with `flash_ok` false, the old path is released, and it is not flashed. `push_ok` stays false, and `fleetd` does not call `cam-push`. The learner does not use the name `toby-cam-1`. The learn rules, the poll, and the failure logs are in [docs/01](../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh).
 
-On 2026-10-31 `tools/mesh.sh cam-size` printed `App/part. size: 464,400/8,126,464 bytes, 5.71%`, with the camera driver in and before this network. Before the driver the image was 367,392 bytes (4.52%). On 2026-11-01 `tools/mesh.sh cam-size` printed `App/part. size: 1,071,264/8,126,464 bytes, 13.18%`, with Wi-Fi, the stream, and signed OTA in. `strings` on that image printed `no default credential`. The image is not flashed. `toby-cam-1` was not touched.
+`cam-flash` and `cam-backup` admit the port with the USB-serial lookup ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh)). A colon MAC that matches `toby-cam-0` is that board even on another path. A different USB MAC is not `toby-cam-0`. `cam-flash` then reads the chip MAC with esptool before it writes, and refuses the port on the same rule as mesh `flash` ([board note](esp32-devkit.md#flash)): the `wifi_mac` cell for that USB path is a different address. An empty cell or `unknown` accepts the chip. `toby-cam-0`'s cell is `44:bd:8d:7a:51:60`. It then runs `sudo tools/setup_iot_ap.sh allow` with that station MAC, because the cam joins `tallow-iot`, and again with the Bluetooth address: the base MAC plus 2, the same `bt_mac` mesh `flash` computes. Both calls happen before it writes. `cam-backup` writes `data/firmware-backups/` at mode `0600` in a `0700` directory and refuses to overwrite, the same writer as `backup` ([board note](esp32-devkit.md#back-up)). The cam image holds the Wi-Fi password, so the file stays private. `cam-backup` has not been run. On 2026-11-02 `cam-flash` of `/dev/ttyACM0` exited success; the image it wrote is the modem-sleep build, not this source.
+
+On 2026-10-31 `tools/mesh.sh cam-size` printed `App/part. size: 464,400/8,126,464 bytes, 5.71%`, with the camera driver in and before this network. Before the driver the image was 367,392 bytes (4.52%). On 2026-11-01 `tools/mesh.sh cam-size` printed `App/part. size: 1,071,264/8,126,464 bytes, 13.18%`, with Wi-Fi, the stream, and signed OTA in. `strings` on that image printed `no default credential`. That print is from before the 2026-11-02 flash. The source in this tree has not been flashed. `toby-cam-1` was not touched.
 
 ## Pins
 
@@ -138,15 +141,27 @@ Not proven:
 
 ## Cams page
 
-The panel at `/` is a menu (`app/menu_page.html`): Lights at `/lights`, the cameras app at `/cams`, and Settings at `/settings`. The cameras tile, the `/cams` heading, and that page's title are the inventory `title`. The inventory is `data/panel/cams.json` (`data/panel-preview/cams.json` under `--preview`, or `cams.json` in the `--data-dir` of a preview). `data/` is gitignored local state, so the file is not part of the repo. On 2026-10-28 it held one cam and no title. The running inventory now has a title, and the preview inventory does too. A document looks like:
+The panel at `/` is a menu (`app/menu_page.html`): Lights at `/lights`, the cameras app at `/cams`, and Settings at `/settings`. The cameras tile, the `/cams` heading, and that page's title are the inventory `title`. The inventory is `data/panel/cams.json` (`data/panel-preview/cams.json` under `--preview`, or `cams.json` in the `--data-dir` of a preview). `data/` is gitignored local state, so the file is not part of the repo. On 2026-10-28 it held one cam and no title. The running inventory now has a title, and the preview inventory does too. After `tools/mesh.sh cams` on 2026-11-02 the file is:
 
 ```json
-{"title": "Toby", "cams": [{"id": "toby-cam-1", "name": "Cam 1", "address": "10.87.0.21"}]}
+{"title": "Toby", "cams": [{"id": "toby-cam-0", "name": "Cam 1", "address": "10.87.0.21"}]}
 ```
 
-That address is the static one in `toby-cam-1.yaml`. The board is not answering there on 2026-10-31 ([Where it is](#where-it-is-2026-10-31)). `toby-cam-0` is not yet in `data/panel/cams.json`.
+That address is the reservation for `44:bd:8d:7a:51:60`, and the static address in `toby-cam-1.yaml`. The row was already on the page. Port 6053 did not accept, so this was not a new cam, and no picture is showing ([Catalog sync](#catalog-sync)). On 2026-10-31 the board was not answering at `10.87.0.21` ([Where it is](#where-it-is-2026-10-31)).
 
-`title` is optional, 1 to 40 characters. Omit it, or leave the file missing, and the name is `Cameras` (`DEFAULT_TITLE` in the original `archive/app/cams.py`; the Rust panel is `host/tallowd/src/panel/`). `id` is a lowercase slug and must be unique. `name` is 1 to 40 characters. Unknown fields are refused. `address` must be a node in `10.87.0.0/24`, not `.0`, `.1`, or `.255`, so the panel cannot be pointed anywhere else. Edit the list on the settings page. A direct edit of the file is still picked up when the file changes.
+`title` is optional, 1 to 40 characters. Omit it, or leave the file missing, and the name is `Cameras` (`DEFAULT_TITLE` in the original `archive/app/cams.py`; the Rust panel is `host/tallowd/src/panel/`). `id` is a lowercase slug and must be unique. `name` is 1 to 40 characters. Unknown fields are refused. `address` must be a node in `10.87.0.0/24`, not `.0`, `.1`, or `.255`, so the panel cannot be pointed anywhere else. Settings edits the list. Catalog sync writes the same file ([Catalog sync](#catalog-sync)). A direct edit of the file is still picked up when the file changes.
+
+### Catalog sync
+
+`tools/sync_panel_cams.py` reads `firmware/mesh/devices.jsonl` and `secrets/iot-ap/reservations`. An `esp32s3-cam` row with a real Wi-Fi MAC and a reservation is a cam. Mesh rows are not. It opens that address on TCP port 6053, the panel status port, with a 0.4 s timeout.
+
+A cam whose port accepts is added to `data/panel/cams.json` when that id and that address are both absent. A row already using that address takes the catalog id and keeps its display name. A cam that does not answer is not added. The title and rows at other addresses stay. The write is a temp file renamed into place. No change means the file is not rewritten, so the panel does not reload.
+
+`tools/mesh.sh cams` runs that script with `--verbose` and prints the contact line. `tools/fleetd.sh` runs it at the end of every poll, without `--verbose`, and logs only when the page changes or the script fails. A sync failure does not stop a flash. Neither command opens a serial port.
+
+On 2026-11-02 `tools/mesh.sh cams` printed `contact toby-cam-0 10.87.0.21: no answer` and `toby-cam-1 at 10.87.0.21 is toby-cam-0`. The file now has title Toby and one cam: id `toby-cam-0`, name `Cam 1`, address `10.87.0.21`. The cam was not added as a new row, because port 6053 did not accept. The reservation for `44:bd:8d:7a:51:60` is still `10.87.0.21`. No identify, `fleetd`, or flash was run for this. No picture is showing.
+
+`python3 -m unittest tools/tests/test_sync_panel_cams.py` is 7 tests, OK. They open no socket. `tools/mesh.sh check` lists that file with the other host-tool unit tests ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh)).
 
 ### Inventory reload
 
@@ -199,7 +214,7 @@ So the panel dials once per cam and shares it, and is gentle about it (`Hub` and
 - Watch all and Stop all appear with 2 or more cams. Watch all skips offline cams.
 - While the tab is visible, the page re-reads the list and status every 5 s if any tile is watching, every 20 s otherwise, so file edits appear without a reload.
 - Switching away from the tab stops every stream. Coming back resumes the ones that were on.
-- With no cams it says to add one in Settings. The page says nothing is saved.
+- With no cams it says to add one in Settings. A catalog cam that answers on port 6053 is added by [Catalog sync](#catalog-sync) as well. The page says nothing is saved.
 
 ### Tests
 
@@ -236,17 +251,17 @@ Not verified:
 
 ## toby-cam-0
 
-The second MB0200, same board as `toby-cam-1`. Counting starts at 0 from here on. As of 2026-10-31 it is not flashed.
+The second MB0200, same board as `toby-cam-1`. Counting starts at 0 from here on. As of 2026-10-31 it had not been flashed, and esptool could not read a MAC. On 2026-11-02 `cam-flash` wrote the modem-sleep Rust image. The source in the tree has not been flashed ([Rust image](#rust-image)).
 
 | Field | Value |
 | --- | --- |
-| Config | `archive/firmware/esphome/toby-cam-0.yaml`, static `10.87.0.23` |
-| Build | Compiled at RAM 45.0%, flash 15.4% |
-| Attached | `/dev/ttyACM0`, USB `303a:4001`, serial `123456` |
-| Running | Earlier TinyUSB firmware |
-| Wi-Fi MAC | Unknown |
+| Config | `archive/firmware/esphome/toby-cam-0.yaml`, static `10.87.0.23`. The Rust image uses `10.87.0.21` ([Rust image](#rust-image)) |
+| Build | ESPHome compiled at RAM 45.0%, flash 15.4%. That YAML is not what was flashed |
+| Attached | `/dev/ttyACM0`, USB path 2, at the 2026-11-02 flash (`303a:1001` in the catalog). A later `tools/mesh.sh ports` the same day printed `/dev/ttyACM0` `unknown` path `2` USB-MAC `44:bd:8d:7c:20:c4`. That chip was not catalogued, identified, or flashed |
+| Running | The modem-sleep Rust image from the `cam-flash` of `44:bd:8d:7a:51:60`. Not associated. The later `ports` run did not name this MAC |
+| Wi-Fi MAC | `44:bd:8d:7a:51:60`, the reservation for `10.87.0.21` |
 
-esptool could not connect, and a 1200-baud touch did not help. It needs BOOT+RST for the first read. The MAC must go on the AP accept list before the board can join. The board is not yet in `data/panel/cams.json`.
+On 2026-10-31 esptool could not connect, and a 1200-baud touch did not help. It needs BOOT+RST for the first read. The 2026-11-02 `cam-flash` read the MAC and allowed it before the write ([Rust image](#rust-image)). The page row is in [Catalog sync](#catalog-sync). Port 6053 did not accept on that run, and no picture is showing.
 
 ```bash
 ESPHOME_DEVICE=/dev/ttyACM0 archive/tools/esphome.sh mac            # hold BOOT, tap RST first
