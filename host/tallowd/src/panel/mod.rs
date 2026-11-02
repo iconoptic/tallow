@@ -8,6 +8,7 @@
 mod access;
 mod bluez;
 mod light;
+mod mesh_host;
 mod mesh_map;
 mod pages;
 mod routes;
@@ -51,6 +52,8 @@ pub struct Panel {
     hubs: Hubs,
     /// Where the mesh map is read from. Set by `with_map`; a panel without one has no map.
     map_path: Option<PathBuf>,
+    /// What the mesh host supervisor is doing. `None` when the panel does not run one.
+    mesh_host: Option<Arc<mesh_host::Status>>,
 }
 
 impl Panel {
@@ -76,12 +79,19 @@ impl Panel {
             cams_path,
             hubs,
             map_path: None,
+            mesh_host: None,
         }
     }
 
     /// The file the `/devices` page reads the mesh map from.
     pub fn with_map(mut self, map_path: PathBuf) -> Self {
         self.map_path = Some(map_path);
+        self
+    }
+
+    /// The status of the mesh host this panel keeps, shown with the map.
+    fn with_mesh_host(mut self, status: Arc<mesh_host::Status>) -> Self {
+        self.mesh_host = Some(status);
         self
     }
 }
@@ -157,6 +167,15 @@ fn start(args: Args) -> Result<(), String> {
             "--data-dir and --agents-file need --preview. The real panel uses data/panel and secrets/panel."
                 .to_owned(),
         );
+    }
+    if args.preview && (args.mesh.is_some() || args.mesh_port.is_some()) {
+        return Err(
+            "--mesh and --mesh-port need the real panel. A preview never opens a serial port."
+                .to_owned(),
+        );
+    }
+    if args.mesh == Some(false) && args.mesh_port.is_some() {
+        return Err("--mesh-port needs the mesh host, so it cannot go with --mesh off.".to_owned());
     }
     let root = repo_root();
     // Python falls back to secrets/panel/password here, even for a preview. A preview
@@ -246,7 +265,18 @@ fn start(args: Args) -> Result<(), String> {
     } else {
         root.join("data/mesh/map.json")
     };
-    let panel = Panel::new(
+    let mesh = if args.preview || args.mesh == Some(false) {
+        None
+    } else {
+        let config = mesh_host::Config::standard(&root, args.mesh_port.clone())
+            .map_err(|error| format!("cannot find this program to run the mesh host: {error}"))?;
+        eprintln!(
+            "Mesh host: finds the root board and keeps {} fresh. --mesh off turns it off.",
+            config.map_path.display()
+        );
+        Some((config, Arc::new(mesh_host::Status::new())))
+    };
+    let mut panel = Panel::new(
         &password,
         light,
         library,
@@ -256,7 +286,10 @@ fn start(args: Args) -> Result<(), String> {
         Hubs::new(Tuning::default()),
     )
     .with_map(map_path);
-    serve(Arc::new(panel), &host, args.port, sock_path, radio)
+    if let Some((_, status)) = &mesh {
+        panel = panel.with_mesh_host(status.clone());
+    }
+    serve(Arc::new(panel), &host, args.port, sock_path, radio, mesh)
 }
 
 /// Binds the two doors, runs the BLE link if there is one, and serves until SIGTERM or SIGINT.
@@ -266,6 +299,7 @@ fn serve(
     port: u16,
     sock_path: PathBuf,
     radio: Option<Radio>,
+    mesh: Option<(mesh_host::Config, Arc<mesh_host::Status>)>,
 ) -> Result<(), String> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -286,6 +320,10 @@ fn serve(
                 radio.options,
             );
             tokio::spawn(engine.run(stop_rx.clone()))
+        });
+
+        let mut mesh_task = mesh.map(|(config, status)| {
+            tokio::spawn(mesh_host::supervise(config, status, stop_rx.clone()))
         });
 
         let lan_app = routes::router(panel.clone(), Channel::Lan);
@@ -315,6 +353,9 @@ fn serve(
         let _ = stop_tx.send(true);
         if let Some(link) = link.take() {
             let _ = tokio::time::timeout(GRACE, link).await;
+        }
+        if let Some(task) = mesh_task.take() {
+            let _ = tokio::time::timeout(GRACE, task).await;
         }
         scheduler.abort();
         let _ = std::fs::remove_file(&sock_path);

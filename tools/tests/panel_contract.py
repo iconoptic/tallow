@@ -1048,6 +1048,7 @@ def devices_routes(client: Client, sock_path: str, data_dir: Path) -> None:
     text_has("GET /devices", payload, "<title>Devices</title>")
     text_has("GET /devices", payload, MAP_ROUTE)
     text_has("GET /devices", payload, "The map is not running.")
+    text_has("GET /devices", payload, "The panel starts the map itself.")
     text_lacks("GET /devices", payload, "innerHTML")
 
     status, payload, headers = client.call("GET", "/")
@@ -1080,6 +1081,7 @@ def devices_routes(client: Client, sock_path: str, data_dir: Path) -> None:
 
     body = map_document(client)
     stale_as(body, "missing", "a panel with no map file")
+    check_eq("a preview keeps no mesh host", "host" in body, False)
 
     now = time.time()
     fresh = fresh_map(int(now))

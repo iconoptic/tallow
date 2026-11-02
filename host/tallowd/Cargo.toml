@@ -17,7 +17,7 @@ futures-util = { version = "0.3", default-features = false }
 serde_urlencoded = "0.7"
 serialport = { version = "4.10.1", default-features = false }
 sha2 = "0.10"
-tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt", "rt-multi-thread", "signal", "sync", "time"] }
 toml = "0.8"
 tallow-govee = { path = "../tallow-govee", features = ["ble"] }
 tallow-mesh-core = { path = "../../firmware/mesh/core" }

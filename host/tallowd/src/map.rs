@@ -8,6 +8,7 @@ use crate::decode::{self, Named, ParentChange, Sighting};
 use crate::identity::Identities;
 use crate::irk::Keys;
 use crate::link::{parse_line, Line};
+use crate::local::Batch;
 use crate::rooms::Rooms;
 use anyhow::Context;
 use serde_json::{json, Value};
@@ -149,6 +150,29 @@ impl Map {
         if named.class != 0 {
             device.class = Some(named.class);
         }
+    }
+
+    /// What the host's own adapter heard. It is a node of rank 0 at no hops, and its
+    /// advert counts are kept across batches as a board's are.
+    pub fn local(&mut self, batch: &Batch, now: f64) {
+        let mut stats = self
+            .nodes
+            .get(&batch.node)
+            .map_or_else(Stats::default, |row| row.stats);
+        stats.uptime_s = batch.uptime_s;
+        for sighting in &batch.sightings {
+            let seen = u32::from(sighting.count);
+            if sighting.kind == Some(Kind::Classic) {
+                stats.classic = stats.classic.saturating_add(seen);
+            } else {
+                stats.adverts = stats.adverts.saturating_add(seen);
+            }
+            self.sighting(&batch.node, sighting, now);
+        }
+        for named in &batch.names {
+            self.name(named);
+        }
+        self.stats(&batch.node, stats, 0, 0, now);
     }
 
     fn stats(&mut self, node: &str, stats: Stats, hops: u32, link_rssi: i32, now: f64) {
@@ -508,11 +532,24 @@ impl Recorder {
                 None => {}
             }
         }
+        (printed, self.due(now))
+    }
+}
+
+impl Recorder {
+    /// What the host's adapter heard at `now`. Returns whether the map is due a save.
+    pub fn feed_local(&mut self, batch: &Batch, now: f64) -> bool {
+        self.world.clock = now;
+        self.world.local(batch, now);
+        self.due(now)
+    }
+
+    fn due(&mut self, now: f64) -> bool {
         let save = now >= self.next_save;
         if save {
             self.next_save = now + SAVE_EVERY_S;
         }
-        (printed, save)
+        save
     }
 }
 

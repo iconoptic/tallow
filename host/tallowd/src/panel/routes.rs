@@ -433,7 +433,10 @@ async fn mesh_map_route(State(panel): State<Arc<Panel>>, req: Request) -> Respon
     if let Err(error) = lan_viewer(&panel, &req) {
         return error.into_response();
     }
-    let document = mesh_map::document(panel.map_path.as_deref(), SystemTime::now());
+    let mut document = mesh_map::document(panel.map_path.as_deref(), SystemTime::now());
+    if let Some(host) = &panel.mesh_host {
+        document["host"] = host.document();
+    }
     json_response(StatusCode::OK, &document)
 }
 

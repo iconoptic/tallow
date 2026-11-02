@@ -119,6 +119,45 @@ fn write_cams(path: &Path, cams: &Value) {
 }
 
 #[tokio::test]
+async fn the_mesh_map_carries_the_host_status_only_when_the_panel_keeps_a_mesh_host() {
+    let dir = TempDir::new("devices-host");
+    let mut panel = panel_in(&dir, Vec::new(), None, true);
+    let cookie = browser();
+    let (_, _, body) = send(
+        &panel,
+        "GET",
+        "/api/mesh/map",
+        Channel::Lan,
+        None,
+        Some(&cookie),
+        b"",
+    )
+    .await;
+    assert!(
+        json_body(&body).get("host").is_none(),
+        "no host for a preview"
+    );
+    Arc::get_mut(&mut panel).expect("one owner").mesh_host =
+        Some(Arc::new(super::mesh_host::Status::new()));
+    let (_, _, body) = send(
+        &panel,
+        "GET",
+        "/api/mesh/map",
+        Channel::Lan,
+        None,
+        Some(&cookie),
+        b"",
+    )
+    .await;
+    let doc = json_body(&body);
+    assert_eq!(doc["reason"], json!("missing"));
+    assert_eq!(
+        doc["host"],
+        json!({"state": "starting", "port": null, "restarts": 0, "last_exit": null})
+    );
+}
+
+#[tokio::test]
 async fn the_devices_page_and_the_mesh_map_are_lan_only_read_only_and_cookie_gated() {
     let dir = TempDir::new("devices-routes");
     let panel = panel_in(&dir, Vec::new(), None, true);

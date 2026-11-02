@@ -12,6 +12,7 @@ mod irk;
 #[cfg_attr(not(test), allow(dead_code))]
 mod library;
 mod link;
+mod local;
 mod map;
 mod ota;
 mod panel;
@@ -27,6 +28,7 @@ use link::{unix_now, Link, ScanSettings, DEFAULT_SCAN};
 use map::{Map, Recorder};
 use rooms::Rooms;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 use tallow_mesh_core::wire::VERSION;
 use trial::Plan;
@@ -75,7 +77,10 @@ fn main() {
 
 #[derive(Debug, PartialEq)]
 struct RunArgs {
-    port: String,
+    /// The root board's port. `None` runs on the host's adapter alone.
+    port: Option<String>,
+    /// `--bluez`: also listen on the host's adapter. `Some(None)` is the seed's adapter.
+    bluez: Option<Option<String>>,
     seconds: f64,
     out: PathBuf,
     irks: PathBuf,
@@ -88,15 +93,21 @@ struct RunArgs {
     watch: Option<Vec<u8>>,
     /// `--trial`: measure delivery under each setting instead of keeping a map.
     trial: Option<Plan>,
+    /// `--parent-pipe`: exit when stdin closes. The panel holds the other end, so a
+    /// panel that dies never leaves this process holding the root's port.
+    parent_pipe: bool,
 }
 
-/// `tallowd run --port <p> --out <path> [--seconds <n>] [--irks <path>] [--devices <path>] [--rooms <path>]
-/// [--set WINDOW INTERVAL PERIOD LENGTH] [--watch ADDR...] [--trial [--hold <s>] [--hz <n>] [--size <n>] [--pass-mark <percent>]]`.
+/// `tallowd run [--port <p>] [--bluez [hciN]] --out <path> [--seconds <n>] [--irks <path>] [--devices <path>] [--rooms <path>]
+/// [--parent-pipe] [--set WINDOW INTERVAL PERIOD LENGTH] [--watch ADDR...] [--trial [--hold <s>] [--hz <n>] [--size <n>] [--pass-mark <percent>]]`.
+/// One of `--port` and `--bluez` is needed. With `--bluez` and no `--port` the host's adapter is
+/// the only listener, and the trial, `--set`, and `--watch` (which go to boards) are refused.
 /// Seconds default to 60, the keys to `data/mesh/irks.toml`, the devices to
 /// `data/mesh/devices.toml`, and the rooms to `data/mesh/rooms.toml`. The trial
 /// defaults are those of `tools/mesh_host.py --trial`.
 fn parse_run(argv: &[String]) -> anyhow::Result<RunArgs> {
     let mut port = None;
+    let mut bluez = None;
     let mut seconds: f64 = 60.0;
     let mut out = None;
     let mut irks = PathBuf::from(irk::DEFAULT_PATH);
@@ -105,11 +116,14 @@ fn parse_run(argv: &[String]) -> anyhow::Result<RunArgs> {
     let mut set = None;
     let mut watch = None;
     let mut trial = false;
+    let mut parent_pipe = false;
     let mut plan = Plan::default();
     let mut words = argv.iter().peekable();
     while let Some(flag) = words.next() {
         match flag.as_str() {
             "--trial" => trial = true,
+            "--parent-pipe" => parent_pipe = true,
+            "--bluez" => bluez = Some(words.next_if(|word| !word.starts_with("--")).cloned()),
             "--watch" => {
                 let mut addresses = Vec::new();
                 while let Some(address) = words.next_if(|word| !word.starts_with("--")) {
@@ -165,8 +179,17 @@ fn parse_run(argv: &[String]) -> anyhow::Result<RunArgs> {
         "--hold must be zero or more"
     );
     ensure!(plan.pass_mark.is_finite(), "--pass-mark must be a number");
+    ensure!(
+        port.is_some() || bluez.is_some(),
+        "--port or --bluez is required"
+    );
+    ensure!(
+        port.is_some() || (!trial && set.is_none() && watch.is_none()),
+        "--trial, --set, and --watch go to boards, so they need --port"
+    );
     Ok(RunArgs {
-        port: port.context("--port is required")?,
+        port,
+        bluez,
         seconds,
         out: out.context("--out is required")?,
         irks,
@@ -175,6 +198,7 @@ fn parse_run(argv: &[String]) -> anyhow::Result<RunArgs> {
         set,
         watch,
         trial: trial.then_some(plan),
+        parent_pipe,
     })
 }
 
@@ -184,24 +208,28 @@ fn parse_number<T: std::str::FromStr>(flag: &str, value: &str) -> anyhow::Result
         .map_err(|_| anyhow::anyhow!("{flag} {value} is not a number, or is out of range"))
 }
 
-/// Runs the root's port: a map by default, or the delivery trial with `--trial`.
-/// `Link::open` refuses anything but a classic board's port, and waits out the
-/// reset. The keys, devices, and rooms load first, so a bad file fails before the
-/// board is reset. Returns the exit code: the trial exits 1 under its pass mark.
+/// Runs the root's port and the host's adapter, whichever are named: a map by default, or
+/// the delivery trial with `--trial`. `Link::open` refuses anything but a classic board's
+/// port, and waits out the reset. The keys, devices, and rooms load first, so a bad file
+/// fails before the board is reset. Returns the exit code: the trial exits 1 under its pass mark.
 fn run_command(argv: &[String]) -> anyhow::Result<i32> {
     let args = parse_run(argv)?;
+    if args.parent_pipe {
+        exit_when_stdin_closes();
+    }
     let keys = Keys::load(&args.irks)?;
     let identities = Identities::load(&args.devices)?;
     let rooms = Rooms::load(&args.rooms)?;
-    let mut link = Link::open(&args.port)?;
+    let mut link = args.port.as_deref().map(Link::open).transpose()?;
+    let local = args.bluez.clone().map(local::start);
     let mut recorder = Recorder::with_keys(keys, identities, rooms);
-    if let Some(plan) = &args.trial {
+    if let (Some(plan), Some(link)) = (&args.trial, link.as_mut()) {
         // Read first, so the leaf finds this root before the first setting, as run_trial does.
-        read_for(&mut link, &mut recorder, 12.0, &args.out)?;
+        read_for(Some(link), local.as_ref(), &mut recorder, 12.0, &args.out)?;
         if let Some(line) = &args.watch {
             link.send_watch(line)?;
         }
-        let rows = trial::run(&mut link, &mut recorder.world, plan, &mut |line| {
+        let rows = trial::run(link, &mut recorder.world, plan, &mut |line| {
             println!("{line}");
         })?;
         finish(&recorder.world, &args.out)?;
@@ -211,33 +239,75 @@ fn run_command(argv: &[String]) -> anyhow::Result<i32> {
             1
         });
     }
-    // The first read sends the heartbeat, so this board is the root before the
-    // settings flood out, as in mesh_host.py.
-    let lines = link.lines()?;
-    recorder.feed(&lines, unix_now());
-    link.send_command(&args.set.unwrap_or(DEFAULT_SCAN))?;
-    if let Some(line) = &args.watch {
-        link.send_watch(line)?;
+    if let Some(link) = link.as_mut() {
+        // The first read sends the heartbeat, so this board is the root before the
+        // settings flood out, as in mesh_host.py.
+        let lines = link.lines()?;
+        recorder.feed(&lines, unix_now());
+        link.send_command(&args.set.unwrap_or(DEFAULT_SCAN))?;
+        if let Some(line) = &args.watch {
+            link.send_watch(line)?;
+        }
     }
-    read_for(&mut link, &mut recorder, args.seconds, &args.out)?;
+    read_for(
+        link.as_mut(),
+        local.as_ref(),
+        &mut recorder,
+        args.seconds,
+        &args.out,
+    )?;
     finish(&recorder.world, &args.out)?;
     Ok(0)
 }
 
-/// Reads the port for `seconds`, printing what the map does not keep and saving
-/// the map each time it is due.
+/// Ends the process when stdin reaches end of file. Nothing is written to it.
+fn exit_when_stdin_closes() {
+    std::thread::spawn(|| {
+        let mut sink = [0u8; 64];
+        let mut stdin = std::io::stdin();
+        while matches!(std::io::Read::read(&mut stdin, &mut sink), Ok(n) if n > 0) {}
+        std::process::exit(0);
+    });
+}
+
+/// Reads the port and the adapter for `seconds`, printing what the map does not keep and
+/// saving the map each time it is due. With no port it waits on the adapter instead.
 fn read_for(
-    link: &mut Link,
+    mut link: Option<&mut Link>,
+    local: Option<&Receiver<local::Event>>,
     recorder: &mut Recorder,
     seconds: f64,
     out: &Path,
 ) -> anyhow::Result<()> {
     let end = Instant::now() + Duration::from_secs_f64(seconds);
     while Instant::now() < end {
-        let lines = link.lines()?;
-        let (printed, save) = recorder.feed(&lines, unix_now());
-        for line in printed {
-            println!("{line}");
+        let mut save = false;
+        if let Some(link) = link.as_deref_mut() {
+            let lines = link.lines()?;
+            let (printed, due) = recorder.feed(&lines, unix_now());
+            for line in printed {
+                println!("{line}");
+            }
+            save |= due;
+        }
+        if let Some(local) = local {
+            let wait = if link.is_some() {
+                Duration::ZERO
+            } else {
+                Duration::from_millis(200)
+            };
+            let mut next = match local.recv_timeout(wait) {
+                Ok(event) => Some(event),
+                Err(RecvTimeoutError::Timeout) => None,
+                Err(RecvTimeoutError::Disconnected) => bail!("the adapter scanner stopped"),
+            };
+            while let Some(event) = next {
+                match event {
+                    local::Event::Batch(batch) => save |= recorder.feed_local(&batch, unix_now()),
+                    local::Event::Note(note) => eprintln!("{note}"),
+                }
+                next = local.try_recv().ok();
+            }
         }
         if save {
             recorder.world.save(out)?;
@@ -279,7 +349,8 @@ mod tests {
         assert_eq!(
             args,
             RunArgs {
-                port: "/dev/ttyUSB0".into(),
+                port: Some("/dev/ttyUSB0".into()),
+                bluez: None,
                 seconds: 60.0,
                 out: PathBuf::from("data/mesh/map.json"),
                 irks: PathBuf::from("data/mesh/irks.toml"),
@@ -288,8 +359,34 @@ mod tests {
                 set: None,
                 watch: None,
                 trial: None,
+                parent_pipe: false,
             }
         );
+    }
+
+    #[test]
+    fn bluez_alone_runs_on_the_adapter_and_takes_an_optional_name() {
+        let seed = parse_run(&words("--bluez --out m.json")).expect("seed");
+        assert_eq!((seed.port, seed.bluez), (None, Some(None)));
+        let named = parse_run(&words("--bluez hci1 --out m.json --seconds 5")).expect("named");
+        assert_eq!(named.bluez, Some(Some("hci1".into())));
+        let both = parse_run(&words("--port p --bluez --out m.json")).expect("both");
+        assert_eq!(both.port.as_deref(), Some("p"));
+        assert_eq!(both.bluez, Some(None));
+    }
+
+    #[test]
+    fn what_goes_to_boards_needs_a_port() {
+        assert!(parse_run(&words("--bluez --out m.json --trial")).is_err());
+        assert!(parse_run(&words("--bluez --out m.json --set 30 100 12 4")).is_err());
+        assert!(parse_run(&words("--bluez --out m.json --watch")).is_err());
+        assert!(parse_run(&words("--out m.json")).is_err());
+    }
+
+    #[test]
+    fn run_takes_parent_pipe_as_a_switch() {
+        let args = parse_run(&words("--port p --out m.json --parent-pipe")).expect("args");
+        assert!(args.parent_pipe);
     }
 
     #[test]

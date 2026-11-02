@@ -28,9 +28,9 @@
   <div id="stale" class="empty" hidden>
     <p><strong>The map is not running.</strong></p>
     <p id="reason" class="note"></p>
-    <p class="note">Find the root node's port with <code>tools/mesh.sh ports</code>, then start the map on it:</p>
-    <p><code>tools/mesh.sh daemon run &lt;port&gt; --out data/mesh/map.json</code></p>
-    <p class="note">It writes <code>data/mesh/map.json</code> while it runs. This page reads that file every 5 s.</p>
+    <p id="host" class="note"></p>
+    <p class="note">The panel starts the map itself. It runs on the root board when one is plugged into this machine by USB, and writes <code>data/mesh/map.json</code>. The other boards only need power. This page reads that file every 5 s.</p>
+    <p class="note">With <code>--mesh off</code>, start it by hand: <code>tools/mesh.sh daemon run &lt;port&gt; --out data/mesh/map.json</code>, where <code>&lt;port&gt;</code> is the root board's USB serial port, listed by <code>tools/mesh.sh ports</code>.</p>
   </div>
   <div id="live" hidden>
     <p id="stamp" class="note"></p>
@@ -59,6 +59,16 @@ const REASONS = {
   "too large": "The map file is larger than the panel reads.",
   future: "The map file is dated ahead of this machine's clock.",
 };
+const HOST_STATES = {
+  starting: "The panel is starting the map.",
+  waiting: "Waiting for the root board. Plug a mesh board into this machine by USB. The other boards only need power.",
+  "no-permission": "This user cannot open the root board's port. Run tools/setup_mesh_host.sh, or add this user to the dialout group.",
+  "held-elsewhere": "Another process is writing the map. The panel takes over when that one stops.",
+  running: "The panel is running the map on the root board. The first write can take a few seconds.",
+  backoff: "The map process stopped, and the panel is trying again.",
+  "gave-up": "The map process kept failing. Fix the cause and restart the panel.",
+  paused: "Paused while a tools/mesh.sh command uses the port. It resumes by itself.",
+};
 const KINDS = {
   "ble-public": "BLE, public address",
   "ble-random": "BLE, random address",
@@ -67,6 +77,7 @@ const KINDS = {
 const errorEl = document.getElementById("error");
 const staleEl = document.getElementById("stale");
 const reasonEl = document.getElementById("reason");
+const hostEl = document.getElementById("host");
 const liveEl = document.getElementById("live");
 const stampEl = document.getElementById("stamp");
 const devicesEl = document.getElementById("devices");
@@ -179,6 +190,15 @@ function showStale(doc) {
   let text = REASONS[doc.reason] || "The map file is not usable.";
   if (doc.reason === "old" && typeof doc.age_s === "number") text = `The map was last written ${ago(doc.age_s)}.`;
   reasonEl.textContent = text;
+  hostEl.textContent = hostText(doc.host);
+}
+
+function hostText(host) {
+  if (!host || typeof host.state !== "string") return "";
+  let text = HOST_STATES[host.state] || "";
+  if (typeof host.port === "string" && host.port) text += ` Port: ${host.port}.`;
+  if (typeof host.last_exit === "string" && host.last_exit) text += ` Last exit: ${host.last_exit}`;
+  return text.trim();
 }
 
 function showLive(doc) {

@@ -16,7 +16,7 @@ class DevicesPageTest(unittest.TestCase):
     def test_the_page_shows_the_empty_state_the_rotating_address_and_a_hostile_name_as_text(self) -> None:
         run = subprocess.run(["node", str(HARNESS)], capture_output=True, text=True, timeout=30, check=False)
         self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
-        self.assertGreaterEqual(run.stdout.count("ok "), 15)
+        self.assertGreaterEqual(run.stdout.count("ok "), 18)
 
     def test_the_page_never_writes_markup_from_the_map(self) -> None:
         source = (ROOT / "app" / "devices_page.html").read_text(encoding="utf-8")

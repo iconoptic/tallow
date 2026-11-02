@@ -28,6 +28,10 @@ pub struct Args {
     pub password_file: Option<PathBuf>,
     pub data_dir: Option<PathBuf>,
     pub agents_file: Option<PathBuf>,
+    /// `--mesh auto|off`. `None` is the default, which is `auto` on the real panel.
+    pub mesh: Option<bool>,
+    /// `--mesh-port`: the root board's port, in place of finding it.
+    pub mesh_port: Option<PathBuf>,
 }
 
 impl Default for Args {
@@ -44,6 +48,8 @@ impl Default for Args {
             password_file: None,
             data_dir: None,
             agents_file: None,
+            mesh: None,
+            mesh_port: None,
         }
     }
 }
@@ -78,6 +84,8 @@ pub fn parse_args(argv: &[String]) -> Result<Args, String> {
             "--password-file",
             "--data-dir",
             "--agents-file",
+            "--mesh",
+            "--mesh-port",
         ];
         if !known.contains(&flag) {
             return Err(format!("unrecognized arguments: {raw}"));
@@ -125,6 +133,25 @@ pub fn parse_args(argv: &[String]) -> Result<Args, String> {
             "--password-file" => args.password_file = Some(PathBuf::from(value)),
             "--data-dir" => args.data_dir = Some(PathBuf::from(value)),
             "--agents-file" => args.agents_file = Some(PathBuf::from(value)),
+            "--mesh" => {
+                args.mesh = Some(match value.as_str() {
+                    "auto" => true,
+                    "off" => false,
+                    _ => {
+                        return Err(format!(
+                            "argument --mesh: invalid choice: '{value}' (choose from auto, off)"
+                        ))
+                    }
+                });
+            }
+            "--mesh-port" => {
+                if !value.starts_with("/dev/") || value.contains("..") {
+                    return Err(format!(
+                        "argument --mesh-port: '{value}' is not a device path under /dev"
+                    ));
+                }
+                args.mesh_port = Some(PathBuf::from(value));
+            }
             _ => unreachable!("every known flag is matched above"),
         }
     }
@@ -268,6 +295,26 @@ mod tests {
 
     fn strings(items: &[&str]) -> Vec<String> {
         items.iter().map(|item| (*item).to_owned()).collect()
+    }
+
+    #[test]
+    fn the_mesh_flags_default_to_unset_and_take_auto_off_and_a_device_path() {
+        assert_eq!(parse_args(&[]).expect("args").mesh, None);
+        assert_eq!(
+            parse_args(&strings(&["--mesh", "auto"]))
+                .expect("args")
+                .mesh,
+            Some(true)
+        );
+        assert_eq!(
+            parse_args(&strings(&["--mesh=off"])).expect("args").mesh,
+            Some(false)
+        );
+        let args = parse_args(&strings(&["--mesh-port", "/dev/ttyUSB1"])).expect("args");
+        assert_eq!(args.mesh_port, Some(PathBuf::from("/dev/ttyUSB1")));
+        assert!(parse_args(&strings(&["--mesh", "on"])).is_err());
+        assert!(parse_args(&strings(&["--mesh-port", "ttyUSB1"])).is_err());
+        assert!(parse_args(&strings(&["--mesh-port", "/dev/../etc/passwd"])).is_err());
     }
 
     #[test]

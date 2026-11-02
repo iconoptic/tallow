@@ -34,7 +34,7 @@ function element(tag) {
 }
 
 const ids = {};
-for (const id of ["error", "stale", "reason", "live", "stamp", "devices", "no-devices", "nodes", "no-nodes", "identities", "no-identities", "suggestions", "no-suggestions"]) ids[id] = element("div");
+for (const id of ["error", "stale", "reason", "host", "live", "stamp", "devices", "no-devices", "nodes", "no-nodes", "identities", "no-identities", "suggestions", "no-suggestions"]) ids[id] = element("div");
 ids.stale.hidden = true;
 ids.live.hidden = true;
 ids["no-devices"].hidden = true;
@@ -124,9 +124,42 @@ const LIVE = {
     assert.equal(ids.live.hidden, true);
     // The static text lives in the page source, which this fake DOM does not parse.
     assert.match(html, /<strong>The map is not running\.<\/strong>/);
+    assert.match(html, /The panel starts the map itself\./);
     assert.match(html, /<code>tools\/mesh\.sh daemon run &lt;port&gt; --out data\/mesh\/map\.json<\/code>/);
     assert.equal(ids.reason.textContent, "No map file has been written yet.");
+    assert.equal(ids.host.textContent, "", "a panel with no mesh host says nothing about one");
     assert.equal(ids.devices.children.length, 0);
+  });
+
+  answer = {
+    status: 200,
+    body: { stale: true, reason: "missing", now: 1000000, host: { state: "waiting", port: null, restarts: 0, last_exit: null } },
+  };
+  await refreshNow();
+  check("no root board says to plug one in", () => {
+    assert.match(ids.host.textContent, /^Waiting for the root board\. Plug a mesh board into this machine by USB\./);
+  });
+
+  answer = {
+    status: 200,
+    body: {
+      stale: true,
+      reason: "missing",
+      now: 1000000,
+      host: { state: "gave-up", port: "/dev/ttyUSB0", restarts: 5, last_exit: NAME_FROM_THE_AIR },
+    },
+  };
+  await refreshNow();
+  check("the host's port and last exit are text, and an unknown state is not guessed at", () => {
+    assert.match(ids.host.textContent, /The map process kept failing\./);
+    assert.match(ids.host.textContent, /Port: \/dev\/ttyUSB0\./);
+    assert.ok(ids.host.textContent.includes(NAME_FROM_THE_AIR));
+    assert.equal(innerHtmlWrites, 0);
+  });
+  answer = { status: 200, body: { stale: true, reason: "missing", now: 1, host: { state: "from-the-future" } } };
+  await refreshNow();
+  check("a state the page does not know shows no text", () => {
+    assert.equal(ids.host.textContent, "");
   });
 
   answer = { status: 200, body: { stale: true, reason: "old", age_s: 120, now: 1000000 } };
