@@ -4,6 +4,8 @@ Replace ESPHome on the S3 cams with Rust. This is the riskiest phase for the lea
 
 **First:** T4.0. `toby-cam-1` stays out of this phase until T4.5. `cam-flash` takes only the port `boards.tsv` names `toby-cam-0`. `cam-push` allows only `10.87.0.21` ([device note](../../devices/keyestudio-mb0200-s3-cam.md#rust-image)).
 
+**Superseded on 2026-11-02:** the one-cam limits in this phase are gone. `cam-flash` takes any ESP32-S3 and names it by MAC (`toby-cam-N`), the image takes its address by DHCP from a per-MAC reservation that `cam-flash` writes, and `cam-push` allows any address reserved for a catalog cam. The identity rules are in [docs/01](../../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh). The T4.x text below is the history.
+
 **Lessons, all from this board:**
 
 - Internal RAM ran out at 444 bytes while 8.28 MB of PSRAM sat unused. Set `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y` and keep frame buffers in PSRAM.

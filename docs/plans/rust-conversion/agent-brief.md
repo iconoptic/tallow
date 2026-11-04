@@ -39,7 +39,7 @@ Reporting a blocker is a good result. A guess in firmware costs a physical trip 
 
 - Never commit, push, or open a PR unless the user asks.
 - Never flash a board, press on with a failed flash, or run `tools/esphome.sh run`. Hardware steps belong to **You**: give the exact command and what to look for.
-- Never touch the `toby-cam-1` board. The Rust cam image and `cam-push` use `10.87.0.21`. On 2026-11-02 `cam-flash` wrote a modem-sleep image; the source in the tree has not been flashed, and `cam-push` has not been run ([device note](../../devices/keyestudio-mb0200-s3-cam.md#rust-image)).
+- Never touch the `toby-cam-1` board. It has no catalog row, so `cam-flash` or `fleetd` would learn it like any ESP32-S3: keep it off USB. The Rust cam image takes its address by DHCP from the per-MAC reservation `cam-flash` writes (`toby-cam-0` keeps `10.87.0.21`), and `cam-push` allows only an address reserved for a catalog cam. On 2026-11-02 `cam-flash` wrote a modem-sleep image. USB `cam-flash` of the later source has not been run. The evening `cam-push` is in the [device note](../../devices/keyestudio-mb0200-s3-cam.md#signed-push).
 - Never print, log, copy, or commit `firmware/mesh/mesh.key`, or anything in `secrets/`.
 - Never add an unauthenticated frame kind, a default key, or a way to build without a key.
 - Never make a mesh node join Wi-Fi or open a socket. See `.cursor/rules/iot-network-isolation.mdc`.
@@ -82,9 +82,9 @@ The first firmware build after a clean takes about 5 minutes. Later ones take un
 ## Facts that trip people up
 
 - Opening a CP2102 port resets that board, so anything sent straight after opening is lost. Wait 4 s.
-- Both CP2102s report serial `0001`. `tools/mesh.sh ports` names those by USB path and prints USB-MAC `-`. A colon USB serial is the chip: `ports` names the `boards.tsv` row with that Wi-Fi MAC, and a MAC with no row is `unknown`. [docs/01](../../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh).
+- Both CP2102s report serial `0001`. `tools/mesh.sh ports` names those by USB path, marks them `(unverified)`, and prints MAC `-`; `ports --read` reads those chips. A colon USB serial is the chip: `ports` names the `boards.tsv` row with that Wi-Fi MAC, and a MAC with no row is `unknown`. [docs/01](../../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh).
 - `/dev/ttyUSB0` numbers can swap. Run `tools/mesh.sh ports` first.
-- Just opening an S3 cam's USB port drops it into download mode, and it falls off the network. `tools/mesh.sh` refuses those ports, and any port `boards.tsv` does not list as `esp32`. Read cams over the network.
+- Just opening an S3 cam's USB port drops it into download mode, and it falls off the network. A CP2102 port in any socket is accepted as a classic board, and another bridge needs an `esp32` read on that path. Read cams over the network.
 - The `secrets/` directory is root-owned, so an agent cannot write there. `tools/mesh.sh key` keeps the mesh key beside the firmware.
 - `esp-idf-svc`, `esp-idf-hal`, and `esp-idf-sys` moved to `esp-rs/esp-idf`, cloned at `references/rust/esp-rs-esp-idf`. The exact versions in use are unpacked in `firmware/mesh/.cache/registry/src/`.
 - ESP-IDF's own docs and sources are in `firmware/mesh/node/.embuild/espressif/esp-idf/v5.5.5/`. See `docs/en/api-guides/coexist.rst` and `docs/en/api-reference/network/esp_now.rst`.

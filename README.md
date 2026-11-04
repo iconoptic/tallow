@@ -30,7 +30,8 @@ python -m venv .venv
 # Parse an Android HCI snoop for ATT writes
 .venv/bin/python tools/parse_btsnoop.py path/to/btsnoop_hci.log --hex
 
-# LAN panel: menu at /, H7020 at /lights, cams at /cams, settings at /settings.
+# LAN panel: menu at /, H7020 at /lights, cams at /cams, devices at /devices,
+# traffic at /traffic, settings at /settings. Traffic log: docs/01#traffic-log
 # Bind, password, scenes, and the agent socket: docs/devices/govee-h7020.md
 tools/mesh.sh daemon build   # then host/target/release/tallowd panel (it also runs tallowd on the host's Bluetooth adapter, and on the root board when one is plugged in, and keeps data/mesh/map.json; --mesh off, --mesh-port <path>; docs/01)
 
@@ -49,8 +50,8 @@ tools/mesh.sh daemon gatt /dev/ttyUSB0 --target <id> <subcommand>   # tallowd ga
 tools/mesh.sh key                  # write the gitignored firmware/mesh/mesh.key once
 tools/mesh.sh ota-key              # write the gitignored ota.key (private) and tracked ota.pub, once each
 tools/mesh.sh ota-image            # write the node app image to firmware/mesh/node/target/ota.bin
-tools/mesh.sh ota-sign <image> <node|cam0> <version>
-                                   # sign <image> for that product and version with ota.key; write the 69-byte <image>.sig
+tools/mesh.sh ota-sign <image> <node|cam> <version>
+                                   # cam0 is the same product; sign <image> for that product and version with ota.key; write the 69-byte <image>.sig
 tools/mesh.sh daemon ota /dev/ttyUSB0 --target <id> --image <file> --sig <file>
                                    # send that signed image; the container gets the port as daemon gatt does,
                                    # and the named image and signature only; not run on a board
@@ -59,34 +60,42 @@ tools/mesh.sh size                 # image size against the OTA slot
 tools/mesh.sh cam-build            # release image for an ESP32-S3 cam
 tools/mesh.sh cam-size             # cam image size against its OTA slot
 tools/mesh.sh cam-image            # write the cam app image to firmware/cam/target/ota.bin
-tools/mesh.sh cam-flash <port>     # toby-cam-0 only: a USB serial MAC must match that row,
-                                   # including on another path. Then read the chip MAC, allow
-                                   # the station address and its Bluetooth address on tallow-iot,
+tools/mesh.sh cam-flash <port>     # any ESP32-S3: read the chip, name it by MAC (next toby-cam-N),
+                                   # reserve its own address in 10.87.0.21-49 (the image uses DHCP;
+                                   # a reservation already on file skips sudo; a failed reserve
+                                   # stops before the write),
+                                   # allow the station address and its Bluetooth address on tallow-iot,
                                    # and write the image, this build's bootloader, and erase
-                                   # otadata. A modem-sleep image was written on 2026-11-02;
-                                   # this source has not been flashed
-tools/mesh.sh cam-backup <port>    # same USB-serial guard; save that cam's whole flash; not run
+                                   # otadata, then poll every 5 s for up to 2 minutes until the
+                                   # cam answers on 6053 and is in data/panel/cams.json (else it
+                                   # prints "run: tools/mesh.sh cams"). A modem-sleep image was
+                                   # written on 2026-11-02; this source has not been flashed
+tools/mesh.sh cam-backup <port>    # refuses a CP2102 port; save that cam's whole flash; not run
 tools/mesh.sh cam-frame            # print one host-built multipart sample on stdout
 tools/mesh.sh cams                 # contact each catalog cam on port 6053 and
                                    # add the ones that answer to data/panel/cams.json.
                                    # A row already on that address takes the catalog id.
                                    # Opens no serial port. Ran on 2026-11-02 (device note)
 tools/mesh.sh cam-push <address> <image>
-                                   # send <image> and <image>.sig to 10.87.0.21:3232 and wait for the cam's result.
+                                   # send <image> and <image>.sig to <address>:3232 (a catalog cam's reservation) and wait for the cam's result.
                                    # Exits non-zero on anything but ok. Refuses every other address.
-                                   # Does not read ota.key. Not run
-tools/mesh.sh ports                # list attached boards and a USB-MAC column; opens no port, resets nothing
-tools/mesh.sh identify /dev/ttyUSB0   # esptool flash-id; opens the port, so a CP2102 resets; fleetd parses the chip, MAC, and flash manufacturer; any tty, not only a listed board
-# flash, monitor, backup, bench, daemon run, daemon gatt, and daemon ota open only a /dev/ttyUSB* port that firmware/mesh/boards.tsv lists as esp32.
+                                   # Does not read ota.key. Evening of 2026-11-02
+                                   # (docs/devices/keyestudio-mb0200-s3-cam.md#signed-push)
+tools/mesh.sh ports [--read]       # list attached boards; a CP2102 board is (unverified), named by its socket;
+                                   # --read reads each chip (resets it) and records it by MAC
+tools/mesh.sh fleet [--no-probe]   # each catalog board: current with this build, heard in the mesh map, cam address and port 6053; opens no serial port
+tools/mesh.sh identify /dev/ttyUSB0   # esptool flash-id, and record the chip by MAC; opens the port, so a CP2102 resets; any tty, not only a listed board
+# flash, monitor, backup, bench, daemon run, daemon gatt, and daemon ota open only a CP2102
+# /dev/ttyUSB* port in any socket, or another bridge whose path last read as esp32.
 # Those seven, and identify, write data/mesh/pause while they hold the port, so a running panel lets go of the root and takes it back. They wait up to 10 s. cam-flash and cam-backup do not.
-tools/mesh.sh flash /dev/ttyUSB0   # read the MAC, refuse a chip boards.tsv does not name for
-                                   # that port, allow its Bluetooth address on tallow-iot, then
-                                   # write the image and this build's bootloader
+tools/mesh.sh flash /dev/ttyUSB0   # read the chip and MAC, refuse anything but a classic ESP32,
+                                   # learn a new one as the next node-N, allow its Bluetooth
+                                   # address on tallow-iot, then write the image and this build's bootloader
 tools/fleetd.sh                    # hand-started USB flasher; identify, then rewrite devices.jsonl and boards.tsv; a USB serial MAC that is not the catalog row is refused; each poll contacts catalog cams on port 6053; Ctrl-C stops it; not a login service; ran on 2026-11-02 (docs/01)
 tools/mesh.sh monitor /dev/ttyUSB0 30   # print a board's serial output for 30 s
 tools/mesh.sh backup /dev/ttyUSB0  # save a board's whole flash to data/firmware-backups/ (mode 0600; it holds the mesh key)
 tools/mesh.sh bench /dev/ttyUSB0 --deny <id-hex> --seconds 900   # hold the port, refuse a root id, print @ lines
-# Panel HTTP contract: starts its own previews against host/target/release/tallowd (tools/mesh.sh daemon build), reads nothing under secrets/, and always checks /devices and /api/mesh/map
+# Panel HTTP contract: starts its own previews against host/target/release/tallowd (tools/mesh.sh daemon build), reads nothing under secrets/, and always checks /devices, /api/mesh/map, and /traffic
 .venv/bin/python tools/tests/panel_contract.py
 # Another tallowd build
 .venv/bin/python tools/tests/panel_contract.py --panel-command 'path/to/tallowd panel --preview'
@@ -105,19 +114,21 @@ tools/mesh.sh bench /dev/ttyUSB0 --deny <id-hex> --seconds 900   # hold the port
 | [docs/devices/govee-h7020.md](docs/devices/govee-h7020.md) | Govee H7020 BLE frames, the probe, the LAN page, the host agent socket, and the Rust codec, panel, and broker |
 | [docs/devices/keyestudio-mb0200-s3-cam.md](docs/devices/keyestudio-mb0200-s3-cam.md) | MB0200 S3 CAM node board: pins, first flash, the cams page, and the Rust image |
 | [docs/devices/esp32-devkit.md](docs/devices/esp32-devkit.md) | Classic ESP32 devkits: the two mesh boards, flash, and the way back to ESPHome |
+| [docs/devices/klipsch-flexus-core-100.md](docs/devices/klipsch-flexus-core-100.md) | Klipsch Flexus Core 100: 2026-11-02 GATT fingerprint (`tools/klipsch_ble.py`). No command codec, no panel route, no Wi-Fi |
 | [docs/plans/2026-10-31-rust-conversion.md](docs/plans/2026-10-31-rust-conversion.md) | Rust conversion plan: scope, settled decisions, and phases. Tasks are in `docs/plans/rust-conversion/` |
 | [docs/plans/rust-conversion/agent-brief.md](docs/plans/rust-conversion/agent-brief.md) | What every model reads before a Rust conversion task |
-| [app/](app/) | Page assets the Rust panel serves: `menu_page.html`, `h7020_page.html`, `cams_page.html`, `devices_page.html`, `settings_page.html`, `panel.css`. HTTP contract: `tools/tests/panel_contract.py` |
+| [docs/plans/2026-11-02-tree-review/README.md](docs/plans/2026-11-02-tree-review/README.md) | Current fix plan: a review of the uncommitted tree, its findings, and the task order. One task per chunk file. The user's steps are in `user-actions.md` |
+| [app/](app/) | Page assets the Rust panel serves: `menu_page.html`, `h7020_page.html`, `cams_page.html`, `devices_page.html`, `traffic_page.html`, `settings_page.html`, `panel.css`, and `vendor/` (vis-timeline for `/traffic`). HTTP contract: `tools/tests/panel_contract.py` |
 | [archive/](archive/) | Retired Python panel, broker, H7020 probe, mesh host, tests, and ESPHome firmware. Historical reference only; do not import from it |
-| [firmware/cam/](firmware/cam/) | Rust cam image `tallow-cam` for the MB0200 (ESP32-S3), with the camera driver in `src/camera.rs`. `tools/mesh.sh cam-build`, `cam-size`, `cam-image`, `cam-flash`, `cam-backup`, `cam-frame`, and `cam-push`. A modem-sleep image was flashed on 2026-11-02; the source in the tree has not been flashed, and `cam-push` has not been run. `target/`, `.embuild/`, and `sdkconfig` are gitignored. Layout and size: [device note](docs/devices/keyestudio-mb0200-s3-cam.md#rust-image) |
+| [firmware/cam/](firmware/cam/) | Rust cam image `tallow-cam` for the MB0200 (ESP32-S3), with the camera driver in `src/camera.rs`. `tools/mesh.sh cam-build`, `cam-size`, `cam-image`, `cam-flash`, `cam-backup`, `cam-frame`, and `cam-push`. A modem-sleep image was flashed on 2026-11-02. USB `cam-flash` of the later source has not been run. The evening `cam-push` is in the [device note](docs/devices/keyestudio-mb0200-s3-cam.md#signed-push). `target/`, `.embuild/`, and `sdkconfig` are gitignored. Layout and size: [device note](docs/devices/keyestudio-mb0200-s3-cam.md#rust-image) |
 | [firmware/mesh/](firmware/mesh/) | Rust mesh: `core/` (`no_std` logic and tests; frame bytes in [`core/README.md`](firmware/mesh/core/README.md)), `node/` (ESP-IDF firmware), `boards.tsv` (known boards: `usb_path` is where the chip was last read, and a USB MAC names the chip; read by `tools/mesh.sh ports`, which opens no port; `tools/fleetd.sh` rewrites it from the chip when it runs; [docs/01](docs/01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh)), `devices.jsonl` (catalog for `tools/fleetd.sh` and `tools/sync_panel_cams.py`; the same rewrite; the learned rows are in [docs/01](docs/01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh); name, chip, USB path, and Wi-Fi MAC match; `push_ok` is false; cam rows on the panel: [device note](docs/devices/keyestudio-mb0200-s3-cam.md#catalog-sync)), `ota.pub` (OTA public key). `mesh.key`, `ota.key`, `target/`, `.embuild/`, `.cache/`, and `sdkconfig` are gitignored |
-| [host/](host/) | Cargo workspace. `tallowd` shares `tallow-mesh-core` with the firmware. Its `run` is the mesh host end (a root board on `--port`, the host's Bluetooth adapter on `--bluez`, or both; `src/local.rs` is the adapter scanner) and its `panel` is the live LAN panel; the serial link is `src/link.rs`. `tallowd ota` (`src/ota.rs`) sends one signed image and has not been run. `tallow-govee` is the H7020 codec, and `tallow-broker` is the agent broker. Its user unit is installed. The panel has to run as that same user, because a root panel locks the `0600` socket. `host/target/` is gitignored |
+| [host/](host/) | Cargo workspace. `tallowd` shares `tallow-mesh-core` with the firmware. Its `run` is the mesh host end (a root board on `--port`, the host's Bluetooth adapter on `--bluez`, or both; `src/local.rs` is the adapter scanner) and its `panel` is the live LAN panel; the serial link is `src/link.rs`. `src/traffic.rs` is the sighting log beside the map, and `src/cluster.rs` joins rotating addresses in that log ([docs/01](docs/01-bluetooth-server-hardware-and-proxies.md#traffic-log)). `tallowd ota` (`src/ota.rs`) sends one signed image and has not been run. `tallow-govee` is the H7020 codec, and `tallow-broker` is the agent broker. Its user unit is installed. The panel has to run as that same user, because a root panel locks the `0600` socket. `host/target/` is gitignored |
 | [AGENTS.md](AGENTS.md) | Instructions for future AI coding agents |
-| [.cursor/skills/improve-repo-docs/SKILL.md](.cursor/skills/improve-repo-docs/SKILL.md) | Reconcile docs with the tree. Ledger: `.cursor/docs-ledger.json`. Stop hook: `.cursor/hooks/docs-before-stop.py` |
+| [.cursor/skills/improve-repo-docs/SKILL.md](.cursor/skills/improve-repo-docs/SKILL.md) | Reconcile docs with the tree. Ledger: `.cursor/docs-ledger.json`. The docs pass is by hand |
 | [.cursor/skills/](.cursor/skills/) | The one agent-config tree (skills, plugins, rules, hooks, `mcp.json`). Other harnesses read it through symlinks: `.agents/skills`, `.agents/plugins`, `.claude/skills`, `CLAUDE.md` (to `AGENTS.md`), and `.mcp.json` (to `.cursor/mcp.json`). Copied agent skills. Caveman: 22 from [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) (voice, commit, review, compress, learn, and workflow helpers), plus `megacave` (Classical Chinese voice) and `ultracave` (maximum compression), which are untracked and not yet in the lock file. Refresh: `npx skills add JuliusBrussee/caveman -a cursor --skill '*' --copy -y`. Rust security skills live in the same directory: `zeroize-audit`, `constant-time-analysis`, `differential-review`, `rust-review`, and `rust-best-practices`. Lock file: [skills-lock.json](skills-lock.json), which pins the Trail of Bits commit and records a hash for each other skill. Inventory and the Rust refresh: [AGENTS.md](AGENTS.md) |
 | [.cursor/plugins/](.cursor/plugins/) | Unmodified Trail of Bits plugins those skills call: `rust-review`, `constant-time-analysis`, `differential-review`, `insecure-defaults` (no `SKILL.md` upstream), and `LICENSE`. Cursor entries: [.cursor/skills/rust-review-cursor/SKILL.md](.cursor/skills/rust-review-cursor/SKILL.md) and [.cursor/skills/insecure-defaults/SKILL.md](.cursor/skills/insecure-defaults/SKILL.md). Inventory: [AGENTS.md](AGENTS.md). Review output `.rust-review-results/` is gitignored. No audit has been run |
 | [.cursor/mcp.json](.cursor/mcp.json) | Project-scoped REA MCP registration for Cursor |
-| [tools/](tools/) | Clone script, Fedora RE toolchain, IoT access point, Bluetooth seed, mesh wrapper, hand-started USB flasher (`fleetd.sh`, `fleet_catalog.py`; `tools/mesh.sh identify`), catalog cam sync (`sync_panel_cams.py`; `tools/mesh.sh cams`), the bench (`mesh_bench.py`), mutation tests (`tools/mesh.sh mutants`), the Rust host setup (`setup_mesh_host.sh`, `tallowd.service`, `rust-host.Dockerfile`), serial monitor (`mesh_monitor.py`), discovery / snoop parsers |
+| [tools/](tools/) | Clone script, Fedora RE toolchain, IoT access point, Bluetooth seed, mesh wrapper, hand-started USB flasher (`fleetd.sh`, `fleet_catalog.py`; `tools/mesh.sh identify`), catalog cam sync (`sync_panel_cams.py`; `tools/mesh.sh cams`), fleet status (`fleet_status.py`; `tools/mesh.sh fleet`), the bench (`mesh_bench.py`), mutation tests (`tools/mesh.sh mutants`), the Rust host setup (`setup_mesh_host.sh`, `tallowd.service`, `rust-host.Dockerfile`), serial monitor (`mesh_monitor.py`), discovery / snoop parsers |
 | `references/` | Shallow clones (not committed; see catalog below). `references/vendor/` is copied by hand |
 
 ## Hardware stance (summary)
