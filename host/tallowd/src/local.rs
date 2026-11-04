@@ -9,7 +9,7 @@
 //! its age is zero. Needs the adapter and bluetoothd, so only the pure parts are tested.
 
 use std::collections::HashMap;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
@@ -18,6 +18,9 @@ use tallow_mesh_core::sightings::Kind;
 
 use crate::decode::{Named, Sighting};
 
+/// Adapter batches waiting on a slow serial read. Past this, the oldest wait is
+/// dropped instead of growing without a bound.
+const ADAPTER_BATCHES: usize = 256;
 const POLL: Duration = Duration::from_secs(2);
 /// One poll talks to bluetoothd a few times per device. A stuck call ends the session.
 const POLL_LIMIT: Duration = Duration::from_secs(20);
@@ -60,7 +63,7 @@ fn kind_of(address_type: AddressType) -> Kind {
 /// Starts the scanner on its own thread and returns what it hears. The thread ends when
 /// the receiver is dropped. `adapter` is an hci name, or `None` for the seed's.
 pub fn start(adapter: Option<String>) -> Receiver<Event> {
-    let (tx, rx) = mpsc::channel();
+    let (tx, rx) = mpsc::sync_channel(ADAPTER_BATCHES);
     let name = adapter.unwrap_or_else(tallow_govee::ble::seed_adapter);
     std::thread::spawn(move || {
         let runtime = match tokio::runtime::Builder::new_current_thread()
@@ -69,7 +72,12 @@ pub fn start(adapter: Option<String>) -> Receiver<Event> {
         {
             Ok(runtime) => runtime,
             Err(error) => {
-                let _ = tx.send(Event::Note(format!("local scan cannot start: {error}")));
+                let _ = offer(
+                    &tx,
+                    Event::Note(format!("local scan cannot start: {error}")),
+                    &mut 0,
+                    &mut Instant::now(),
+                );
                 return;
             }
         };
@@ -78,11 +86,36 @@ pub fn start(adapter: Option<String>) -> Receiver<Event> {
     rx
 }
 
-async fn run(name: &str, tx: &Sender<Event>) {
+/// `true` while the receiver is still there. A full channel drops a batch and
+/// counts it. Every 100th drop, or once a minute, one note is offered. A note
+/// that does not fit is dropped. A disconnected receiver ends the scanner.
+fn offer(tx: &SyncSender<Event>, event: Event, drops: &mut u64, last_note: &mut Instant) -> bool {
+    match tx.try_send(event) {
+        Ok(()) => true,
+        Err(TrySendError::Disconnected(_)) => false,
+        Err(TrySendError::Full(event)) => {
+            if matches!(event, Event::Batch(_)) {
+                *drops = drops.saturating_add(1);
+                if drops.is_multiple_of(100) || last_note.elapsed() >= Duration::from_secs(60) {
+                    *last_note = Instant::now();
+                    let note = Event::Note(format!("local scan dropped {drops} batches"));
+                    if let Err(TrySendError::Disconnected(_)) = tx.try_send(note) {
+                        return false;
+                    }
+                }
+            }
+            true
+        }
+    }
+}
+
+async fn run(name: &str, tx: &SyncSender<Event>) {
+    let mut drops = 0u64;
+    let mut last_note = Instant::now();
     loop {
-        if let Err(error) = session(name, tx).await {
-            let note = format!("local scan on {name}: {error:#}");
-            if tx.send(Event::Note(note)).is_err() {
+        if let Err(error) = session(name, tx, &mut drops, &mut last_note).await {
+            let note = Event::Note(format!("local scan on {name}: {error:#}"));
+            if !offer(tx, note, &mut drops, &mut last_note) {
                 return;
             }
         }
@@ -92,7 +125,12 @@ async fn run(name: &str, tx: &Sender<Event>) {
 
 /// Scans until BlueZ fails or the receiver is gone. A gone receiver is `Ok`, and the
 /// caller then finds the next send failing and stops.
-async fn session(name: &str, tx: &Sender<Event>) -> anyhow::Result<()> {
+async fn session(
+    name: &str,
+    tx: &SyncSender<Event>,
+    drops: &mut u64,
+    last_note: &mut Instant,
+) -> anyhow::Result<()> {
     let session = Session::new().await.context("connect to bluetoothd")?;
     let adapter = session.adapter(name).context("find the adapter")?;
     adapter.set_powered(true).await.context("power on")?;
@@ -119,7 +157,7 @@ async fn session(name: &str, tx: &Sender<Event>) -> anyhow::Result<()> {
             sightings,
             names,
         };
-        if tx.send(Event::Batch(batch)).is_err() {
+        if !offer(tx, Event::Batch(batch), drops, last_note) {
             return Ok(());
         }
         tokio::time::sleep(POLL).await;
@@ -197,6 +235,29 @@ mod tests {
         assert_eq!(kind_of(AddressType::LePublic), Kind::BlePublic);
         assert_eq!(kind_of(AddressType::LeRandom), Kind::BleRandom);
         assert_eq!(kind_of(AddressType::BrEdr), Kind::Classic);
+    }
+
+    #[test]
+    fn a_full_adapter_channel_drops_the_overflow_without_blocking() {
+        let (tx, _rx) = mpsc::sync_channel(ADAPTER_BATCHES);
+        for _ in 0..ADAPTER_BATCHES {
+            tx.try_send(Event::Note("fill".to_string())).unwrap();
+        }
+        let mut drops = 0u64;
+        let mut last_note = Instant::now();
+        let started = Instant::now();
+        let extra = 10u64;
+        for _ in 0..extra {
+            let batch = Event::Batch(Batch {
+                node: "local".to_string(),
+                uptime_s: 0,
+                sightings: Vec::new(),
+                names: Vec::new(),
+            });
+            assert!(offer(&tx, batch, &mut drops, &mut last_note));
+        }
+        assert_eq!(drops, extra);
+        assert!(started.elapsed() < Duration::from_secs(1));
     }
 
     #[test]

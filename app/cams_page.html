@@ -100,6 +100,11 @@ function lost(tile) {
   tile.timer = setTimeout(() => watch(tile, true), wait);
 }
 
+function turn(img, rotation) {
+  img.classList.remove("rot-90", "rot-180", "rot-270");
+  if (rotation === 90 || rotation === 180 || rotation === 270) img.classList.add(`rot-${rotation}`);
+}
+
 function addTile(cam) {
   const box = make("section", "cam");
   const head = make("header");
@@ -119,6 +124,7 @@ function addTile(cam) {
   const img = make("img");
   img.alt = `${cam.name}, live`;
   img.hidden = true;
+  turn(img, cam.rotation);
   screen.append(hint, img);
   const errEl = make("p", "err");
   errEl.setAttribute("role", "status");
@@ -160,7 +166,10 @@ function sync(cams) {
   for (const cam of cams) {
     const tile = tiles.get(cam.id);
     if (!tile) addTile(cam);
-    else if (tile.name.textContent !== cam.name) tile.name.textContent = cam.name;
+    else {
+      if (tile.name.textContent !== cam.name) tile.name.textContent = cam.name;
+      turn(tile.img, cam.rotation);
+    }
   }
   // Keep the page in the order of the file.
   cams.forEach((cam) => gridEl.append(tiles.get(cam.id).box));

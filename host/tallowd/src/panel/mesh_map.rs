@@ -6,12 +6,15 @@
 //! at startup, `data/mesh/map.json` for the real panel and `mesh-map.json` in the data
 //! directory for a preview. No request supplies any part of it.
 
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{ErrorKind, Read};
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Map, Value};
+
+use crate::cluster::{self, Clusters};
 
 /// A map whose modification time is older than this is not the live map.
 pub const STALE_AFTER: Duration = Duration::from_secs(60);
@@ -52,15 +55,20 @@ pub fn document(path: Option<&Path>, now: SystemTime) -> Value {
     let stamp = epoch_seconds(now);
     let loaded = path.map_or(Err(Stale::Missing), |path| load(path, now));
     match loaded {
-        Ok((age_s, map)) => json!({
-            "stale": false,
-            "now": stamp,
-            "age_s": age_s,
-            "nodes": map.get("nodes").cloned().unwrap_or_else(|| json!({})),
-            "devices": map.get("devices").cloned().unwrap_or_else(|| json!({})),
-            "identities": map.get("identities").cloned().unwrap_or_else(|| json!({})),
-            "suggestions": map.get("suggestions").cloned().unwrap_or_else(|| json!([])),
-        }),
+        Ok((age_s, mut map)) => {
+            if let Some(path) = path {
+                annotate(path, &mut map);
+            }
+            json!({
+                "stale": false,
+                "now": stamp,
+                "age_s": age_s,
+                "nodes": map.get("nodes").cloned().unwrap_or_else(|| json!({})),
+                "devices": map.get("devices").cloned().unwrap_or_else(|| json!({})),
+                "identities": map.get("identities").cloned().unwrap_or_else(|| json!({})),
+                "suggestions": map.get("suggestions").cloned().unwrap_or_else(|| json!([])),
+            })
+        }
         Err(stale) => {
             let mut out = json!({"stale": true, "reason": stale.code(), "now": stamp});
             if let Stale::Old(age_s) = stale {
@@ -114,6 +122,152 @@ fn load(path: &Path, now: SystemTime) -> Result<(u64, Map<String, Value>), Stale
 fn epoch_seconds(now: SystemTime) -> u64 {
     now.duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs())
+}
+
+/// `label` is the name to show. `cluster` and `members` are set once a join is stored.
+fn annotate(path: &Path, map: &mut Map<String, Value>) {
+    let clusters = cluster::load_path(&path.with_file_name("traffic.db"));
+    let identity_of = identity_of(map.get("identities"));
+    let Some(devices) = map.get("devices").and_then(Value::as_object).cloned() else {
+        return;
+    };
+    let stamps = stamps(&devices, &clusters, &identity_of);
+    let Some(live) = map.get_mut("devices").and_then(Value::as_object_mut) else {
+        return;
+    };
+    for (key, stamp) in stamps {
+        let Some(device) = live.get_mut(&key).and_then(Value::as_object_mut) else {
+            continue;
+        };
+        device.insert("label".into(), json!(stamp.label));
+        if let Some(cluster) = stamp.cluster {
+            device.insert("cluster".into(), json!(cluster));
+            device.insert("members".into(), json!(stamp.members));
+        }
+    }
+}
+
+struct Stamp {
+    label: String,
+    cluster: Option<String>,
+    members: Vec<String>,
+}
+
+fn stamps(
+    devices: &Map<String, Value>,
+    clusters: &Clusters,
+    identity_of: &BTreeMap<String, String>,
+) -> Vec<(String, Stamp)> {
+    devices
+        .iter()
+        .map(|(key, device)| {
+            let (addr, kind) = addr_kind(key, device);
+            let stamp = match clusters.group(addr, kind) {
+                Some(group) => Stamp {
+                    label: cluster_label(group, devices, identity_of),
+                    cluster: Some(group.seed.clone()),
+                    members: group.members.clone(),
+                },
+                None => Stamp {
+                    label: device_label(addr, kind, device, identity_of),
+                    cluster: None,
+                    members: Vec::new(),
+                },
+            };
+            (key.clone(), stamp)
+        })
+        .collect()
+}
+
+fn identity_of(value: Option<&Value>) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    let Some(identities) = value.and_then(Value::as_object) else {
+        return out;
+    };
+    for (name, identity) in identities {
+        let Some(keys) = identity.get("keys").and_then(Value::as_array) else {
+            continue;
+        };
+        for key in keys {
+            let Some(key) = key.as_str() else {
+                continue;
+            };
+            out.entry(key.to_string()).or_insert_with(|| name.clone());
+        }
+    }
+    out
+}
+
+fn cluster_label(
+    group: &cluster::Group,
+    devices: &Map<String, Value>,
+    identity_of: &BTreeMap<String, String>,
+) -> String {
+    let mut members = group.members.clone();
+    members.sort();
+    if let Some(index) = members.iter().position(|addr| addr == &group.seed) {
+        members.swap(0, index);
+    }
+    let mut identity = None;
+    let mut resolved = None;
+    let mut air = None;
+    for addr in &members {
+        let key = format!("{addr} {}", group.kind);
+        if let Some(name) = identity_of.get(&key) {
+            if identity.is_none() {
+                identity = Some(name.clone());
+            }
+        }
+        if let Some(device) = devices.get(&key) {
+            if resolved.is_none() {
+                resolved = text_field(device, "resolved");
+            }
+            if air.is_none() {
+                air = text_field(device, "name");
+            }
+        }
+    }
+    identity
+        .or(resolved)
+        .or(air)
+        .unwrap_or_else(|| cluster::cute_name(&group.seed))
+}
+
+fn device_label(
+    addr: &str,
+    kind: &str,
+    device: &Value,
+    identity_of: &BTreeMap<String, String>,
+) -> String {
+    identity_of
+        .get(&format!("{addr} {kind}"))
+        .cloned()
+        .or_else(|| text_field(device, "resolved"))
+        .or_else(|| text_field(device, "name"))
+        .unwrap_or_else(|| cluster::cute_name(addr))
+}
+
+fn text_field(device: &Value, name: &str) -> Option<String> {
+    device
+        .get(name)
+        .and_then(Value::as_str)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string)
+}
+
+fn addr_kind<'a>(key: &'a str, device: &'a Value) -> (&'a str, &'a str) {
+    let addr = device
+        .get("addr")
+        .and_then(Value::as_str)
+        .filter(|text| !text.is_empty());
+    let kind = device
+        .get("kind")
+        .and_then(Value::as_str)
+        .filter(|text| !text.is_empty());
+    match (addr, kind) {
+        (Some(addr), Some(kind)) => (addr, kind),
+        _ => key.rsplit_once(' ').unwrap_or((key, "")),
+    }
 }
 
 #[cfg(test)]
@@ -275,5 +429,86 @@ mod tests {
             doc["devices"]["AA:BB:CC:DD:EE:01 classic"]["name"],
             json!(name)
         );
+        assert_eq!(
+            doc["devices"]["AA:BB:CC:DD:EE:01 classic"]["label"],
+            json!(name)
+        );
+    }
+
+    #[test]
+    fn a_nameless_device_is_labeled_from_its_address() {
+        let dir = TempDir::new("mesh-map-cute");
+        let path = dir.path().join("map.json");
+        write_at(&path, a_map().as_bytes(), at(NOW));
+        let doc = document(Some(&path), at(NOW));
+        let device = &doc["devices"]["41:22:13:00:00:01 ble-random"];
+        assert_eq!(
+            device["label"],
+            json!(crate::cluster::cute_name("41:22:13:00:00:01"))
+        );
+        assert!(device.get("cluster").is_none());
+    }
+
+    #[test]
+    fn a_long_handoff_labels_both_addresses_as_one_device() {
+        let dir = TempDir::new("mesh-map-cluster");
+        let db = dir.path().join("traffic.db");
+        let mut journal = crate::traffic::Journal::open(&db).unwrap();
+        let now = 1_700_000_000.0;
+        let older = [0x11, 0x22, 0x33, 0x44, 0x55, 0x01];
+        let newer = [0x11, 0x22, 0x33, 0x44, 0x55, 0x02];
+        for (addr, at_s) in [
+            (older, now),
+            (older, now + 15.0 * 60.0 - 60.0),
+            (older, now + 15.0 * 60.0),
+            (newer, now + 15.0 * 60.0 + 10.0),
+            (newer, now + 15.0 * 60.0 + 70.0),
+            (newer, now + 31.0 * 60.0),
+        ] {
+            journal.note_batch(&heard("n1", addr, -60), at_s).unwrap();
+        }
+        journal.reconcile_clusters().unwrap();
+        drop(journal);
+        let path = dir.path().join("map.json");
+        let text = json!({
+            "nodes": {"n1": {"parent": 0}},
+            "devices": {
+                "11:22:33:44:55:01 ble-random": {
+                    "addr": "11:22:33:44:55:01",
+                    "kind": "ble-random",
+                    "heard_by": {}
+                },
+                "11:22:33:44:55:02 ble-random": {
+                    "addr": "11:22:33:44:55:02",
+                    "kind": "ble-random",
+                    "heard_by": {}
+                },
+            }
+        });
+        write_at(&path, text.to_string().as_bytes(), at(NOW));
+        let doc = document(Some(&path), at(NOW));
+        let name = crate::cluster::cute_name("11:22:33:44:55:01");
+        let older = &doc["devices"]["11:22:33:44:55:01 ble-random"];
+        let newer_device = &doc["devices"]["11:22:33:44:55:02 ble-random"];
+        assert_eq!(older["label"], json!(name));
+        assert_eq!(newer_device["label"], json!(name));
+        assert_eq!(older["cluster"], json!("11:22:33:44:55:01"));
+        assert_eq!(newer_device["cluster"], json!("11:22:33:44:55:01"));
+        assert_eq!(older["members"].as_array().unwrap().len(), 2);
+    }
+
+    fn heard(node: &str, addr: [u8; 6], rssi: i8) -> crate::local::Batch {
+        crate::local::Batch {
+            node: node.to_string(),
+            uptime_s: 0,
+            sightings: vec![crate::decode::Sighting {
+                addr,
+                kind: Some(tallow_mesh_core::sightings::Kind::BleRandom),
+                rssi,
+                count: 1,
+                age_s: 0,
+            }],
+            names: Vec::new(),
+        }
     }
 }

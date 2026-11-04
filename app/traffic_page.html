@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Traffic</title>
+<link rel="stylesheet" href="/panel.css">
+<link rel="stylesheet" href="/vendor/vis-timeline.css">
+<style>
+  .bar { align-items: center; }
+  .check { display: flex; align-items: center; gap: 0.45rem; color: var(--note); margin: 0; }
+  #map { width: 100%; height: auto; margin-top: 1rem; background: #1c1914; border-radius: var(--radius); touch-action: none; }
+  #map text { fill: var(--text); font-size: 14px; font-family: system-ui, sans-serif; }
+  #lanes { margin-top: 1rem; min-height: 12rem; }
+  .vis-timeline { border-color: var(--edge); background: var(--chip); color: var(--text); }
+  .vis-time-axis .vis-text { color: var(--note); }
+  .vis-grid.vis-minor, .vis-grid.vis-major { border-color: var(--edge); }
+  .vis-item { color: #1c160f; border-color: transparent; }
+  .vis-labelset .vis-label { color: var(--text); border-color: var(--edge); }
+  .vis-foreground .vis-group { border-color: var(--edge); }
+</style>
+</head>
+<body>
+<main class="wide">
+  <a class="back" href="/">&larr; tallow</a>
+  <h1>Traffic</h1>
+  <p class="note">Every address the mesh hears. Drag a node to place it. A dot sits between the listeners that hear it. A pass-by is one stay, then silence.</p>
+  <p id="error" class="err" role="status"></p>
+  <div class="bar">
+    <button type="button" id="win-live">Live</button>
+    <button type="button" id="win-hour">Hour</button>
+    <button type="button" id="win-day">Day</button>
+    <label class="check"><input type="checkbox" id="passes"> Show one-ping addresses</label>
+    <button type="button" id="clear" class="quiet">Clear log</button>
+  </div>
+  <p id="summary" class="note"></p>
+  <svg id="map" viewBox="0 0 1000 640" role="img" aria-label="Nodes and where addresses were heard"></svg>
+  <p id="band" class="note"></p>
+  <div id="lanes"></div>
+  <p id="empty" class="note" hidden>Nothing heard in this window.</p>
+</main>
+<script src="/vendor/vis-timeline.js"></script>
+<script>
+const REFRESH_MS = 5000;
+const PALETTE = ["#e7d7b1", "#8fb9a8", "#d4a574", "#c9857a", "#9bb4d4", "#c7b3e0", "#e0d38a", "#7fbfb0"];
+const SVG = "http://www.w3.org/2000/svg";
+const errorEl = document.getElementById("error");
+const summaryEl = document.getElementById("summary");
+const mapEl = document.getElementById("map");
+const bandEl = document.getElementById("band");
+const lanesEl = document.getElementById("lanes");
+const emptyEl = document.getElementById("empty");
+const passesEl = document.getElementById("passes");
+const colors = {};
+let colorNext = 0;
+let payload = null;
+let windowName = "live";
+let scrub = null;
+let following = true;
+let places = {};
+let drag = null;
+let timeline = null;
+let itemSet = null;
+let groupSet = null;
+
+function svg(tag) {
+  return document.createElementNS(SVG, tag);
+}
+
+function clamp(value) {
+  if (value < 0) return 0;
+  if (value > 1) return 1;
+  return value;
+}
+
+function colorFor(id) {
+  if (!colors[id]) {
+    colors[id] = PALETTE[colorNext % PALETTE.length];
+    colorNext += 1;
+  }
+  return colors[id];
+}
+
+function escapeText(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function shownTracks() {
+  const tracks = payload && payload.tracks || [];
+  if (passesEl.checked) return tracks;
+  return tracks.filter((track) => track.class !== "pass" || track.named);
+}
+
+function bandTracks() {
+  if (passesEl.checked) return [];
+  const tracks = payload && payload.tracks || [];
+  return tracks.filter((track) => track.class === "pass" && !track.named);
+}
+
+function stayAt(track, time) {
+  let found = null;
+  (track.stays || []).forEach((stay) => {
+    if (time + 15000 >= stay.start && time <= stay.end + 45000) found = stay;
+  });
+  return found;
+}
+
+function ensurePlaces(nodes) {
+  nodes.forEach((node, index) => {
+    if (places[node.id]) return;
+    if (typeof node.x === "number" && typeof node.y === "number") {
+      places[node.id] = { x: node.x, y: node.y };
+      return;
+    }
+    const angle = -Math.PI / 2 + (index / Math.max(nodes.length, 1)) * Math.PI * 2;
+    places[node.id] = { x: clamp(0.5 + Math.cos(angle) * 0.34), y: clamp(0.5 + Math.sin(angle) * 0.34) };
+  });
+}
+
+const FRESH_MS = 60000;
+const LN10 = Math.LN10;
+
+function readingsAt(track, time) {
+  const by = {};
+  (track.samples || []).forEach((sample) => {
+    if (typeof sample.t !== "number" || typeof sample.rssi !== "number" || !sample.node) return;
+    if (sample.t > time || time - sample.t > FRESH_MS) return;
+    if (sample.rssi <= -100 || sample.rssi === -127) return;
+    const prev = by[sample.node];
+    if (!prev || sample.t >= prev.t) by[sample.node] = sample;
+  });
+  const list = Object.keys(by).map((id) => ({ id: id, rssi: by[id].rssi }));
+  if (list.length) return list;
+  const stay = stayAt(track, time);
+  if (!stay || typeof stay.rssi !== "number" || stay.rssi <= -100 || stay.rssi === -127) return [];
+  return [{ id: stay.node, rssi: stay.rssi }];
+}
+
+// Places are 0..1 on a 1000×640 canvas. Distance uses that proportion, then comes back.
+const CANVAS_Y = 640 / 1000;
+
+function proportion(point) {
+  return { x: point.x, y: point.y * CANVAS_Y, rssi: point.rssi };
+}
+
+function storedPoint(point) {
+  return { x: point.x, y: point.y / CANVAS_Y };
+}
+
+// rssi = tx - 10*n*log10(distance). Two links of our own nodes fit n; otherwise the house is 2.7.
+function exponent(nodes) {
+  const rows = [];
+  (nodes || []).forEach((node) => {
+    if (!node.parent || typeof node.parent_rssi !== "number") return;
+    const rssi = node.parent_rssi;
+    if (rssi < -95 || rssi > -20) return;
+    const child = places[node.id];
+    const parent = places[node.parent];
+    if (!child || !parent) return;
+    const from = proportion(child);
+    const to = proportion(parent);
+    const distance = Math.hypot(from.x - to.x, from.y - to.y);
+    if (distance < 0.02) return;
+    rows.push({ rssi: rssi, logd: Math.log10(distance) });
+  });
+  if (rows.length < 2) return 2.7;
+  let count = rows.length;
+  let sx = 0;
+  let sy = 0;
+  let sxx = 0;
+  let sxy = 0;
+  rows.forEach((row) => {
+    sx += row.logd;
+    sy += row.rssi;
+    sxx += row.logd * row.logd;
+    sxy += row.logd * row.rssi;
+  });
+  const den = count * sxx - sx * sx;
+  if (den === 0) return 2.7;
+  const slope = (count * sxy - sx * sy) / den;
+  let n = -slope / 10;
+  if (!isFinite(n)) return 2.7;
+  if (n < 1.5) return 1.5;
+  if (n > 4.5) return 4.5;
+  return n;
+}
+
+function section(p1, p2, n) {
+  const a = proportion(p1);
+  const b = proportion(p2);
+  const ratio = Math.pow(10, (p2.rssi - p1.rssi) / (10 * n));
+  if (!isFinite(ratio)) return storedPoint({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  const denom = 1 + ratio;
+  return storedPoint({ x: (a.x + ratio * b.x) / denom, y: (a.y + ratio * b.y) / denom });
+}
+
+function solve3(a00, a01, a02, a11, a12, a22, b0, b1, b2) {
+  const m = [
+    [a00, a01, a02, b0],
+    [a01, a11, a12, b1],
+    [a02, a12, a22, b2],
+  ];
+  for (let col = 0; col < 3; col++) {
+    let pivot = col;
+    for (let row = col + 1; row < 3; row++) {
+      if (Math.abs(m[row][col]) > Math.abs(m[pivot][col])) pivot = row;
+    }
+    if (Math.abs(m[pivot][col]) < 1e-12) return null;
+    const swap = m[col];
+    m[col] = m[pivot];
+    m[pivot] = swap;
+    const div = m[col][col];
+    for (let k = col; k < 4; k++) m[col][k] /= div;
+    for (let row = 0; row < 3; row++) {
+      if (row === col) continue;
+      const factor = m[row][col];
+      for (let k = col; k < 4; k++) m[row][k] -= factor * m[col][k];
+    }
+  }
+  return [m[0][3], m[1][3], m[2][3]];
+}
+
+function solvePlane(readings, n) {
+  const scaled = readings.map(proportion);
+  const loud = readings.slice().sort((a, b) => b.rssi - a.rssi);
+  const start = proportion(section(loud[0], loud[1], n));
+  let x = start.x;
+  let y = start.y;
+  let tx = loud[0].rssi + 10 * n * Math.log10(0.15);
+  for (let iter = 0; iter < 8; iter++) {
+    let a00 = 0;
+    let a01 = 0;
+    let a02 = 0;
+    let a11 = 0;
+    let a12 = 0;
+    let a22 = 0;
+    let b0 = 0;
+    let b1 = 0;
+    let b2 = 0;
+    for (const node of scaled) {
+      let dx = x - node.x;
+      let dy = y - node.y;
+      let dist = Math.hypot(dx, dy);
+      if (dist < 0.02) dist = 0.02;
+      const predicted = tx - 10 * n * Math.log10(dist);
+      const residual = node.rssi - predicted;
+      const scale = -10 * n / (dist * dist * LN10);
+      const jx = -scale * dx;
+      const jy = -scale * dy;
+      const jt = -1;
+      a00 += jx * jx;
+      a01 += jx * jy;
+      a02 += jx * jt;
+      a11 += jy * jy;
+      a12 += jy * jt;
+      a22 += jt * jt;
+      // J is the Jacobian of residual = rssi - predicted, so JᵀJ·δ = −Jᵀr.
+      b0 -= jx * residual;
+      b1 -= jy * residual;
+      b2 -= jt * residual;
+    }
+    const delta = solve3(a00, a01, a02, a11, a12, a22, b0, b1, b2);
+    if (!delta) return null;
+    let stepX = delta[0];
+    let stepY = delta[1];
+    const step = Math.hypot(stepX, stepY);
+    if (step > 0.5) {
+      stepX *= 0.5 / step;
+      stepY *= 0.5 / step;
+    }
+    x += stepX;
+    y += stepY;
+    tx += delta[2];
+    if (!isFinite(x) || !isFinite(y) || !isFinite(tx)) return null;
+  }
+  const back = storedPoint({ x: x, y: y });
+  if (back.x < -0.25 || back.x > 1.25 || back.y < -0.25 || back.y > 1.25) return null;
+  return back;
+}
+
+function lone(at, index) {
+  const angle = (index % 8) * 0.8;
+  return { x: at.x + Math.cos(angle) * 36, y: at.y + Math.sin(angle) * 36 };
+}
+
+function placeTrack(track, pos, n, index) {
+  const known = readingsAt(track, scrub).filter((reading) => pos[reading.id] && places[reading.id]);
+  if (!known.length) return null;
+  if (known.length === 1) return lone(pos[known[0].id], index);
+  const layout = known.map((reading) => ({
+    x: places[reading.id].x,
+    y: places[reading.id].y,
+    rssi: reading.rssi,
+  }));
+  const loud = layout.slice().sort((a, b) => b.rssi - a.rssi);
+  const spot = layout.length === 2 ? section(layout[0], layout[1], n) : (solvePlane(layout, n) || section(loud[0], loud[1], n));
+  return { x: spot.x * 1000, y: spot.y * 640 };
+}
+
+function drawMap() {
+  const nodes = payload && payload.nodes || [];
+  ensurePlaces(nodes);
+  const pos = {};
+  mapEl.replaceChildren();
+  nodes.forEach((node) => {
+    const place = places[node.id];
+    pos[node.id] = { x: place.x * 1000, y: place.y * 640, label: node.label || node.id };
+  });
+  (payload.edges || []).forEach((edge) => {
+    const from = pos[edge.from];
+    const to = pos[edge.to];
+    if (!from || !to) return;
+    const path = svg("path");
+    const midX = (from.x + to.x) / 2;
+    const midY = (from.y + to.y) / 2 - 36;
+    path.setAttribute("d", "M " + from.x + " " + from.y + " Q " + midX + " " + midY + " " + to.x + " " + to.y);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "#e7d7b1");
+    path.setAttribute("stroke-width", String(1 + Math.min(edge.count || 1, 8)));
+    path.setAttribute("opacity", "0.9");
+    mapEl.append(path);
+  });
+  nodes.forEach((node) => {
+    const at = pos[node.id];
+    const circle = svg("circle");
+    circle.setAttribute("cx", String(at.x));
+    circle.setAttribute("cy", String(at.y));
+    circle.setAttribute("r", "26");
+    circle.setAttribute("fill", colorFor(node.id));
+    circle.setAttribute("data-node", node.id);
+    circle.addEventListener("pointerdown", (event) => {
+      drag = node.id;
+      if (event.target.setPointerCapture && event.pointerId !== undefined) {
+        event.target.setPointerCapture(event.pointerId);
+      }
+    });
+    mapEl.append(circle);
+    const text = svg("text");
+    text.setAttribute("x", String(at.x));
+    text.setAttribute("y", String(at.y + 46));
+    text.setAttribute("text-anchor", "middle");
+    text.textContent = node.label || node.id;
+    mapEl.append(text);
+  });
+  const n = exponent(nodes);
+  shownTracks().forEach((track, index) => {
+    const at = placeTrack(track, pos, n, index);
+    if (!at) return;
+    const dot = svg("circle");
+    dot.setAttribute("cx", String(at.x));
+    dot.setAttribute("cy", String(at.y));
+    dot.setAttribute("r", track.class === "pass" ? "5" : "7");
+    dot.setAttribute("fill", "#f4efe6");
+    mapEl.append(dot);
+    const label = svg("text");
+    label.setAttribute("x", String(at.x + 12));
+    label.setAttribute("y", String(at.y));
+    label.textContent = track.label;
+    mapEl.append(label);
+  });
+}
+
+function onMove(event) {
+  if (!drag) return;
+  const rect = mapEl.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  places[drag] = {
+    x: clamp((event.clientX - rect.left) / rect.width),
+    y: clamp((event.clientY - rect.top) / rect.height),
+  };
+  drawMap();
+}
+
+function onUp() {
+  if (!drag) return;
+  drag = null;
+  const nodes = {};
+  Object.keys(places).forEach((id) => {
+    nodes[id] = { x: clamp(places[id].x), y: clamp(places[id].y) };
+  });
+  fetch("/api/traffic/layout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nodes: nodes }),
+  }).then((response) => {
+    if (!response.ok) errorEl.textContent = "The layout was not saved.";
+  }).catch(() => {
+    errorEl.textContent = "The layout was not saved.";
+  });
+}
+
+function summarize() {
+  const tracks = payload.tracks || [];
+  let staying = 0;
+  let moving = 0;
+  let passed = 0;
+  tracks.forEach((track) => {
+    if (track.class === "move") moving += 1;
+    else if (track.class === "pass") passed += 1;
+    else staying += 1;
+  });
+  let text = staying + " staying, " + moving + " moving, " + passed + " passed by";
+  if (payload.truncated) text += ". Showing the latest part of this window.";
+  summaryEl.textContent = text;
+  const folded = bandTracks();
+  bandEl.textContent = folded.length ? folded.length + " passed by, folded into one band." : "";
+}
+
+function drawTimeline() {
+  const groups = [];
+  const items = [];
+  let nextId = 1;
+  shownTracks().forEach((track) => {
+    groups.push({ id: track.id, content: escapeText(track.label) });
+    (track.stays || []).forEach((stay) => {
+      const end = stay.end <= stay.start ? stay.start + 1000 : stay.end;
+      items.push({
+        id: nextId,
+        group: track.id,
+        start: new Date(stay.start),
+        end: new Date(end),
+        content: escapeText(stay.node),
+        style: "background:" + colorFor(stay.node) + ";color:#1c160f",
+        type: "range",
+      });
+      nextId += 1;
+    });
+  });
+  const folded = bandTracks();
+  if (folded.length) {
+    groups.push({ id: "band", content: "Passed by" });
+    folded.forEach((track) => {
+      (track.stays || []).forEach((stay) => {
+        const end = stay.end <= stay.start ? stay.start + 1000 : stay.end;
+        items.push({
+          id: nextId,
+          group: "band",
+          start: new Date(stay.start),
+          end: new Date(end),
+          content: escapeText(track.label),
+          style: "background:#6b6458;color:#f4efe6",
+          type: "range",
+        });
+        nextId += 1;
+      });
+    });
+  }
+  if (typeof vis === "undefined" || !vis.Timeline || !vis.DataSet) {
+    lanesEl.replaceChildren();
+    groups.forEach((group) => {
+      const row = document.createElement("p");
+      row.textContent = group.content;
+      lanesEl.append(row);
+    });
+    return;
+  }
+  if (!timeline) {
+    itemSet = new vis.DataSet(items);
+    groupSet = new vis.DataSet(groups);
+    timeline = new vis.Timeline(lanesEl, itemSet, groupSet, {
+      stack: true,
+      orientation: "top",
+      zoomable: true,
+      selectable: false,
+      showCurrentTime: true,
+    });
+    timeline.addCustomTime(new Date(scrub), "scrub");
+    timeline.on("timechange", (props) => {
+      if (!props || props.id !== "scrub" || !props.time) return;
+      scrub = props.time.getTime();
+      const latest = payload && typeof payload.to === "number" ? payload.to : scrub;
+      following = latest - scrub <= 5000;
+      drawMap();
+    });
+    return;
+  }
+  groupSet.clear();
+  groupSet.add(groups);
+  itemSet.clear();
+  itemSet.add(items);
+}
+
+function render() {
+  if (!payload) return;
+  if (scrub === null) scrub = payload.to;
+  summarize();
+  const tracks = payload.tracks || [];
+  const nodes = payload.nodes || [];
+  emptyEl.hidden = tracks.length !== 0 || nodes.length !== 0;
+  drawMap();
+  drawTimeline();
+}
+
+function load() {
+  fetch("/api/traffic?window=" + windowName).then((response) => {
+    if (!response.ok) throw new Error("status");
+    return response.json();
+  }).then((body) => {
+    payload = body;
+    if (following || scrub === null) {
+      scrub = body.to;
+      if (timeline) timeline.setCustomTime(new Date(scrub), "scrub");
+    }
+    errorEl.textContent = "";
+    render();
+  }).catch(() => {
+    errorEl.textContent = "The traffic log could not be read.";
+  });
+}
+
+document.getElementById("win-live").addEventListener("click", () => { windowName = "live"; following = true; load(); });
+document.getElementById("win-hour").addEventListener("click", () => { windowName = "hour"; following = true; load(); });
+document.getElementById("win-day").addEventListener("click", () => { windowName = "day"; following = true; load(); });
+passesEl.addEventListener("change", render);
+document.getElementById("clear").addEventListener("click", () => {
+  if (!confirm("Delete the traffic log on this machine?")) return;
+  fetch("/api/traffic/clear", { method: "POST" }).then((response) => {
+    if (!response.ok) {
+      errorEl.textContent = "The log was not cleared.";
+      return;
+    }
+    load();
+  }).catch(() => {
+    errorEl.textContent = "The log was not cleared.";
+  });
+});
+mapEl.addEventListener("pointermove", onMove);
+mapEl.addEventListener("pointerup", onUp);
+mapEl.addEventListener("pointercancel", onUp);
+load();
+setInterval(() => { if (windowName === "live") load(); }, REFRESH_MS);
+</script>
+</body>
+</html>

@@ -27,7 +27,7 @@ button:focus-visible, .screen:focus-visible { outline: 2px solid var(--accent); 
 .tile span { color: var(--note); }
 section { margin-top: 1.8rem; }
 label { display: block; margin: 0.8rem 0 0.35rem; }
-input[type="text"] { display: block; width: 100%; box-sizing: border-box; font: inherit; padding: 0.55rem; border: 1px solid var(--edge); border-radius: var(--radius); background: var(--chip); color: var(--text); }
+input[type="text"], select { display: block; width: 100%; box-sizing: border-box; font: inherit; padding: 0.55rem; border: 1px solid var(--edge); border-radius: var(--radius); background: var(--chip); color: var(--text); }
 .cam-row { margin-top: 1rem; padding-top: 0.8rem; border-top: 1px solid var(--edge); }
 
 .bar { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1rem; }
@@ -41,6 +41,9 @@ input[type="text"] { display: block; width: 100%; box-sizing: border-box; font: 
 .dot.off { background: var(--err); }
 .screen { position: relative; display: grid; place-items: center; margin-top: 0.8rem; aspect-ratio: 4 / 3; border-radius: calc(var(--radius) / 2); background: #000; color: var(--note); overflow: hidden; text-align: center; }
 .screen img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.screen img.rot-90 { transform: rotate(90deg) scale(0.75); }
+.screen img.rot-180 { transform: rotate(180deg); }
+.screen img.rot-270 { transform: rotate(270deg) scale(0.75); }
 .screen.live { cursor: zoom-in; }
 .cam .err { margin: 0.6rem 0 0; min-height: 1.2em; }
 

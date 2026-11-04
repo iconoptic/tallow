@@ -6,6 +6,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
+use std::hash::{Hash, Hasher};
 use std::io;
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
@@ -81,13 +82,39 @@ impl Default for Tuning {
 }
 
 /// One cam. `address` is a host; the ports are the stream port and the node's API port.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+///
+/// `rotation` is how the cameras page turns the picture (0, 90, 180, or 270).
+/// It is not part of equality: the stream hub is the same cam either way.
+#[derive(Debug, Clone)]
 pub struct Cam {
     pub id: String,
     pub name: String,
     pub address: String,
     pub port: u16,
     pub node_port: u16,
+    pub rotation: u16,
+}
+
+impl PartialEq for Cam {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.name == other.name
+            && self.address == other.address
+            && self.port == other.port
+            && self.node_port == other.node_port
+    }
+}
+
+impl Eq for Cam {}
+
+impl Hash for Cam {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+        self.name.hash(state);
+        self.address.hash(state);
+        self.port.hash(state);
+        self.node_port.hash(state);
+    }
 }
 
 impl Cam {
@@ -99,6 +126,7 @@ impl Cam {
             address: address.to_owned(),
             port: STREAM_PORT,
             node_port: NODE_PORT,
+            rotation: 0,
         }
     }
 
@@ -231,7 +259,7 @@ pub fn parse_inventory(
         let object = entry
             .as_object()
             .ok_or_else(|| invalid(format!("{where_}: each cam is an object")))?;
-        let extra = sorted_extra(object.keys(), &["id", "name", "address"]);
+        let extra = sorted_extra(object.keys(), &["id", "name", "address", "rotation"]);
         if !extra.is_empty() {
             return Err(invalid(format!("{where_}: unknown fields: {extra}")));
         }
@@ -268,12 +296,24 @@ pub fn parse_inventory(
             IpAddr::V4(address) if on_iot_net(address) => address,
             _ => return Err(must_be_node()),
         };
+        let rotation = match object.get("rotation") {
+            None => 0,
+            Some(value) => match value.as_u64() {
+                Some(degrees @ (0 | 90 | 180 | 270)) => degrees as u16,
+                _ => {
+                    return Err(invalid(format!(
+                        "{where_}: {id} rotation is 0, 90, 180, or 270"
+                    )))
+                }
+            },
+        };
         cams.push(Cam {
             id,
             name: py_strip(&name).to_owned(),
             address: address.to_string(),
             port: STREAM_PORT,
             node_port: NODE_PORT,
+            rotation,
         });
     }
     Ok((title, cams))
@@ -350,6 +390,12 @@ struct CamDocument<'a> {
     id: &'a str,
     name: &'a str,
     address: &'a str,
+    #[serde(skip_serializing_if = "rotation_is_upright")]
+    rotation: u16,
+}
+
+fn rotation_is_upright(degrees: &u16) -> bool {
+    *degrees == 0
 }
 
 /// json.dumps escapes non-ASCII as \uXXXX. Matching that keeps the file byte-compatible with Python.
@@ -383,6 +429,7 @@ pub fn save_inventory(path: &Path, raw: &Value) -> Result<(String, Vec<Cam>), In
                 id: &cam.id,
                 name: &cam.name,
                 address: &cam.address,
+                rotation: cam.rotation,
             })
             .collect(),
     };

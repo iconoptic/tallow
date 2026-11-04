@@ -44,9 +44,15 @@ const SETTINGS: &str = include_str!("../../../../app/settings_page.html");
 const CSS: &str = include_str!("../../../../app/panel.css");
 const CONTROLS: &str = include_str!("../../../../app/h7020_page.html");
 const DEVICES: &str = include_str!("../../../../app/devices_page.html");
+const TRAFFIC: &str = include_str!("../../../../app/traffic_page.html");
+const TIMELINE_JS: &str = include_str!("../../../../app/vendor/vis-timeline-graph2d.min.js");
+const TIMELINE_CSS: &str = include_str!("../../../../app/vendor/vis-timeline-graph2d.min.css");
 
 /// The menu tile for the devices page. Python's menu keeps only the comment, so it has no tile.
 const DEVICES_TILE: &str = r#"<a class="tile" href="/devices"><strong>Devices</strong><span>What the mesh hears, and where.</span></a>"#;
+
+/// The menu tile for the traffic page.
+const TRAFFIC_TILE: &str = r#"<a class="tile" href="/traffic"><strong>Traffic</strong><span>Where addresses move, and which ones pass by.</span></a>"#;
 
 /// The login page. `error` is the words shown above the form, or empty.
 pub fn login_page(error: &str) -> String {
@@ -60,11 +66,25 @@ pub fn controls_page() -> &'static str {
 }
 
 pub fn menu_page(title: &str) -> String {
-    house_page(MENU, title).replace("<!-- devices tile -->", DEVICES_TILE)
+    house_page(MENU, title)
+        .replace("<!-- devices tile -->", DEVICES_TILE)
+        .replace("<!-- traffic tile -->", TRAFFIC_TILE)
 }
 
 pub fn devices_page() -> &'static str {
     DEVICES
+}
+
+pub fn traffic_page() -> &'static str {
+    TRAFFIC
+}
+
+pub fn timeline_js() -> &'static str {
+    TIMELINE_JS
+}
+
+pub fn timeline_css() -> &'static str {
+    TIMELINE_CSS
 }
 
 pub fn cams_page(title: &str) -> String {
@@ -136,8 +156,13 @@ mod tests {
     fn the_menu_has_the_devices_tile_in_place_of_its_comment() {
         let page = menu_page("x");
         assert!(page.contains(r#"href="/devices""#));
+        assert!(page.contains(r#"href="/traffic""#));
         assert!(!page.contains("<!-- devices tile -->"));
+        assert!(!page.contains("<!-- traffic tile -->"));
         assert!(!devices_page().contains("innerHTML"));
+        assert!(!traffic_page().contains("innerHTML"));
+        assert!(!traffic_page().contains("insertAdjacentHTML"));
+        assert!(!traffic_page().contains("outerHTML"));
     }
 
     #[test]

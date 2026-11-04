@@ -15,7 +15,7 @@
 
   <form id="cameras">
     <h2>Cameras</h2>
-    <p class="note">The name is what the menu and the cameras page call them. Each address is a node on __IOT_NET__. The order here is the order on the cameras page.</p>
+    <p class="note">The name is what the menu and the cameras page call them. Each address is a node on __IOT_NET__. The order here is the order on the cameras page. Rotation turns that camera's picture.</p>
     <label for="cams-title">Name</label>
     <input id="cams-title" type="text" maxlength="40" autocomplete="off" spellcheck="false" required>
     <div id="rows"></div>
@@ -38,6 +38,22 @@ const titleEl = document.getElementById("cams-title");
 const rowsEl = document.getElementById("rows");
 const errorEl = document.getElementById("error");
 const statusEl = document.getElementById("status");
+
+function rotationSelect(value) {
+  const label = document.createElement("label");
+  label.textContent = "Rotation";
+  const select = document.createElement("select");
+  select.dataset.key = "rotation";
+  for (const degrees of [0, 90, 180, 270]) {
+    const option = document.createElement("option");
+    option.value = String(degrees);
+    option.textContent = `${degrees}°`;
+    if (Number(value) === degrees) option.selected = true;
+    select.append(option);
+  }
+  label.append(select);
+  return label;
+}
 
 function labeled(text, key, value, max) {
   const label = document.createElement("label");
@@ -76,6 +92,7 @@ function addRow(cam) {
     labeled("Id", "id", cam.id, 63),
     labeled("Name", "name", cam.name, 40),
     labeled("Address", "address", cam.address, 15),
+    rotationSelect(cam.rotation),
   );
   const bar = document.createElement("div");
   bar.className = "bar";
@@ -119,8 +136,8 @@ document.getElementById("cameras").addEventListener("submit", async (event) => {
   event.preventDefault();
   const cams = [...rowsEl.querySelectorAll(".cam-row")].map((box) => {
     const cam = {};
-    box.querySelectorAll("input").forEach((input) => {
-      cam[input.dataset.key] = input.value.trim();
+    box.querySelectorAll("input, select").forEach((input) => {
+      cam[input.dataset.key] = input.dataset.key === "rotation" ? Number(input.value) : input.value.trim();
     });
     return cam;
   });

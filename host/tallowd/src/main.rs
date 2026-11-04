@@ -5,6 +5,7 @@
 
 #[cfg_attr(not(test), allow(dead_code))]
 mod cams;
+mod cluster;
 mod decode;
 mod gatt;
 mod identity;
@@ -19,6 +20,7 @@ mod panel;
 mod rooms;
 #[cfg_attr(not(test), allow(dead_code))]
 mod show;
+mod traffic;
 mod trial;
 
 use anyhow::{bail, ensure, Context};
@@ -220,12 +222,34 @@ fn run_command(argv: &[String]) -> anyhow::Result<i32> {
     let keys = Keys::load(&args.irks)?;
     let identities = Identities::load(&args.devices)?;
     let rooms = Rooms::load(&args.rooms)?;
+    // The log opens before the port. A log that will not open stays off, and the map still runs.
+    // A trial does not keep one. An empty log copies the map already on disk.
+    let mut log = if args.trial.is_none() {
+        traffic::open_log(&args.out.with_file_name("traffic.db"), &args.out)
+    } else {
+        traffic::Log::off()
+    };
+    if log.is_open() {
+        // Detached on return. The thread ends with this process and is not joined.
+        drop(cluster::spawn_reconciler(
+            args.out.with_file_name("traffic.db"),
+            Duration::from_secs(30),
+            Duration::from_secs(5 * 60),
+        ));
+    }
     let mut link = args.port.as_deref().map(Link::open).transpose()?;
     let local = args.bluez.clone().map(local::start);
     let mut recorder = Recorder::with_keys(keys, identities, rooms);
     if let (Some(plan), Some(link)) = (&args.trial, link.as_mut()) {
         // Read first, so the leaf finds this root before the first setting, as run_trial does.
-        read_for(Some(link), local.as_ref(), &mut recorder, 12.0, &args.out)?;
+        read_for(
+            Some(link),
+            local.as_ref(),
+            &mut recorder,
+            12.0,
+            &args.out,
+            &mut log,
+        )?;
         if let Some(line) = &args.watch {
             link.send_watch(line)?;
         }
@@ -243,7 +267,9 @@ fn run_command(argv: &[String]) -> anyhow::Result<i32> {
         // The first read sends the heartbeat, so this board is the root before the
         // settings flood out, as in mesh_host.py.
         let lines = link.lines()?;
-        recorder.feed(&lines, unix_now());
+        let now = unix_now();
+        recorder.feed(&lines, now);
+        log.note_lines(&lines, now);
         link.send_command(&args.set.unwrap_or(DEFAULT_SCAN))?;
         if let Some(line) = &args.watch {
             link.send_watch(line)?;
@@ -255,6 +281,7 @@ fn run_command(argv: &[String]) -> anyhow::Result<i32> {
         &mut recorder,
         args.seconds,
         &args.out,
+        &mut log,
     )?;
     finish(&recorder.world, &args.out)?;
     Ok(0)
@@ -278,16 +305,19 @@ fn read_for(
     recorder: &mut Recorder,
     seconds: f64,
     out: &Path,
+    log: &mut traffic::Log,
 ) -> anyhow::Result<()> {
     let end = Instant::now() + Duration::from_secs_f64(seconds);
     while Instant::now() < end {
         let mut save = false;
         if let Some(link) = link.as_deref_mut() {
             let lines = link.lines()?;
-            let (printed, due) = recorder.feed(&lines, unix_now());
+            let now = unix_now();
+            let (printed, due) = recorder.feed(&lines, now);
             for line in printed {
                 println!("{line}");
             }
+            log.note_lines(&lines, now);
             save |= due;
         }
         if let Some(local) = local {
@@ -303,7 +333,11 @@ fn read_for(
             };
             while let Some(event) = next {
                 match event {
-                    local::Event::Batch(batch) => save |= recorder.feed_local(&batch, unix_now()),
+                    local::Event::Batch(batch) => {
+                        let now = unix_now();
+                        save |= recorder.feed_local(&batch, now);
+                        log.note_batch(&batch, now);
+                    }
                     local::Event::Note(note) => eprintln!("{note}"),
                 }
                 next = local.try_recv().ok();

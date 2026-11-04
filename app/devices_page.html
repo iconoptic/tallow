@@ -113,10 +113,60 @@ function isRotating(device) {
 }
 
 function titleOf(device) {
+  if (device.label) return device.label;
   if (device.resolved) return device.resolved;
   if (device.name) return device.name;
   if (isRotating(device)) return "Changing address";
   return "Unnamed device";
+}
+
+function groupTitle(devices) {
+  const titled = devices.find((device) => device.label) || devices[0];
+  return titleOf(titled);
+}
+
+function grouped(entries) {
+  const order = [];
+  const buckets = new Map();
+  entries.forEach(([key, device]) => {
+    const id = typeof device.cluster === "string" && device.cluster ? device.cluster : "";
+    const bucket = id || "\0" + key;
+    if (!buckets.has(bucket)) {
+      buckets.set(bucket, []);
+      order.push(bucket);
+    }
+    buckets.get(bucket).push(device);
+  });
+  return order.map((id) => buckets.get(id));
+}
+
+function joined(devices) {
+  return devices.some((device) => typeof device.cluster === "string" && device.cluster);
+}
+
+function addressesOf(devices) {
+  const seen = [];
+  const add = (addr) => {
+    if (typeof addr === "string" && addr && !seen.includes(addr)) seen.push(addr);
+  };
+  devices.forEach((device) => {
+    if (Array.isArray(device.members)) device.members.forEach(add);
+    add(device.addr);
+  });
+  return seen;
+}
+
+function mergeHeard(devices) {
+  const heard = {};
+  devices.forEach((device) => {
+    Object.entries(device.heard_by || {}).forEach(([node, entry]) => {
+      const prev = heard[node];
+      if (!prev || entry.rssi > prev.rssi || (entry.rssi === prev.rssi && entry.last > prev.last)) {
+        heard[node] = entry;
+      }
+    });
+  });
+  return heard;
 }
 
 // A Classic page reports -127: the device answered a page, which has no signal strength.
@@ -125,23 +175,37 @@ function signal(kind, rssi) {
   return `${rssi} dBm`;
 }
 
-function deviceCard(device, now) {
-  const card = make("li", "card");
-  const heard = Object.entries(device.heard_by || {});
+function deviceCard(devices, now) {
+  const primary = devices[0];
+  const heardMap = mergeHeard(devices);
+  const heard = Object.entries(heardMap);
   const latest = heard.reduce((best, [, entry]) => (best === null || entry.last > best ? entry.last : best), null);
-  const nearest = device.nearest && device.heard_by ? device.heard_by[device.nearest] : undefined;
-  card.append(make("h3", "", titleOf(device)));
-  if (isRotating(device)) {
+  let nearestId = null;
+  let nearestRssi = null;
+  heard.forEach(([node, entry]) => {
+    if (nearestId === null || entry.rssi > nearestRssi) {
+      nearestId = node;
+      nearestRssi = entry.rssi;
+    }
+  });
+  const nearest = nearestId ? heardMap[nearestId] : undefined;
+  const room = devices.map((device) => device.room).find((name) => name) || "No room yet";
+  const card = make("li", "card");
+  card.append(make("h3", "", groupTitle(devices)));
+  if (joined(devices)) {
+    card.append(make("p", "", "These addresses kept the same signal."));
+  } else if (isRotating(primary)) {
     card.append(make("p", "", "A changing address, not a stable identity. A random address changes. Any name shown came from the air and is not checked."));
   }
   const list = make("dl");
   const add = (term, value) => list.append(make("dt", "", term), make("dd", "", value));
-  add("Kind", KINDS[device.kind] || device.kind || "unknown");
-  add("Address", device.addr || "unknown");
-  add("Room", device.room || "No room yet");
-  add("Nearest", nearest ? `${device.nearest}, ${signal(device.kind, nearest.rssi)}` : "none");
+  const addresses = addressesOf(devices);
+  add("Kind", KINDS[primary.kind] || primary.kind || "unknown");
+  add("Address", addresses.length ? addresses.join("; ") : "unknown");
+  add("Room", room);
+  add("Nearest", nearest ? `${nearestId}, ${signal(primary.kind, nearest.rssi)}` : "none");
   add("Last heard", latest === null ? "never" : ago(now - latest));
-  add("Heard by", heard.length ? heard.map(([node, entry]) => `${node} ${signal(device.kind, entry.rssi)}`).join("; ") : "nobody");
+  add("Heard by", heard.length ? heard.map(([node, entry]) => `${node} ${signal(primary.kind, entry.rssi)}`).join("; ") : "nobody");
   card.append(list);
   return card;
 }
@@ -206,8 +270,9 @@ function showLive(doc) {
   liveEl.hidden = false;
   const now = doc.now;
   stampEl.textContent = `Map written ${ago(doc.age_s || 0)}.`;
-  const devices = Object.entries(doc.devices || {}).sort(([, a], [, b]) => titleOf(a).localeCompare(titleOf(b)));
-  devicesEl.replaceChildren(...devices.map(([, device]) => deviceCard(device, now)));
+  const devices = grouped(Object.entries(doc.devices || {}));
+  devices.sort((a, b) => groupTitle(a).localeCompare(groupTitle(b)));
+  devicesEl.replaceChildren(...devices.map((group) => deviceCard(group, now)));
   noDevicesEl.hidden = devices.length > 0;
   const nodes = Object.entries(doc.nodes || {}).sort(([a], [b]) => a.localeCompare(b));
   nodesEl.replaceChildren(...nodes.map(([id, node]) => nodeCard(id, node, now)));

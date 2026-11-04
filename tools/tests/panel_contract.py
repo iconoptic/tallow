@@ -16,7 +16,7 @@ tools/mesh.sh daemon build). Another build takes the same flags:
     .venv/bin/python tools/tests/panel_contract.py --panel-command 'path/to/tallowd panel --preview'
 
 It also checks /devices and GET /api/mesh/map, with the map's stale states, read
-from a mesh-map.json the script seeds.
+from a mesh-map.json the script seeds, and /traffic with its log and layout.
 
 Skipped, because preview cannot reach them:
 
@@ -994,6 +994,8 @@ def agent_socket(sock_path: str, cookie: str) -> None:
 
 MAP_ROUTE = "/api/mesh/map"
 DEVICES_ROUTE = "/devices"
+TRAFFIC_ROUTE = "/traffic"
+TRAFFIC_API = "/api/traffic"
 MAP_FILE = "mesh-map.json"
 MAP_MAX = 4 * 1024 * 1024
 
@@ -1117,6 +1119,70 @@ def devices_routes(client: Client, sock_path: str, data_dir: Path) -> None:
     stale_as(map_document(client), "missing", "a map file removed")
 
 
+def traffic_routes(client: Client, sock_path: str, data_dir: Path) -> None:
+    """The traffic page: cookie gated, a missing log is empty, and a bad layout is refused."""
+    del data_dir
+    status, payload, headers = client.call("GET", TRAFFIC_ROUTE)
+    check_eq("GET /traffic status", status, 200)
+    check_eq("GET /traffic content-type", headers.get("content-type"), "text/html; charset=utf-8")
+    text_has("GET /traffic", payload, "<title>Traffic</title>")
+    text_has("GET /traffic", payload, TRAFFIC_API)
+    text_lacks("GET /traffic", payload, "innerHTML")
+
+    status, payload, _headers = client.call("GET", "/")
+    text_has("GET / traffic tile", payload, 'href="/traffic"')
+
+    status, payload, headers = client.call("GET", TRAFFIC_ROUTE, auth=False)
+    redirect("GET /traffic no cookie", status, payload, headers, "/login")
+    status, payload, headers = client.call("GET", TRAFFIC_API, auth=False)
+    check_eq("GET /api/traffic no cookie", detail("GET /api/traffic", status, payload, headers, 401), "login")
+
+    status, payload, headers = client.call("GET", TRAFFIC_API, extra={"Authorization": f"Bearer {CONTROL_TOKEN}"})
+    check_eq("cookie plus bearer on traffic", detail("GET traffic bearer", status, payload, headers, 401), "login")
+
+    status, payload, headers = client.call("POST", TRAFFIC_API, b"{}", "application/json")
+    check_eq("POST /api/traffic", detail("POST traffic", status, payload, headers, 405), "Method Not Allowed")
+
+    status, payload, headers = client.call("GET", "/api/traffic?window=nope")
+    check_eq("bad window", detail("GET traffic window", status, payload, headers, 400), "window must be live, hour, or day")
+
+    status, payload, headers = client.call("GET", TRAFFIC_API)
+    document = json_of("GET traffic empty", status, payload, headers, 200)
+    check_eq("a missing log has no tracks", document.get("tracks"), [])
+    check_eq("a missing log has no nodes", document.get("nodes"), [])
+
+    status, payload, headers = client.call("POST", "/api/traffic/layout", b"[]", "application/json")
+    check_eq("layout must be an object", detail("POST layout list", status, payload, headers, 400), "body must be an object")
+    status, payload, headers = client.call(
+        "POST", "/api/traffic/layout", b'{"nodes":{"aabbccdd":{"x":2,"y":0}}}', "application/json"
+    )
+    check_eq(
+        "layout x is in range",
+        detail("POST layout x", status, payload, headers, 400),
+        "node aabbccdd x must be from 0 to 1",
+    )
+    saved = post_json(client, "/api/traffic/layout", {"nodes": {"aabbccdd": {"x": 0.2, "y": 0.4}}}, 200)
+    check_eq("layout saved", saved, {"ok": True})
+    status, payload, headers = client.call("GET", TRAFFIC_API)
+    document = json_of("GET traffic placed", status, payload, headers, 200)
+    placed = {node["id"]: node for node in document["nodes"]}
+    check_eq("the placed node is on the map", placed["aabbccdd"]["x"], 0.2)
+    check_eq("the placed node y", placed["aabbccdd"]["y"], 0.4)
+
+    cleared = post_json(client, "/api/traffic/clear", {}, 200)
+    check_eq("log cleared", cleared, {"ok": True})
+
+    for method, path in (
+        ("GET", TRAFFIC_ROUTE),
+        ("GET", TRAFFIC_API),
+        ("GET", "/vendor/vis-timeline.js"),
+        ("POST", "/api/traffic/layout"),
+        ("POST", "/api/traffic/clear"),
+    ):
+        status, payload = unix_call(sock_path, method, path)
+        check_eq(f"socket {method} {path}", (status, payload), (404, b'{"detail":"not found"}'))
+
+
 def free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.bind(("127.0.0.1", 0))
@@ -1218,6 +1284,7 @@ def main() -> None:
                 if client.cookie:
                     remove_contract_rows(client)
             devices_routes(client, sock_path, data_dir)
+            traffic_routes(client, sock_path, data_dir)
             logout(client)
             agent_socket(sock_path, cookie)
             agent_tokens(sock_path, cookie, data_dir)

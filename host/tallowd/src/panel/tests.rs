@@ -238,6 +238,165 @@ async fn the_devices_page_and_the_mesh_map_are_lan_only_read_only_and_cookie_gat
     assert_eq!(status, 405, "the map takes no writes");
 }
 
+#[tokio::test]
+async fn the_traffic_page_is_lan_only_and_reads_the_log_beside_the_map() {
+    let dir = TempDir::new("traffic-routes");
+    let panel = panel_in(&dir, Vec::new(), None, true);
+    let cookie = browser();
+    let (status, _, body) = send(
+        &panel,
+        "GET",
+        "/traffic",
+        Channel::Agent,
+        Some(HERMES),
+        None,
+        b"",
+    )
+    .await;
+    assert_eq!(status, 404);
+    assert_eq!(text(&body), r#"{"detail":"not found"}"#);
+    let (status, headers, _) = send(&panel, "GET", "/traffic", Channel::Lan, None, None, b"").await;
+    assert_eq!(status, 303);
+    assert_eq!(
+        headers
+            .get(header::LOCATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("/login")
+    );
+    let (status, _, _) = send(&panel, "GET", "/api/traffic", Channel::Lan, None, None, b"").await;
+    assert_eq!(status, 401);
+    let (status, _, body) = send(
+        &panel,
+        "GET",
+        "/api/traffic?window=nope",
+        Channel::Lan,
+        None,
+        Some(&cookie),
+        b"",
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(
+        json_body(&body)["detail"],
+        json!("window must be live, hour, or day")
+    );
+    let (status, _, body) = send(
+        &panel,
+        "GET",
+        "/api/traffic",
+        Channel::Lan,
+        None,
+        Some(&cookie),
+        b"",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(json_body(&body)["tracks"].as_array().unwrap().len(), 0);
+    let (status, _, _) = send(
+        &panel,
+        "POST",
+        "/api/traffic",
+        Channel::Lan,
+        None,
+        Some(&cookie),
+        b"{}",
+    )
+    .await;
+    assert_eq!(status, 405);
+    let (status, _, body) = send(
+        &panel,
+        "POST",
+        "/api/traffic/layout",
+        Channel::Lan,
+        None,
+        Some(&cookie),
+        br#"{"nodes":{"aaaaaaaa":{"x":2,"y":0}}}"#,
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert!(text(&body).contains("x must be from 0 to 1"));
+    let (status, _, body) = send(
+        &panel,
+        "POST",
+        "/api/traffic/layout",
+        Channel::Lan,
+        None,
+        Some(&cookie),
+        br#"{"nodes":{"aaaaaaaa":{"x":0.25,"y":0.5}}}"#,
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(json_body(&body)["ok"], json!(true));
+    let db = dir.path().join("traffic.db");
+    let mut journal = crate::traffic::Journal::open(&db).unwrap();
+    let now = crate::link::unix_now();
+    let addr = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x10];
+    journal
+        .note_batch(&heard("aaaaaaaa", addr, -60), now - 20.0)
+        .unwrap();
+    journal
+        .note_batch(&heard("bbbbbbbb", addr, -40), now)
+        .unwrap();
+    let (status, _, body) = send(
+        &panel,
+        "GET",
+        "/api/traffic?window=day",
+        Channel::Lan,
+        None,
+        Some(&cookie),
+        b"",
+    )
+    .await;
+    assert_eq!(status, 200);
+    let doc = json_body(&body);
+    assert_eq!(doc["tracks"][0]["class"], json!("move"));
+    let placed = doc["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["id"] == "aaaaaaaa")
+        .unwrap();
+    assert_eq!(placed["x"], json!(0.25));
+    let (status, _, _) = send(
+        &panel,
+        "POST",
+        "/api/traffic/clear",
+        Channel::Lan,
+        None,
+        Some(&cookie),
+        b"",
+    )
+    .await;
+    assert_eq!(status, 200);
+    let (status, _, body) = send(
+        &panel,
+        "GET",
+        "/api/traffic?window=day",
+        Channel::Lan,
+        None,
+        Some(&cookie),
+        b"",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(json_body(&body)["tracks"].as_array().unwrap().len(), 0);
+}
+
+fn heard(node: &str, addr: [u8; 6], rssi: i8) -> crate::local::Batch {
+    crate::local::Batch {
+        node: node.to_string(),
+        uptime_s: 0,
+        sightings: vec![crate::decode::Sighting {
+            addr,
+            kind: Some(tallow_mesh_core::sightings::Kind::BlePublic),
+            rssi,
+            count: 1,
+            age_s: 0,
+        }],
+        names: Vec::new(),
+    }
+}
+
 // PagesTest
 
 #[tokio::test]

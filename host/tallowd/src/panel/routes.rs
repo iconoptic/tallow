@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::body::{to_bytes, Body, Bytes};
 use axum::extract::{Path, Request, State};
@@ -28,6 +28,7 @@ use super::pages;
 use super::Panel;
 use crate::cams::{self, Cam, Feed};
 use crate::library::{self, Error, Group};
+use crate::traffic;
 
 /// Largest request body the panel reads: 2 MiB. This is a deliberate deviation. The
 /// Python has no limit. The cap keeps a LAN client from filling memory.
@@ -315,9 +316,27 @@ fn camera_document(panel: &Panel) -> Value {
     let error = book.error.clone();
     json!({
         "title": title,
-        "cams": listed.iter().map(|cam| json!({"id": cam.id, "name": cam.name, "address": cam.address})).collect::<Vec<_>>(),
+        "cams": listed.iter().map(cam_settings_json).collect::<Vec<_>>(),
         "error": error,
     })
+}
+
+/// Settings sees the address. A straight picture omits `rotation`, so an older file stays the same shape.
+fn cam_settings_json(cam: &Cam) -> Value {
+    let mut value = json!({"id": cam.id, "name": cam.name, "address": cam.address});
+    if cam.rotation != 0 {
+        value["rotation"] = json!(cam.rotation);
+    }
+    value
+}
+
+/// The cameras page sees the turn, and never the address.
+fn cam_public_json(cam: &Cam) -> Value {
+    let mut value = json!({"id": cam.id, "name": cam.name});
+    if cam.rotation != 0 {
+        value["rotation"] = json!(cam.rotation);
+    }
+    value
 }
 
 fn manifest(panel: &Panel) -> Result<Value, ApiError> {
@@ -427,13 +446,123 @@ async fn devices_page(State(panel): State<Arc<Panel>>, req: Request) -> Response
     page(&panel, &req, || pages::devices_page().to_owned())
 }
 
+async fn traffic_page(State(panel): State<Arc<Panel>>, req: Request) -> Response {
+    page(&panel, &req, || pages::traffic_page().to_owned())
+}
+
+fn traffic_db(panel: &Panel) -> Option<std::path::PathBuf> {
+    panel
+        .map_path
+        .as_ref()
+        .map(|path| path.with_file_name("traffic.db"))
+}
+
+fn traffic_bounds(req: &Request) -> Result<(i64, i64), ApiError> {
+    let query: HashMap<String, String> = req
+        .uri()
+        .query()
+        .and_then(|query| serde_urlencoded::from_str(query).ok())
+        .unwrap_or_default();
+    let name = query.get("window").map(String::as_str).unwrap_or("live");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX))
+        .unwrap_or(0);
+    traffic::window(now, name)
+        .ok_or_else(|| ApiError::new(400, "window must be live, hour, or day"))
+}
+
+async fn traffic_route(State(panel): State<Arc<Panel>>, req: Request) -> Response {
+    if let Err(error) = lan_viewer(&panel, &req) {
+        return error.into_response();
+    }
+    let (from, to) = match traffic_bounds(&req) {
+        Ok(bounds) => bounds,
+        Err(error) => return error.into_response(),
+    };
+    let db = traffic_db(&panel);
+    match tokio::task::spawn_blocking(move || traffic::picture(db.as_deref(), from, to)).await {
+        Ok(Ok(document)) => json_response(StatusCode::OK, &document),
+        Ok(Err(_)) | Err(_) => ApiError::new(500, "Internal Server Error").into_response(),
+    }
+}
+
+async fn traffic_layout(State(panel): State<Arc<Panel>>, req: Request) -> Response {
+    if let Err(error) = lan_viewer(&panel, &req) {
+        return error.into_response();
+    }
+    let Some(db) = traffic_db(&panel) else {
+        return ApiError::new(400, "traffic is not configured").into_response();
+    };
+    let body = match read_body(req).await {
+        Ok(body) => body,
+        Err(error) => return error.into_response(),
+    };
+    if let Err(error) = only_fields(&body, &["nodes"]) {
+        return error.into_response();
+    }
+    let path = db.with_file_name("layout.json");
+    match tokio::task::spawn_blocking(move || traffic::store_layout(&path, &body)).await {
+        Ok(Ok(())) => json_response(StatusCode::OK, &json!({"ok": true})),
+        Ok(Err(message)) => ApiError::new(400, &message).into_response(),
+        Err(_) => ApiError::new(500, "Internal Server Error").into_response(),
+    }
+}
+
+async fn traffic_clear(State(panel): State<Arc<Panel>>, req: Request) -> Response {
+    if let Err(error) = lan_viewer(&panel, &req) {
+        return error.into_response();
+    }
+    let Some(db) = traffic_db(&panel) else {
+        return ApiError::new(400, "traffic is not configured").into_response();
+    };
+    match tokio::task::spawn_blocking(move || traffic::clear(&db)).await {
+        Ok(Ok(())) => json_response(StatusCode::OK, &json!({"ok": true})),
+        Ok(Err(_)) | Err(_) => ApiError::new(500, "Internal Server Error").into_response(),
+    }
+}
+
+async fn timeline_js(State(panel): State<Arc<Panel>>, req: Request) -> Response {
+    if let Err(error) = lan_viewer(&panel, &req) {
+        return error.into_response();
+    }
+    asset_ok(
+        pages::timeline_js(),
+        "application/javascript; charset=utf-8",
+    )
+}
+
+async fn timeline_css(State(panel): State<Arc<Panel>>, req: Request) -> Response {
+    if let Err(error) = lan_viewer(&panel, &req) {
+        return error.into_response();
+    }
+    asset_ok(pages::timeline_css(), "text/css; charset=utf-8")
+}
+
+fn asset_ok(body: &'static str, content_type: &'static str) -> Response {
+    let mut response = Response::new(Body::from(body));
+    response
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    response
+}
+
 /// The mesh map, read from the file the panel was started with. Read only: the request
 /// supplies no part of the path, and a file that cannot be used is a stale document, not an error.
 async fn mesh_map_route(State(panel): State<Arc<Panel>>, req: Request) -> Response {
     if let Err(error) = lan_viewer(&panel, &req) {
         return error.into_response();
     }
-    let mut document = mesh_map::document(panel.map_path.as_deref(), SystemTime::now());
+    let path = panel.map_path.clone();
+    let now = SystemTime::now();
+    let mut document =
+        match tokio::task::spawn_blocking(move || mesh_map::document(path.as_deref(), now)).await {
+            Ok(document) => document,
+            Err(_) => return ApiError::new(500, "Internal Server Error").into_response(),
+        };
     if let Some(host) = &panel.mesh_host {
         document["host"] = host.document();
     }
@@ -472,10 +601,7 @@ async fn cam_index(State(panel): State<Arc<Panel>>, req: Request) -> Response {
                 (listed, book.error.clone())
             };
             panel.hubs.prune(&listed);
-            let cams: Vec<Value> = listed
-                .iter()
-                .map(|cam| json!({"id": cam.id, "name": cam.name}))
-                .collect();
+            let cams: Vec<Value> = listed.iter().map(cam_public_json).collect();
             json_response(StatusCode::OK, &json!({"cams": cams, "error": error}))
         }
     }
@@ -951,6 +1077,9 @@ pub fn router(panel: Arc<Panel>, chan: Channel) -> Router {
         .route("/cams", get_only(cams_page))
         .route("/settings", get_only(settings_page))
         .route("/devices", get_only(devices_page))
+        .route("/traffic", get_only(traffic_page))
+        .route("/vendor/vis-timeline.js", get_only(timeline_js))
+        .route("/vendor/vis-timeline.css", get_only(timeline_css))
         .route("/panel.css", get_only(panel_css))
         .route("/login", get_only(login_form).post(login))
         .route("/logout", post(logout))
@@ -962,6 +1091,9 @@ pub fn router(panel: Arc<Panel>, chan: Channel) -> Router {
             get_only(settings_cameras).put(save_settings_cameras),
         )
         .route("/api/mesh/map", get_only(mesh_map_route))
+        .route("/api/traffic", get_only(traffic_route))
+        .route("/api/traffic/layout", post(traffic_layout))
+        .route("/api/traffic/clear", post(traffic_clear))
         .route("/api/state", get_only(state))
         .route("/api/scenes", get_only(scenes))
         .route("/api/capabilities", get_only(capabilities))

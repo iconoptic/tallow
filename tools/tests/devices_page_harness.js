@@ -83,7 +83,7 @@ const LIVE = {
   },
   devices: {
     "41:22:13:00:00:01 ble-random": {
-      addr: "41:22:13:00:00:01", kind: "ble-random",
+      addr: "41:22:13:00:00:01", kind: "ble-random", label: "Amber Finch",
       heard_by: { "0a0b0c0e": { rssi: -70, hits: 4, last: 999990 } }, nearest: "0a0b0c0e",
     },
     "AA:BB:CC:DD:EE:01 classic": {
@@ -97,6 +97,18 @@ const LIVE = {
     "AA:BB:CC:DD:EE:02 classic": {
       addr: "AA:BB:CC:DD:EE:02", kind: "classic", name: NAME_FROM_THE_AIR,
       heard_by: { "0a0b0c0e": { rssi: -61, hits: 1, last: 999960 } }, nearest: "0a0b0c0e",
+    },
+    "61:22:13:00:00:0A ble-random": {
+      addr: "61:22:13:00:00:0A", kind: "ble-random", label: "Quiet Otter",
+      cluster: "61:22:13:00:00:0A",
+      members: ["61:22:13:00:00:0A", "61:22:13:00:00:0B"],
+      heard_by: { "0a0b0c0d": { rssi: -60, hits: 2, last: 999990 } }, nearest: "0a0b0c0d",
+    },
+    "61:22:13:00:00:0B ble-random": {
+      addr: "61:22:13:00:00:0B", kind: "ble-random", label: "Quiet Otter",
+      cluster: "61:22:13:00:00:0A",
+      members: ["61:22:13:00:00:0A", "61:22:13:00:00:0B"],
+      heard_by: { "0a0b0c0e": { rssi: -70, hits: 2, last: 999991 } }, nearest: "0a0b0c0e",
     },
   },
   identities: {
@@ -174,7 +186,7 @@ const LIVE = {
     assert.equal(ids.stale.hidden, true);
     assert.equal(ids.live.hidden, false);
     assert.equal(ids.stamp.textContent, "Map written 3 s ago.");
-    assert.equal(ids.devices.children.length, 4);
+    assert.equal(ids.devices.children.length, 5);
     assert.equal(ids.nodes.children.length, 2);
     assert.equal(ids["no-devices"].hidden, true);
     assert.equal(ids["no-nodes"].hidden, true);
@@ -198,11 +210,23 @@ const LIVE = {
     assert.match(textOf(child), /Rank\n2/);
   });
 
-  check("a rotating address is named as a changing address, not a stable identity", () => {
+  check("a rotating address uses its label and still says it is not a stable identity", () => {
     const card = cardWith(ids.devices, "41:22:13:00:00:01");
-    assert.match(textOf(card), /Changing address/);
+    assert.match(textOf(card), /Amber Finch/);
     assert.match(textOf(card), /not a stable identity/);
     assert.doesNotMatch(textOf(card), /Unnamed device/);
+  });
+
+  check("joined addresses are one card under one name", () => {
+    const cards = ids.devices.children.filter((card) => textOf(card).includes("61:22:13:00:00:0A"));
+    assert.equal(cards.length, 1);
+    const card = cards[0];
+    assert.ok(textOf(card).includes("61:22:13:00:00:0B"), textOf(card));
+    assert.ok(textOf(card).includes("Quiet Otter"), textOf(card));
+    assert.ok(textOf(card).includes("These addresses kept the same signal."), textOf(card));
+    assert.ok(!textOf(card).includes("not a stable identity"), textOf(card));
+    assert.ok(textOf(card).includes("0a0b0c0d -60 dBm"), textOf(card));
+    assert.ok(textOf(card).includes("0a0b0c0e -70 dBm"), textOf(card));
   });
 
   check("a resolved address shows its name and no changing-address note", () => {
