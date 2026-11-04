@@ -12,7 +12,7 @@ When a parent agent launches you as the pre-summary subagent, run **working-tree
 
 ## Modes
 
-- **working-tree** (default): the uncommitted diff. Also the mode the rule and the stop hook request.
+- **working-tree** (default): the uncommitted diff. Also the mode the docs-before-summary rule requests.
 - **review-all**: the whole doc set against the repo. Use when the request says to review all documentation.
 - **specified**: only the paths or topics the request names.
 
