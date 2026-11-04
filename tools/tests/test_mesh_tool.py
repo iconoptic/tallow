@@ -79,18 +79,72 @@ class SessionGroup(unittest.TestCase):
             self.assertIn("Joining group dialout", result.stderr)
 
 
+FLASH_ID = (
+    "esptool v5.3.1\n"
+    "Detecting chip type... {chip}\n"
+    "MAC: {mac}\n"
+    "Manufacturer: 5e\n"
+)
+
+
+def fake_tree(base: Path, chip: str, mac: str) -> tuple[Path, Path, dict[str, str]]:
+    """A stand-in podman that prints esptool flash-id text, a udevadm that
+    reports a CP2102 on path 12, and empty catalog files. No container runs."""
+    fake = base / "bin"
+    fake.mkdir()
+    (fake / "podman").write_text(
+        "#!/usr/bin/env bash\ncat <<'EOF'\n" + FLASH_ID.format(chip=chip, mac=mac) + "EOF\n"
+    )
+    (fake / "udevadm").write_text(
+        "#!/usr/bin/env bash\n"
+        "printf 'ID_PATH=pci-0000:00:14.0-usb-0:12:1.0\\nID_VENDOR_ID=10c4\\n"
+        "ID_MODEL_ID=ea60\\nID_MODEL=CP2102\\nID_SERIAL_SHORT=0001\\n'\n"
+    )
+    for tool in ("podman", "udevadm"):
+        (fake / tool).chmod(0o755)
+    catalog = base / "devices.jsonl"
+    boards = base / "boards.tsv"
+    catalog.write_text(
+        '{"type":"esp32-mesh","name":"node-0","chip":"esp32","usb_path":"12",'
+        '"wifi_mac":"70:4b:ca:04:21:64","flash_ok":true,"push_ok":false}\n'
+    )
+    boards.write_text("# name\twifi_mac\tchip\tusb_path\tnotes\nnode-0\t70:4b:ca:04:21:64\tesp32\t12\tnote\n")
+    env = {**os.environ, "PATH": f"{fake}{os.pathsep}{os.environ['PATH']}"}
+    return catalog, boards, env
+
+
 class BoardMac(unittest.TestCase):
-    def test_an_unknown_cell_accepts_the_chip(self) -> None:
-        result = shell("mac_matches_row unknown aa:bb:cc:dd:ee:ff")
-        self.assertEqual(result.returncode, 0, result.stderr[-400:])
+    def test_a_new_chip_on_a_known_socket_is_learned_not_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            catalog, boards, env = fake_tree(Path(tmp), "ESP32", "20:9B:A9:97:9F:28")
+            result = shell(
+                f'CATALOG="{catalog}"\nBOARDS="{boards}"\nconfirm_port_mac /dev/null esp32', env=env
+            )
+            self.assertEqual(result.returncode, 0, result.stderr[-400:])
+            self.assertEqual(result.stdout.strip(), "20:9b:a9:97:9f:28")
+            self.assertIn("node-1", result.stderr)
+            self.assertNotIn(", not ", result.stderr)
+            self.assertIn("node-1\t20:9b:a9:97:9f:28\tesp32\t12", boards.read_text())
+            self.assertIn('"usb_path":""', catalog.read_text().splitlines()[0])
 
-    def test_the_recorded_mac_accepts_that_chip(self) -> None:
-        result = shell("mac_matches_row 70:4B:CA:04:21:64 70:4b:ca:04:21:64")
-        self.assertEqual(result.returncode, 0, result.stderr[-400:])
+    def test_a_cam_on_a_node_command_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            catalog, boards, env = fake_tree(Path(tmp), "ESP32-S3", "44:bd:8d:7a:50:cc")
+            result = shell(
+                f'CATALOG="{catalog}"\nBOARDS="{boards}"\nconfirm_port_mac /dev/null esp32', env=env
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("cam-flash", result.stderr)
+            self.assertNotIn("44:bd:8d:7a:50:cc", boards.read_text())
 
-    def test_a_different_mac_is_a_different_board(self) -> None:
-        result = shell("mac_matches_row 70:4b:ca:04:21:64 20:9b:a9:99:1e:54")
-        self.assertNotEqual(result.returncode, 0)
+    def test_each_new_cam_is_its_own_toby_cam(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            catalog, boards, env = fake_tree(Path(tmp), "ESP32-S3", "44:bd:8d:7a:50:cc")
+            result = shell(
+                f'CATALOG="{catalog}"\nBOARDS="{boards}"\nconfirm_port_mac /dev/null esp32s3', env=env
+            )
+            self.assertEqual(result.returncode, 0, result.stderr[-400:])
+            self.assertIn("toby-cam-0", result.stderr)
 
     def test_the_bluetooth_address_is_the_base_plus_two(self) -> None:
         result = shell("bt_mac 70:4b:ca:04:21:64")
@@ -112,12 +166,33 @@ class PortGuards(unittest.TestCase):
             result = shell(f'BOARDS="{boards}"\nboard_field 1.1 3')
             self.assertEqual(result.stdout.split(), ["esp32"])
 
-    def test_the_cam_guard_compares_a_path_as_text_too(self) -> None:
+    def test_the_usb_ids_name_the_chip_class(self) -> None:
+        result = shell("port_class 10c4:ea60; port_class 303A:1001; port_class 1a86:7523")
+        self.assertEqual(result.stdout.split(), ["classic", "s3", "unknown"])
+
+    def test_a_cp2102_is_never_a_cam_port(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            boards = Path(tmp) / "boards.tsv"
-            boards.write_text(TABLE)
-            self.assertEqual(shell(f'cam_port_ok "{boards}" 2.1').returncode, 0)
-            self.assertNotEqual(shell(f'cam_port_ok "{boards}" 2.10').returncode, 0)
+            _catalog, _boards, env = fake_tree(Path(tmp), "ESP32", "aa:bb:cc:dd:ee:ff")
+            empty = Path(tmp) / "empty.tsv"
+            empty.write_text("# name\twifi_mac\tchip\tusb_path\tnotes\n")
+            cam = shell(f'BOARDS="{empty}"\nneed_cam_port /dev/null', env=env)
+            self.assertNotEqual(cam.returncode, 0)
+            self.assertIn("CP2102", cam.stderr)
+
+    def test_push_goes_only_to_a_reserved_cam_address(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            catalog = Path(tmp) / "devices.jsonl"
+            reservations = Path(tmp) / "reservations"
+            catalog.write_text(
+                '{"type":"esp32s3-cam","name":"toby-cam-1","wifi_mac":"44:bd:8d:7a:50:cc"}\n'
+                '{"type":"esp32-mesh","name":"node-0","wifi_mac":"70:4b:ca:04:21:64"}\n'
+            )
+            reservations.write_text("44:BD:8D:7A:50:CC,10.87.0.23\n70:4b:ca:04:21:64,10.87.0.22\n")
+            base = f'CATALOG="{catalog}"\nRESERVATIONS="{reservations}"\n'
+            self.assertEqual(shell(base + "cam_allows_address 10.87.0.23").returncode, 0)
+            self.assertNotEqual(shell(base + "cam_allows_address 10.87.0.22").returncode, 0)
+            self.assertNotEqual(shell(base + "cam_allows_address 10.87.0.21").returncode, 0)
+            self.assertNotEqual(shell(base + "cam_allows_address ''").returncode, 0)
 
     def test_a_different_usb_mac_is_not_the_path_s_board(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -128,11 +203,11 @@ class PortGuards(unittest.TestCase):
             )
             foreign = shell(f'BOARDS="{boards}"\nboard_name 2 "44:BD:8D:7C:20:C4"')
             self.assertEqual(foreign.returncode, 0, foreign.stderr[-400:])
-            self.assertEqual(foreign.stdout.splitlines(), ["\t44:bd:8d:7c:20:c4"])
+            self.assertEqual(foreign.stdout.splitlines(), ["\t44:bd:8d:7c:20:c4\t"])
             same = shell(f'BOARDS="{boards}"\nboard_name 9 "44:bd:8d:7a:51:60"')
-            self.assertEqual(same.stdout.splitlines(), ["toby-cam-0\t44:bd:8d:7a:51:60"])
+            self.assertEqual(same.stdout.splitlines(), ["toby-cam-0\t44:bd:8d:7a:51:60\tverified"])
             shared = shell(f'BOARDS="{boards}"\nboard_name 7 0001')
-            self.assertEqual(shared.stdout.splitlines(), ["node-0\t"])
+            self.assertEqual(shared.stdout.splitlines(), ["node-0\t\tunverified"])
 
     def test_a_port_with_no_usb_path_matches_no_row(self) -> None:
         # A device whose USB path is unknown must not take a row that has no path.
@@ -141,7 +216,6 @@ class PortGuards(unittest.TestCase):
             boards.write_text(TABLE + "toby-cam-0\tcc\tesp32s3\t\tno path yet\n")
             result = shell(f'BOARDS="{boards}"\nboard_field "" 3\necho end')
             self.assertEqual(result.stdout.split(), ["end"])
-            self.assertNotEqual(shell(f'cam_port_ok "{boards}" ""').returncode, 0)
 
 
 class PanelPause(unittest.TestCase):
@@ -239,6 +313,61 @@ class CamLog(unittest.TestCase):
                 proc.terminate()
                 proc.wait(timeout=10)
             self.assertEqual(list(Path(tmp).iterdir()), [])
+
+
+class ReservationAndTraps(unittest.TestCase):
+    def test_a_refused_reservation_stops_cam_flash_before_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            reservations = Path(tmp) / "reservations"
+            reservations.write_text("")
+            result = shell(
+                f"RESERVATIONS='{reservations}'\n"
+                "sudo() { return 1; }\n"
+                'address="$(reserve_cam aa:bb:cc:dd:ee:01)" || echo STOPPED\n'
+                'printf %s "$address"\n'
+            )
+            self.assertIn("STOPPED", result.stdout)
+            self.assertNotIn("10.87.0.", result.stdout)
+
+    def test_a_new_reservation_that_sudo_accepts_is_printed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            reservations = Path(tmp) / "reservations"
+            reservations.write_text("")
+            result = shell(
+                f"RESERVATIONS='{reservations}'\n"
+                "sudo() { return 0; }\n"
+                'address="$(reserve_cam aa:bb:cc:dd:ee:01)"\n'
+                'printf %s "$address"\n'
+            )
+            self.assertEqual(result.returncode, 0, result.stderr[-400:])
+            self.assertIn("10.87.0.21", result.stdout)
+
+    def test_a_reservation_already_on_file_does_not_call_sudo(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            reservations = Path(tmp) / "reservations"
+            reservations.write_text("aa:bb:cc:dd:ee:01,10.87.0.23\n")
+            result = shell(
+                f"RESERVATIONS='{reservations}'\n"
+                "sudo() { echo SUDO; return 1; }\n"
+                'address="$(reserve_cam aa:bb:cc:dd:ee:01)"\n'
+                'printf %s "$address"\n'
+            )
+            self.assertEqual(result.returncode, 0, result.stderr[-400:])
+            self.assertIn("10.87.0.23", result.stdout)
+            self.assertNotIn("SUDO", result.stdout + result.stderr)
+
+    def test_holding_a_port_keeps_an_earlier_exit_trap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            pause = Path(tmp) / "pause"
+            result = shell(
+                "trap 'echo FIRST' EXIT\n"
+                "fuser() { return 1; }\n"
+                f"PAUSE_FILE='{pause}'\n"
+                "hold_port /dev/null\n"
+                "exit\n"
+            )
+            self.assertIn("FIRST", result.stdout)
+            self.assertFalse(pause.exists(), result.stderr[-400:])
 
 
 if __name__ == "__main__":

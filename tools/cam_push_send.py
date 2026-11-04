@@ -1,8 +1,10 @@
 """Send one signed image to a cam, and report what the cam said.
 
-Called by `tools/mesh.sh cam-push`, which has already refused every address but
-10.87.0.21. This repeats that check, and refuses an image signed for anything
-but the cam before it opens a socket. Run nothing else against a cam.
+Called by `tools/mesh.sh cam-push`, which has already refused every address that
+is not reserved for a catalog cam (firmware/mesh/devices.jsonl and
+secrets/iot-ap/reservations). This repeats that check, and refuses an image
+signed for anything but the cam before it opens a socket. Run nothing else
+against a cam.
 
 The `.sig` file is 69 bytes: product, little-endian version, signature.
 The header on the wire is a big-endian size, the product, the little-endian
@@ -18,7 +20,9 @@ import socket
 import struct
 import sys
 
-ALLOWED = "10.87.0.21"
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+CATALOG = ROOT / "firmware" / "mesh" / "devices.jsonl"
+RESERVATIONS = ROOT / "secrets" / "iot-ap" / "reservations"
 PORT = 3232
 PRODUCT_CAM0 = 2
 # app0 and app1 in firmware/cam/partitions.csv.
@@ -60,10 +64,26 @@ def meaning(answer: bytes) -> tuple[bool, str]:
     return code == 0, CODES.get(code, f"unknown result {code}")
 
 
-def send(address: str, image: bytes, sig: bytes, connect=socket.create_connection) -> tuple[bool, str]:
+def cam_addresses(catalog: pathlib.Path = CATALOG, reservations: pathlib.Path = RESERVATIONS) -> set[str]:
+    """Addresses reserved for a catalog cam's Wi-Fi MAC."""
+    sys.path.insert(0, str(ROOT / "tools"))
+    from fleet_catalog import cam_reserved_addresses
+
+    return cam_reserved_addresses(catalog, reservations)
+
+
+def send(
+    address: str,
+    image: bytes,
+    sig: bytes,
+    connect=socket.create_connection,
+    allowed: set[str] | None = None,
+) -> tuple[bool, str]:
     product, version, signature = parse_sig(sig)
-    if address != ALLOWED:
-        return False, f"{address} is not {ALLOWED}"
+    if allowed is None:
+        allowed = cam_addresses()
+    if address not in allowed:
+        return False, f"{address} is not reserved for a catalog cam"
     if product != PRODUCT_CAM0:
         return False, f"signed for product {product}, not the cam ({PRODUCT_CAM0})"
     if not 0 < len(image) <= SLOT:

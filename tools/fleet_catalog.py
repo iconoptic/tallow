@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -91,6 +92,69 @@ def attachment_row(rows: list[dict], usb_path: str, serial: str) -> dict | None:
     return None
 
 
+CAM_FIRST = 21
+CAM_LAST = 49
+# The same bounds as NODE_FIRST and NODE_LAST in tools/setup_iot_ap.sh.
+RESERVED_FIRST = 20
+RESERVED_LAST = 49
+_RESERVATION_MAC = re.compile(r"^([0-9a-f]{2}:){5}[0-9a-f]{2}$")
+
+
+def load_reservations(path: Path) -> dict[str, str]:
+    """mac -> address. Only lines dnsmasq would keep: a MAC and 10.87.0.20-49."""
+    found: dict[str, str] = {}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return found
+    for line in text.splitlines():
+        parts = line.strip().split(",")
+        if len(parts) != 2:
+            continue
+        mac = parts[0].strip().lower()
+        address = parts[1].strip()
+        if _RESERVATION_MAC.fullmatch(mac) and _reserved_address(address):
+            found[mac] = address
+    return found
+
+
+def _reserved_address(address: str) -> bool:
+    prefix = "10.87.0."
+    if not address.startswith(prefix):
+        return False
+    last = address[len(prefix) :]
+    if not last.isdigit() or (len(last) > 1 and last.startswith("0")):
+        return False
+    number = int(last)
+    return RESERVED_FIRST <= number <= RESERVED_LAST
+
+
+def cam_address(reservations: dict[str, str], mac: str) -> str:
+    """This MAC's reservation, or the lowest free 10.87.0.21-49. Empty when full."""
+    mac = mac.lower()
+    if mac in reservations:
+        return reservations[mac]
+    taken = set(reservations.values())
+    for last in range(CAM_FIRST, CAM_LAST + 1):
+        address = f"10.87.0.{last}"
+        if address not in taken:
+            return address
+    return ""
+
+
+def cam_reserved_addresses(catalog_path: Path, reservations_path: Path) -> set[str]:
+    """Addresses reserved for the Wi-Fi MAC of an esp32s3-cam catalog row."""
+    reservations = load_reservations(reservations_path)
+    found = set()
+    for row in _load_catalog(catalog_path):
+        if row.get("type") != "esp32s3-cam":
+            continue
+        address = reservations.get(str(row.get("wifi_mac", "")).lower())
+        if address:
+            found.add(address)
+    return found
+
+
 def _board_rows(path: Path) -> list[dict]:
     rows = []
     if not path.exists():
@@ -162,14 +226,14 @@ def _row_for(rows: list[dict], mac: str, chip: str) -> dict:
             "flash_ok": True,
         }
     elif chip == "esp32s3":
-        number = 1
-        while f"cam-{number}" in names or f"toby-cam-{number}" in names:
+        number = 0
+        while f"toby-cam-{number}" in names:
             number += 1
         row = {
             "type": "esp32s3-cam",
-            "name": f"cam-{number}",
+            "name": f"toby-cam-{number}",
             "push_ok": False,
-            "flash_ok": False,
+            "flash_ok": True,
         }
     else:
         number = 0
@@ -209,7 +273,7 @@ def learn(
         row["flash_ok"] = True
     elif chip == "esp32s3":
         row["type"] = "esp32s3-cam"
-        row["flash_ok"] = row.get("name") == "toby-cam-0"
+        row["flash_ok"] = True
     else:
         row["type"] = "other"
         row["flash_ok"] = False
@@ -258,13 +322,33 @@ def main(argv: list[str]) -> int:
     if len(argv) == 5 and argv[1] == "name":
         row = attachment_row(_board_rows(Path(argv[2])), argv[3], argv[4])
         mac = serial_mac(argv[4])
-        print(f"{row['name'] if row else ''}\t{mac}")
+        # A MAC serial names the chip. A shared serial only names the path's last board.
+        state = "verified" if mac else "unverified"
+        print(f"{row['name'] if row else ''}\t{mac}\t{state if row else ''}")
         return 0
     if len(argv) == 5 and argv[1] == "lookup":
         row = attachment_row(_load_catalog(Path(argv[2])), argv[3], argv[4])
         if row:
             flag = "1" if row.get("flash_ok") else "0"
-            print(f"{row.get('type', '')}\t{row['name']}\t{flag}")
+            print(
+                f"{row.get('type', '')}\t{row['name']}\t{flag}\t{str(row.get('wifi_mac', '')).lower()}"
+            )
+        return 0
+    if len(argv) == 5 and argv[1] == "is-cam-address":
+        return 0 if argv[4] in cam_reserved_addresses(Path(argv[2]), Path(argv[3])) else 1
+    if len(argv) == 5 and argv[1] == "has-reservation":
+        found = load_reservations(Path(argv[2]))
+        return 0 if found.get(argv[3].lower()) == argv[4] else 1
+    if len(argv) == 4 and argv[1] == "cam-address":
+        reservations = Path(argv[2])
+        if reservations.exists() and not os.access(reservations, os.R_OK):
+            print(f"cannot read {reservations}", file=sys.stderr)
+            return 1
+        address = cam_address(load_reservations(reservations), argv[3])
+        if not address:
+            print("no free cam address in 10.87.0.21-49", file=sys.stderr)
+            return 1
+        print(address)
         return 0
     if len(argv) >= 2 and argv[1] == "parse":
         try:
@@ -289,7 +373,9 @@ def main(argv: list[str]) -> int:
     print(
         "usage: fleet_catalog.py parse"
         " | name BOARDS PATH SERIAL | lookup CATALOG PATH SERIAL"
-        " | learn CATALOG BOARDS PATH MAC CHIP MFR MODEL VID",
+        " | learn CATALOG BOARDS PATH MAC CHIP MFR MODEL VID"
+        " | cam-address RESERVATIONS MAC | has-reservation RESERVATIONS MAC ADDRESS"
+        " | is-cam-address CATALOG RESERVATIONS ADDRESS",
         file=sys.stderr,
     )
     return 2

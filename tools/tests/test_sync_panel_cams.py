@@ -100,5 +100,19 @@ class Sync(unittest.TestCase):
             self.assertFalse(path.with_name(path.name + ".tmp").exists())
 
 
+    def test_a_merge_keeps_the_rotation_of_the_row_it_drops(self) -> None:
+        page = {
+            "cams": [
+                {"id": "toby-cam-0", "name": "Old", "address": "10.87.0.22", "rotation": 90},
+                {"id": "other", "name": "Cam", "address": "10.87.0.21"},
+            ]
+        }
+        updated, _notes = sync_inventory(page, [("toby-cam-0", "10.87.0.21")], set())
+        kept = next(row for row in updated["cams"] if row["address"] == "10.87.0.21")
+        self.assertEqual(kept["id"], "toby-cam-0")
+        self.assertEqual(kept["rotation"], 90)
+        self.assertFalse(any(row["address"] == "10.87.0.22" for row in updated["cams"]))
+
+
 if __name__ == "__main__":
     unittest.main()

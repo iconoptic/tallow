@@ -26,7 +26,7 @@
 #   tools/mesh.sh key                  write the gitignored firmware/mesh/mesh.key once
 #   tools/mesh.sh ota-key              write the gitignored ota.key (private) and tracked ota.pub, once each
 #   tools/mesh.sh ota-image            write the node app image to firmware/mesh/node/target/ota.bin
-#   tools/mesh.sh ota-sign <image> <node|cam0> <version>
+#   tools/mesh.sh ota-sign <image> <node|cam> <version>   (cam0 is the same product)
 #                                      sign <image> for that product and version with ota.key;
 #                                      write the 69-byte <image>.sig: product, version, signature.
 #                                      A board refuses a version below the highest it has confirmed.
@@ -39,27 +39,42 @@
 #   tools/mesh.sh cam-build            release image for an ESP32-S3 cam
 #   tools/mesh.sh cam-size             cam image size against its OTA slot
 #   tools/mesh.sh cam-image            write the cam app image to firmware/cam/target/ota.bin
-#   tools/mesh.sh cam-flash <port>     read that cam's MAC, allow the station address and its
-#                                      Bluetooth address on tallow-iot, then write the image and
-#                                      this build's bootloader, and erase otadata, on the port
-#                                      boards.tsv names toby-cam-0
-#   tools/mesh.sh cam-backup <port>    save that cam's whole flash
+#   tools/mesh.sh cam-flash <port>     read the chip and MAC (refusing anything but an ESP32-S3),
+#                                      learn a new one as the next toby-cam-N, reserve its own
+#                                      address in 10.87.0.21-49 (sudo setup_iot_ap.sh reserve;
+#                                      a reservation already on file skips sudo; a failed
+#                                      reserve stops before the write),
+#                                      allow its station and Bluetooth addresses on tallow-iot,
+#                                      then write the image and this build's bootloader, and
+#                                      erase otadata. The cam takes that address by DHCP, and
+#                                      cam-flash waits up to 2 minutes for port 6053 to answer,
+#                                      then adds it to data/panel/cams.json.
+#   tools/mesh.sh cam-backup <port>    save a cam's whole flash
 #   tools/mesh.sh cam-frame            print one host-built multipart sample on stdout
 #   tools/mesh.sh cams                 contact each catalog cam on port 6053 and
 #                                      add the ones that answer to data/panel/cams.json.
 #                                      A row already on that address takes the catalog id.
 #   tools/mesh.sh cam-push <address> <image>
-#                                      send <image> and <image>.sig to 10.87.0.21:3232 and
+#                                      send <image> and <image>.sig to <address>:3232 and
 #                                      wait for the cam's result. Exits non-zero on anything
-#                                      but ok. Refuses every other address. Does not read ota.key.
-#   tools/mesh.sh ports                list attached boards; opens no port, resets nothing
+#                                      but ok. Refuses an address not reserved for a catalog
+#                                      cam. Does not read ota.key.
+#   tools/mesh.sh ports [--read]       list attached boards. Without --read it opens no port:
+#                                      a CP2102 reports no chip, so its board is the last one
+#                                      read in that USB socket, marked (unverified). --read
+#                                      runs identify on those ports (each one resets).
 #   tools/mesh.sh identify /dev/ttyUSB0
-#                                      esptool flash-id on that port. Opens it, so a
-#                                      CP2102 resets. fleetd parses the chip, MAC, and
-#                                      flash manufacturer. Any tty, not only a listed board.
-#   tools/mesh.sh flash /dev/ttyUSB0   read the MAC, refuse a chip boards.tsv does not name for
-#                                      that port, allow its Bluetooth address on tallow-iot, then
-#                                      write the image and this build's bootloader.
+#                                      esptool flash-id on that port, and record the chip in
+#                                      devices.jsonl and boards.tsv by its MAC. Opens it, so a
+#                                      CP2102 resets. Any tty, not only a listed board.
+#   tools/mesh.sh fleet [--no-probe]   one row per catalog board: flashed with the current
+#                                      build or not, heard in data/mesh/map.json, and each
+#                                      cam's address and port 6053. Opens no serial port.
+#   tools/mesh.sh flash /dev/ttyUSB0   read the chip and MAC, refuse anything but a classic
+#                                      ESP32, learn a new one as the next node-N, allow its
+#                                      Bluetooth address on tallow-iot, then write the image
+#                                      and this build's bootloader. The USB socket is not
+#                                      the board: the MAC is.
 #   tools/mesh.sh monitor /dev/ttyUSB0 [seconds]   print a board's serial output
 #   tools/mesh.sh bench /dev/ttyUSB0 [--deny <id-hex>]... [--seconds N]   refuse root ids, print its @ lines
 #   tools/mesh.sh backup /dev/ttyUSB0  save a board's whole flash to data/firmware-backups/
@@ -72,8 +87,8 @@
 #
 # Opening a CP2102 port resets that board, so flash, monitor, backup, bench,
 # daemon run, daemon gatt, and daemon ota all reboot it. These seven only touch a
-# port that firmware/mesh/boards.tsv lists as a classic ESP32: opening an S3 cam's
-# port can drop it into download mode, and its CH340 port is a ttyUSB too. Every
+# CP2102 ttyUSB port, or another bridge whose path last read as an esp32: opening
+# an S3 cam's port can drop it into download mode, and its CH340 port is a ttyUSB too. Every
 # command exits non-zero when its step fails.
 set -euo pipefail
 
@@ -96,6 +111,8 @@ KEY="${MESH}/mesh.key"
 OTA_KEY="${MESH}/ota.key"
 OTA_PUB="${MESH}/ota.pub"
 BOARDS="${MESH}/boards.tsv"
+CATALOG="${MESH}/devices.jsonl"
+RESERVATIONS="${ROOT}/secrets/iot-ap/reservations"
 HOST_IMAGE="ghcr.io/esphome/esphome:2026.9.1"
 # The host daemon's image: the pinned Rust image plus libdbus for bluer. It is built
 # locally from the Dockerfile, under its own tag, and no other command uses it.
@@ -211,9 +228,28 @@ usb_serial() {
   udevadm info -q property -n "$1" | sed -n 's/^ID_SERIAL_SHORT=//p'
 }
 
-# name, tab, MAC. The MAC is empty when the serial is not a chip MAC, and the
-# name is then the board last recorded on the path. A MAC with no row leaves
-# the name empty: that chip is not the previous board on this port.
+# idVendor:idProduct. Opens no port.
+usb_ids() {
+  local props
+  props="$(udevadm info -q property -n "$1")"
+  printf '%s:%s\n' "$(sed -n 's/^ID_VENDOR_ID=//p' <<<"$props")" "$(sed -n 's/^ID_MODEL_ID=//p' <<<"$props")"
+}
+
+# classic, s3, or unknown, from the USB ids alone. Opens nothing. Every classic
+# ESP32 on this host sits behind a CP2102. An S3 on its native USB is Espressif's
+# USB-Serial/JTAG. A CH340 can be either, so it is unknown until the chip is read.
+port_class() {
+  case "${1,,}" in
+    10c4:ea60) echo classic ;;
+    303a:*) echo s3 ;;
+    *) echo unknown ;;
+  esac
+}
+
+# name, tab, MAC, tab, verified or unverified. The MAC is empty when the serial is
+# not a chip MAC, and the name is then the board last recorded on the path:
+# unverified, because any CP2102 board plugged into that socket looks the same.
+# A MAC with no row leaves the name empty: that chip is not the previous board.
 board_name() {
   python3 "${ROOT}/tools/fleet_catalog.py" name "$BOARDS" "$1" "${2:-}"
 }
@@ -274,14 +310,21 @@ take_port_group() {
 
 # The mesh image is built for the classic ESP32. An S3 cam shows up as ttyACM on
 # its native USB, and as a ttyUSB on its CH340, so the name alone proves nothing.
+# A CP2102 is a classic board whichever socket it is in. Another bridge needs
+# boards.tsv to have read an esp32 on that path. flash reads the chip as well.
 need_classic_port() {
   local port="$1" path chip
   [[ -e "$port" ]] || die "${port} is not there. Run: tools/mesh.sh ports"
   [[ "$port" == /dev/ttyUSB* ]] || die "${port} is not a classic ESP32 port. The cams are not mesh nodes."
   path="$(usb_path "$port")"
-  chip="$(board_field "$path" 3)"
-  [[ -n "$chip" ]] || die "${port} (USB path ${path:-unknown}) is not in firmware/mesh/boards.tsv. Read the board with tools/mesh.sh ports and add it first."
-  [[ "$chip" == esp32 ]] || die "${port} is $(board_field "$path" 1), a ${chip}. The cams are not mesh nodes."
+  case "$(port_class "$(usb_ids "$port")")" in
+    classic) ;;
+    s3) die "${port} is an ESP32-S3 on its native USB. The cams are not mesh nodes." ;;
+    *)
+      chip="$(board_field "$path" 3)"
+      [[ "$chip" == esp32 ]] || die "${port} (USB path ${path:-unknown}) is not a CP2102, and no esp32 was read there. Run: tools/mesh.sh ports --read"
+      ;;
+  esac
   take_port_group "$port"
   hold_port "$port"
 }
@@ -292,30 +335,98 @@ need_classic_port() {
 # Without a panel the file does nothing and fuser finds no holder, so this returns
 # at once. A holder that is not the panel, such as tallowd.service, keeps the port,
 # and the command fails on it as before.
+# Chained EXIT handlers. `trap -p` cannot round-trip a command that contains a
+# single quote (cam_logged's `rm -f '$log'`), so the commands live in this array.
+EXIT_CMDS=()
+
+run_exit_cmds() {
+  local cmd
+  for cmd in "${EXIT_CMDS[@]}"; do
+    eval "$cmd"
+  done
+}
+
+add_exit_trap() {
+  local new="$1" line
+  if [[ "$(trap -p EXIT)" != *run_exit_cmds* ]]; then
+    line="$(trap -p EXIT || true)"
+    if [[ "$line" =~ ^trap\ --\ \'(.*)\'\ EXIT$ ]]; then
+      EXIT_CMDS+=("${BASH_REMATCH[1]}")
+    fi
+  fi
+  EXIT_CMDS+=("$new")
+  trap run_exit_cmds EXIT
+}
+
+restore_exit_trap() {
+  local saved="$1"
+  if [[ ${#EXIT_CMDS[@]} -gt 0 ]]; then
+    unset 'EXIT_CMDS[-1]'
+  fi
+  if [[ -n "$saved" ]]; then
+    eval "$saved"
+    return
+  fi
+  if [[ ${#EXIT_CMDS[@]} -eq 0 ]]; then
+    trap - EXIT
+  fi
+}
+
 hold_port() {
   local port="$1" _
   mkdir -p "${ROOT}/data/mesh"
   : >"$PAUSE_FILE"
-  trap 'rm -f "$PAUSE_FILE"' EXIT
+  add_exit_trap 'rm -f "$PAUSE_FILE"'
   for _ in $(seq 1 20); do
     fuser -s "$port" 2>/dev/null || return 0
     sleep 0.5
   done
 }
 
+# Opens no port, so a CP2102 board is named by its USB socket and marked
+# unverified. --read opens each such port (and resets that board), reads the
+# chip, and records it in the catalog and boards.tsv.
 show_ports() {
-  local port path serial label name mac
+  local read="${1:-}" port path serial label name mac state identity chip
+  local -a ports=()
   shopt -s nullglob
-  printf '%-14s %-12s %-10s %-18s %s\n' PORT BOARD USB-PATH USB-MAC DEVICE
-  for port in /dev/ttyUSB* /dev/ttyACM*; do
+  ports=(/dev/ttyUSB* /dev/ttyACM*)
+  if [[ "$read" == --read ]]; then
+    for port in "${ports[@]}"; do
+      if serial_is_mac "$(usb_serial "$port")" && [[ -n "$(board_name "$(usb_path "$port")" "$(usb_serial "$port")" | cut -f1)" ]]; then
+        continue
+      fi
+      echo "Reading ${port}." >&2
+      if identity="$("${BASH_SOURCE[0]}" identify "$port" 2>/dev/null | python3 "${ROOT}/tools/fleet_catalog.py" parse 2>/dev/null)"; then
+        IFS=$'\t' read -r chip mac _ <<<"$identity"
+        READ_MACS["$port"]="$mac"
+      else
+        echo "Could not read ${port}." >&2
+      fi
+    done
+  fi
+  printf '%-14s %-24s %-10s %-18s %s\n' PORT BOARD USB-PATH MAC DEVICE
+  for port in "${ports[@]}"; do
     path="$(usb_path "$port")"
-    serial="$(usb_serial "$port")"
+    serial="${READ_MACS[$port]:-$(usb_serial "$port")}"
     label="$(board_name "$path" "$serial")"
-    name="${label%%$'\t'*}"
-    mac="${label#*$'\t'}"
-    printf '%-14s %-12s %-10s %-18s %s\n' "$port" "${name:-unknown}" "${path:-?}" \
+    # cut, not read: IFS tab is whitespace, and an empty MAC field would collapse.
+    name="$(cut -f1 <<<"$label")"
+    mac="$(cut -f2 <<<"$label")"
+    state="$(cut -f3 <<<"$label")"
+    name="${name:-unknown}"
+    [[ "$state" == unverified ]] && name="${name} (unverified)"
+    printf '%-14s %-24s %-10s %-18s %s\n' "$port" "$name" "${path:-?}" \
       "${mac:--}" "$(udevadm info -q property -n "$port" | sed -n 's/^ID_MODEL=//p')"
   done
+  if [[ "$read" != --read ]] && grep -q unverified <<<"$(for port in "${ports[@]}"; do board_name "$(usb_path "$port")" "$(usb_serial "$port")"; done)"; then
+    echo "A CP2102 does not report its chip. Read those boards with: tools/mesh.sh ports --read" >&2
+  fi
+}
+declare -A READ_MACS=()
+
+serial_is_mac() {
+  [[ "${1,,}" =~ ^([0-9a-f]{2}:){5}[0-9a-f]{2}$ ]]
 }
 
 # esptool flash-id. Opens the port, which resets a CP2102. stdout is the tool's
@@ -344,26 +455,49 @@ port_mac() {
   printf '%s\n' "$mac"
 }
 
-# 0 when the boards.tsv cell is empty, unknown, or this chip. A different
-# address is a different board on this port. Opens nothing.
-mac_matches_row() {
-  local recorded="${1,,}" seen="${2,,}"
-  [[ -z "$recorded" || "$recorded" == "unknown" || "$recorded" == "$seen" ]]
+# chip, tab, MAC, tab, flash manufacturer, from esptool flash-id. Opens the port,
+# which resets a CP2102. Dies when esptool prints no chip and MAC.
+port_identity() {
+  local port="$1" output parsed
+  local -a esptool=(podman run --rm "${HARDEN[@]}" --userns=keep-id --user "$(id -u):$(id -g)" --device "${port}:${port}"
+    --group-add keep-groups --entrypoint esptool "$HOST_IMAGE" --port "$port")
+  output="$("${esptool[@]}" flash-id 2>&1)" || true
+  if ! parsed="$(python3 "${ROOT}/tools/fleet_catalog.py" parse <<<"$output" 2>/dev/null)"; then
+    tail -n 3 <<<"$output" >&2
+    die "Could not read a MAC from ${port}."
+  fi
+  printf '%s\n' "$parsed"
 }
 
-# Prints the MAC on stdout and one line on stderr. Refuses a chip whose address
-# is not the one boards.tsv records for this USB path. Opens the port.
-confirm_port_mac() {
-  local port="$1" path recorded seen
-  # `exit` inside $(port_mac) leaves only that substitution, so a failed read
-  # would continue with an empty address. Stop before the boards.tsv compare.
-  seen="$(port_mac "$port")" || exit 1
+# Records a chip read on this port in the catalog and boards.tsv, by its MAC.
+# A chip never seen before gets the next node-N or toby-cam-N. Prints the name.
+# Opens no port.
+learn_board() {
+  local port="$1" chip="$2" mac="$3" mfr="${4:-}" path
   path="$(usb_path "$port")"
-  recorded="$(board_field "$path" 2 | tr '[:upper:]' '[:lower:]')"
-  if ! mac_matches_row "$recorded" "$seen"; then
-    die "${port} is ${seen}, not ${recorded}. USB path ${path} is $(board_field "$path" 1)."
+  python3 "${ROOT}/tools/fleet_catalog.py" learn "$CATALOG" "$BOARDS" "$path" "$mac" "$chip" "$mfr" \
+    "$(udevadm info -q property -n "$port" | sed -n 's/^ID_MODEL=//p')" "$(usb_ids "$port")"
+  python3 "${ROOT}/tools/fleet_catalog.py" lookup "$CATALOG" "" "$mac" | cut -f2
+}
+
+# Reads the chip on this port, refuses one that is not WANT (esp32 or esp32s3),
+# and records it by MAC. Prints the MAC on stdout and the board on stderr.
+# The USB socket does not name a board: a chip new to the catalog is learned.
+confirm_port_mac() {
+  local port="$1" want="${2:-esp32}" identity chip seen mfr name
+  # `exit` inside $(port_identity) leaves only that substitution, so a failed
+  # read would continue with an empty address. Stop here.
+  identity="$(port_identity "$port")" || exit 1
+  IFS=$'\t' read -r chip seen mfr <<<"$identity"
+  [[ -n "$seen" ]] || die "Could not read a MAC from ${port}."
+  if [[ "$chip" != "$want" ]]; then
+    if [[ "$want" == esp32 ]]; then
+      die "${port} is ${seen}, a ${chip}. The cams are not mesh nodes: use tools/mesh.sh cam-flash."
+    fi
+    die "${port} is ${seen}, a ${chip}, not a cam. Use tools/mesh.sh flash."
   fi
-  echo "MAC ${seen}." >&2
+  name="$(learn_board "$port" "$chip" "$seen" "$mfr")"
+  echo "MAC ${seen}: ${name:-unknown}." >&2
   printf '%s\n' "$seen"
 }
 
@@ -427,17 +561,10 @@ hide_cam_target() {
   chmod 700 "${CAM}/target"
 }
 
-# 0 when column 4 of the boards file is this USB path and column 1 is toby-cam-0.
-# Opens nothing. A test passes a stub table.
-cam_port_ok() {
-  local boards="$1" path="$2" name
-  name="$(awk -F'\t' -v p="$path" '!/^#/ && p != "" && $4"" == p"" { print $1; exit }' "$boards")"
-  [[ "$name" == "toby-cam-0" ]]
-}
-
-# 0 only for toby-cam-0. cam-push opens no socket from a test of this predicate.
+# 0 when this address is reserved for a catalog cam's MAC. Opens no socket.
 cam_allows_address() {
-  [[ "${1:-}" == "10.87.0.21" ]]
+  [[ -n "${1:-}" ]] || return 1
+  python3 "${ROOT}/tools/fleet_catalog.py" is-cam-address "$CATALOG" "$RESERVATIONS" "$1"
 }
 
 # 0 when the argument is a device path. An address is refused.
@@ -449,18 +576,56 @@ cam_takes_port() {
   return 0
 }
 
-# cam-flash and cam-backup: one port, and only the row named toby-cam-0.
-need_cam0_port() {
-  local port="$1" path serial label name
+# cam-flash and cam-backup: one port that is not a mesh node's CP2102. A CH340
+# path that last held a classic board is refused too. cam-flash reads the chip.
+need_cam_port() {
+  local port="$1" path chip
   cam_takes_port "$port" || die "${port} is not a cam port. cam-flash and cam-backup take a port, not an address."
   [[ -e "$port" ]] || die "${port} is not there. Run: tools/mesh.sh ports"
   path="$(usb_path "$port")"
-  serial="$(usb_serial "$port")"
-  label="$(board_name "$path" "$serial")"
-  name="${label%%$'\t'*}"
-  [[ "$name" == "toby-cam-0" ]] || die "${port} (USB path ${path:-unknown}) is not toby-cam-0. cam-flash and cam-backup refuse every other board."
+  case "$(port_class "$(usb_ids "$port")")" in
+    s3) ;;
+    classic) die "${port} is a CP2102, the bridge on a mesh node. Use tools/mesh.sh flash." ;;
+    *)
+      chip="$(board_field "$path" 3)"
+      [[ -z "$chip" || "$chip" == esp32s3 ]] || die "${port} (USB path ${path:-unknown}) last read as a ${chip}. Run: tools/mesh.sh ports --read"
+      ;;
+  esac
   take_port_group "$port"
   echo "Hold BOOT and tap RST first."
+}
+
+# After a cam flash the board reboots and joins the AP. Put it on the panel page
+# as soon as port 6053 answers, so the page does not wait for a fleetd poll.
+wait_cam_on_panel() {
+  local address="$1" tries=0
+  while [[ "$tries" -lt 24 ]]; do
+    "${ROOT}/.venv/bin/python" "${ROOT}/tools/sync_panel_cams.py" \
+      --catalog "${MESH}/devices.jsonl" \
+      --reservations "${ROOT}/secrets/iot-ap/reservations" \
+      --inventory "${ROOT}/data/panel/cams.json" || return 0
+    if grep -q "\"${address}\"" "${ROOT}/data/panel/cams.json" 2>/dev/null; then
+      echo "${address} is on the panel page (data/panel/cams.json)."
+      return 0
+    fi
+    tries=$((tries + 1))
+    sleep 5
+  done
+  echo "${address} did not answer on 6053 within 2 minutes. When it joins, run: tools/mesh.sh cams" >&2
+}
+
+# Gives this cam MAC its own address. setup_iot_ap.sh owns the reservations.
+reserve_cam() {
+  local mac="$1" address
+  address="$(python3 "${ROOT}/tools/fleet_catalog.py" cam-address "$RESERVATIONS" "$mac")" \
+    || die "No free cam address in 10.87.0.21-49."
+  if python3 "${ROOT}/tools/fleet_catalog.py" has-reservation "$RESERVATIONS" "$mac" "$address"; then
+    printf '%s\n' "$address"
+    return 0
+  fi
+  sudo "${ROOT}/tools/setup_iot_ap.sh" reserve "$mac" "$address" >&2 \
+    || die "Could not reserve ${address} for ${mac}. Nothing was flashed."
+  printf '%s\n' "$address"
 }
 
 # Builds the daemon's image from tools/rust-host.Dockerfile, with tools/ as the context.
@@ -546,14 +711,17 @@ run_daemon_ota() {
 # version little-endian, and the image's sha256. The result is 69 bytes: product,
 # version, signature. The key is missing: this returns before mounting anything.
 # The container sees that one key and the image, both read-only, and the DER copy
-# of the seed stays on a tmpfs that dies with it. The seed is not an argument and
-# is not printed. Nothing is left at <image>.sig unless every step worked.
+# of the seed stays on a tmpfs that dies with it. This podman rejects uid= on a
+# tmpfs, so the mount is 1777 and the script's umask keeps the key file private.
+# The seed is not an argument and is not printed. Nothing is left at <image>.sig
+# unless every step worked.
 sign_ota_image() {
-  local image="$1" name="$2" version="$3" product sig partial
+  local image="$1" name="$2" version="$3" product sig partial saved_exit
+  saved_exit="$(trap -p EXIT || true)"
   case "$name" in
     node) product=1 ;;
-    cam0) product=2 ;;
-    *) die "Name the product: node or cam0" ;;
+    cam0|cam) product=2 ;;
+    *) die "Name the product: node or cam" ;;
   esac
   [[ "$version" =~ ^[1-9][0-9]{0,9}$ ]] && (( version <= 4294967295 )) \
     || die "The version is a whole number from 1 to 4294967295, not ${version}"
@@ -561,10 +729,10 @@ sign_ota_image() {
   image="$(readlink -f "$image")"
   sig="${image}.sig"
   partial="${sig}.partial"
-  trap 'rm -f "$partial"' EXIT
+  add_exit_trap 'rm -f "$partial"'
   umask 077
   podman run --rm "${HARDEN[@]}" --userns=keep-id --user "$(id -u):$(id -g)" \
-    --tmpfs "/tmp:mode=0700,uid=$(id -u),gid=$(id -g)" \
+    --tmpfs "/tmp:mode=1777" \
     -v "${OTA_KEY}:/run/ota.key:ro" -v "${image}:/run/image:ro" \
     --entrypoint bash "$IMAGE" -lc '
       set -euo pipefail
@@ -594,7 +762,7 @@ PY
     ' sign "$product" "$version" >"$partial" || die "Signing failed. Nothing was kept."
   [[ "$(wc -c < "$partial")" -eq 69 ]] || die "Signing failed. Nothing was kept."
   mv -f "$partial" "$sig"
-  trap - EXIT
+  restore_exit_trap "$saved_exit"
   echo "Wrote ${sig}"
 }
 
@@ -664,7 +832,8 @@ run_check() {
   echo "== host tool: unit tests"
   ( cd "$ROOT" && .venv/bin/python -m unittest tools/tests/test_mesh_bench.py \
     tools/tests/test_mesh_tool.py tools/tests/test_fleetd.py \
-    tools/tests/test_sync_panel_cams.py \
+    tools/tests/test_sync_panel_cams.py tools/tests/test_fleet_status.py \
+    tools/tests/test_fleet_catalog.py \
     tools/tests/test_parse_btsnoop.py tools/tests/test_ble_discover.py 2>&1 ) | tail -1
   echo "== scripts: syntax"
   local sh
@@ -674,7 +843,7 @@ run_check() {
   echo "== cam push: signature"
   cam_push_test
   echo "== panel: page tests"
-  ( cd "$ROOT" && .venv/bin/python -m unittest tools/tests/test_cams_page.py tools/tests/test_devices_page.py 2>&1 ) | tail -1
+  ( cd "$ROOT" && .venv/bin/python -m unittest tools/tests/test_cams_page.py tools/tests/test_devices_page.py tools/tests/test_traffic_page.py 2>&1 ) | tail -1
   echo "== node and cam: fmt"
   in_image /mesh/node 'cargo fmt --check'
   in_cam_plain 'cargo fmt --check'
@@ -708,7 +877,7 @@ cam_logged() {
   local log
   log="$(mktemp)"
   chmod 600 "$log"
-  trap "rm -f '$log'" EXIT
+  add_exit_trap "rm -f '$log'"
   if ! in_cam "cargo $* 2>&1" >"$log"; then
     if ! "${ROOT}/.venv/bin/python" "${ROOT}/tools/cam_build_scan.py" log "$log" "$CAM_SECRETS"; then
       rm -f "$log"
@@ -791,7 +960,7 @@ case "${1:-}" in
     ;;
   ota-sign)
     [[ -r "$OTA_KEY" ]] || die "No OTA signing key. Run: tools/mesh.sh ota-key"
-    sign_ota_image "${2:?Name the image}" "${3:?Name the product: node or cam0}" "${4:?Name the version}"
+    sign_ota_image "${2:?Name the image}" "${3:?Name the product: node or cam}" "${4:?Name the version}"
     ;;
   check)
     run_check "${2:-}"
@@ -831,10 +1000,12 @@ case "${1:-}" in
   cam-flash)
     port="${2:?Name the port}"
     [[ -z "${3:-}" ]] || die "cam-flash takes a port, not an address."
-    need_cam0_port "$port"
+    need_cam_port "$port"
     bootloader="target/xtensa-esp32s3-espidf/release/bootloader.bin"
     [[ -f "${CAM}/${bootloader}" ]] || die "No bootloader at firmware/cam/${bootloader}. Run: tools/mesh.sh cam-build"
-    mac="$(confirm_port_mac "$port")"
+    mac="$(confirm_port_mac "$port" esp32s3)" || exit 1
+    address="$(reserve_cam "$mac")" || exit 1
+    echo "Reserved ${address} for ${mac}." >&2
     allow_station "$mac"
     allow_station "$(bt_mac "$mac")"
     export CAM_DEVICE="$port"
@@ -842,12 +1013,13 @@ case "${1:-}" in
     # Otadata left by ESPHome could select app1 and keep the old image booting.
     # Blank otadata boots app0, and this bootloader writes it as valid.
     in_cam "espflash flash --non-interactive --chip esp32s3 --port ${port} --bootloader ${bootloader} --partition-table partitions.csv --erase-parts otadata --flash-size 16mb ${CAM_ELF}"
-    echo "Flashed ${port}."
+    echo "Flashed ${port}. It takes ${address} when it joins tallow-iot."
+    wait_cam_on_panel "$address"
     ;;
   cam-backup)
     port="${2:?Name the port}"
     [[ -z "${3:-}" ]] || die "cam-backup takes a port, not an address."
-    need_cam0_port "$port"
+    need_cam_port "$port"
     run_backup "$port"
     ;;
   cam-frame)
@@ -863,10 +1035,10 @@ case "${1:-}" in
     address="${2:?Name the address: tools/mesh.sh cam-push <address> <image>}"
     image="${3:?Name the image: tools/mesh.sh cam-push <address> <image>}"
     [[ -z "${4:-}" ]] || die "cam-push takes an address and an image."
-    cam_allows_address "$address" || die "${address} is not 10.87.0.21. cam-push refuses every other address."
+    cam_allows_address "$address" || die "${address} is not reserved for a catalog cam. cam-push refuses every other address."
     [[ -r "$image" ]] || die "Cannot read ${image}"
     sig="${image}.sig"
-    [[ -r "$sig" ]] || die "No signature at ${sig}. Run: tools/mesh.sh ota-sign ${image} cam0 <version>"
+    [[ -r "$sig" ]] || die "No signature at ${sig}. Run: tools/mesh.sh ota-sign ${image} cam <version>"
     [[ "$(wc -c < "$sig")" -eq 69 ]] || die "${sig} is not 69 bytes. Sign it again with tools/mesh.sh ota-sign."
     bytes="$(wc -c < "$image")"
     if [[ "$bytes" -eq 0 || "$bytes" -gt "$CAM_SLOT" ]]; then
@@ -884,12 +1056,26 @@ case "${1:-}" in
     in_cam "espflash save-image --chip esp32s3 --flash-size 16mb --partition-table partitions.csv ${CAM_ELF} /tmp/app.bin 2>&1 | grep -E 'App/part'"
     ;;
   ports)
-    show_ports
+    [[ -z "${2:-}" || "${2}" == --read ]] || die "ports takes only --read."
+    show_ports "${2:-}"
     ;;
   identify)
     port="${2:?Name the port: tools/mesh.sh identify /dev/ttyUSBn}"
     [[ -z "${3:-}" ]] || die "identify takes a port."
-    run_identify "$port"
+    take_port_group "$port"
+    output="$(run_identify "$port" 2>&1)" || { printf '%s\n' "$output"; exit 1; }
+    printf '%s\n' "$output"
+    if identity="$(python3 "${ROOT}/tools/fleet_catalog.py" parse <<<"$output" 2>/dev/null)"; then
+      IFS=$'\t' read -r chip mac mfr <<<"$identity"
+      echo "Board $(learn_board "$port" "$chip" "$mac" "$mfr") (${chip}, ${mac})." >&2
+    fi
+    ;;
+  fleet)
+    node_id="$(bash -c 'source "$1/tools/fleetd.sh"; image_id "$2" "$3"' _ "$ROOT" \
+      "${MESH}/node/target/xtensa-esp32-espidf/release/bootloader.bin" "${MESH}/node/${ELF}" 2>/dev/null || true)"
+    cam_id="$(bash -c 'source "$1/tools/fleetd.sh"; image_id "$2" "$3"' _ "$ROOT" \
+      "${CAM}/target/xtensa-esp32s3-espidf/release/bootloader.bin" "${CAM}/${CAM_ELF}" 2>/dev/null || true)"
+    python3 "${ROOT}/tools/fleet_status.py" --node-image "$node_id" --cam-image "$cam_id" "${@:2}"
     ;;
   flash)
     port="${2:?Name the port}"
@@ -901,7 +1087,7 @@ case "${1:-}" in
     # writes it as valid.
     bootloader="target/xtensa-esp32-espidf/release/bootloader.bin"
     [[ -f "${MESH}/node/${bootloader}" ]] || die "No bootloader at firmware/mesh/node/${bootloader}. Run: tools/mesh.sh build"
-    base="$(confirm_port_mac "$port")"
+    base="$(confirm_port_mac "$port" esp32)" || exit 1
     allow_station "$(bt_mac "$base")"
     export MESH_DEVICE="$port"
     started=0

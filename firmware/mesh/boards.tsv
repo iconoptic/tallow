@@ -3,8 +3,13 @@
 # so `tools/mesh.sh ports` can only name those by this path. A USB serial that
 # is a MAC names that chip, and a new MAC is not the previous row on the path.
 node-0	70:4b:ca:04:21:64	esp32	7	mesh id 642104ca, root during tests
-node-1	20:9b:a9:99:1e:54	esp32	11	mesh id 541e99a9, flash manufacturer 0x5e
-toby-cam-0	44:bd:8d:7a:51:60	esp32s3	2	MB0200 cam, not a mesh node, needs BOOT+RST for its first read
+node-1	20:9b:a9:99:1e:54	esp32	12	mesh id 541e99a9, flash manufacturer 0x5e
+toby-cam-0	44:bd:8d:7a:51:60	esp32s3		MB0200 cam, not a mesh node, needs BOOT+RST for its first read
 node-2	7c:9e:bd:ed:bd:98	esp32		mesh id 98bdedbd, flash manufacturer 0xd8, learned by fleetd
 node-3	20:9b:a9:99:32:0c	esp32		mesh id 0c3299a9, flash manufacturer 0x5e, learned by fleetd
-node-4	20:9b:a9:97:9f:28	esp32	12	mesh id 289f97a9, flash manufacturer 0x5e, learned by fleetd
+node-4	20:9b:a9:97:9f:28	esp32		mesh id 289f97a9, flash manufacturer 0x5e, learned by fleetd
+toby-cam-1	44:bd:8d:7a:50:cc	esp32s3		learned by fleetd
+node-5	7c:9e:bd:ed:c3:8c	esp32		mesh id 8cc3edbd, flash manufacturer 0xd8, learned by fleetd
+node-6	20:9b:a9:8a:22:bc	esp32	11	mesh id bc228aa9, flash manufacturer 0x20, learned by fleetd
+toby-cam-2	b8:1f:3f:ab:c5:60	esp32s3		learned by fleetd
+toby-cam-3	44:bd:8d:7c:20:c4	esp32s3	2	learned by fleetd

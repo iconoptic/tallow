@@ -195,6 +195,61 @@ class Plan(unittest.TestCase):
             self.assertEqual(by_path["9"][4], "flash-cam")
 
 
+class Journal(unittest.TestCase):
+    def test_node_4_on_node_3_s_old_path_is_flashed(self) -> None:
+        # 2026-11-02: node-4 was learned on path 12 after node-3 was written there,
+        # and fleetd logged skip until it stopped. The path is not the board.
+        with tempfile.TemporaryDirectory() as tmp:
+            catalog = Path(tmp) / "devices.jsonl"
+            catalog.write_text(
+                '{"type":"esp32-mesh","name":"node-3","chip":"esp32","usb_path":"",'
+                '"wifi_mac":"20:9b:a9:99:32:0c","flash_ok":true,"push_ok":false}\n'
+                '{"type":"esp32-mesh","name":"node-4","chip":"esp32","usb_path":"12",'
+                '"wifi_mac":"20:9b:a9:97:9f:28","flash_ok":true,"push_ok":false}\n',
+                encoding="utf-8",
+            )
+            journal = Path(tmp) / "applied.jsonl"
+            journal.write_text(
+                '{"usb_path":"12","name":"node-3","image_id":"abc","command":"flash"}\n'
+                '{"usb_path":"12","name":"node-3","wifi_mac":"20:9b:a9:99:32:0c",'
+                '"image_id":"abc","command":"flash"}\n'
+            )
+            snapshot = "/dev/ttyUSB1\t12\tCP2102\t0001\n"
+            result = shell(
+                f"printf '%s' '{snapshot}' | fleet_plan \"{catalog}\" \"{journal}\" abc ''"
+            )
+            self.assertEqual(result.returncode, 0, result.stderr[-400:])
+            fields = result.stdout.splitlines()[1].split("|")
+            self.assertEqual(fields[2], "node-4")
+            self.assertEqual(fields[4], "flash-node")
+            self.assertEqual(fields[6], "20:9b:a9:97:9f:28")
+
+    def test_a_row_with_a_mac_is_that_chip_wherever_it_was_plugged_in(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = Path(tmp) / "applied.jsonl"
+            journal.write_text(
+                '{"usb_path":"7","name":"node-4","wifi_mac":"20:9b:a9:97:9f:28",'
+                '"image_id":"abc","command":"flash"}\n'
+            )
+            moved = shell(f'journal_has "{journal}" 11 abc node-4 20:9B:A9:97:9F:28')
+            self.assertEqual(moved.returncode, 0, moved.stderr[-400:])
+            other = shell(f'journal_has "{journal}" 7 abc node-4 20:9b:a9:99:1e:54')
+            self.assertNotEqual(other.returncode, 0)
+            newer = shell(f'journal_has "{journal}" 7 def node-4 20:9b:a9:97:9f:28')
+            self.assertNotEqual(newer.returncode, 0)
+
+    def test_an_added_row_carries_the_mac(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = Path(tmp) / "applied.jsonl"
+            result = shell(
+                f'journal_add "{journal}" 12 node-4 abc "mesh.sh flash" 20:9B:A9:97:9F:28'
+            )
+            self.assertEqual(result.returncode, 0, result.stderr[-400:])
+            row = json.loads(journal.read_text())
+            self.assertEqual(row["wifi_mac"], "20:9b:a9:97:9f:28")
+            self.assertEqual(row["name"], "node-4")
+
+
 class Learn(unittest.TestCase):
     def test_a_moved_board_is_recorded_and_the_old_path_is_released(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -257,7 +312,7 @@ class Learn(unittest.TestCase):
             }
             self.assertEqual(actions, {"7": "flash-node", "11": "flash-node", "12": "flash-node"})
 
-    def test_the_first_s3_fills_toby_cam_0_and_a_second_s3_is_not_flashed(self) -> None:
+    def test_the_first_s3_fills_toby_cam_0_and_a_second_s3_is_toby_cam_1(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             catalog = Path(tmp) / "devices.jsonl"
             boards = Path(tmp) / "boards.tsv"
@@ -280,9 +335,11 @@ class Learn(unittest.TestCase):
             self.assertEqual(rows["toby-cam-0"]["wifi_mac"], "aa:bb:cc:dd:ee:01")
             self.assertTrue(rows["toby-cam-0"]["flash_ok"])
             self.assertFalse(rows["toby-cam-0"]["push_ok"])
-            self.assertEqual(rows["cam-1"]["usb_path"], "3")
-            self.assertFalse(rows["cam-1"]["flash_ok"])
-            self.assertNotIn("toby-cam-1", rows)
+            self.assertEqual(rows["toby-cam-1"]["usb_path"], "3")
+            self.assertEqual(rows["toby-cam-1"]["wifi_mac"], "aa:bb:cc:dd:ee:02")
+            self.assertTrue(rows["toby-cam-1"]["flash_ok"])
+            self.assertFalse(rows["toby-cam-1"]["push_ok"])
+            self.assertNotIn("cam-1", rows)
 
     def test_a_later_s3_does_not_replace_toby_cam_0(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -308,9 +365,9 @@ class Learn(unittest.TestCase):
             }
             self.assertEqual(rows["toby-cam-0"]["wifi_mac"], "44:bd:8d:7a:51:60")
             self.assertEqual(rows["toby-cam-0"]["usb_path"], "")
-            self.assertEqual(rows["cam-1"]["wifi_mac"], "44:bd:8d:7c:20:c4")
-            self.assertEqual(rows["cam-1"]["usb_path"], "2")
-            self.assertFalse(rows["cam-1"]["flash_ok"])
+            self.assertEqual(rows["toby-cam-1"]["wifi_mac"], "44:bd:8d:7c:20:c4")
+            self.assertEqual(rows["toby-cam-1"]["usb_path"], "2")
+            self.assertTrue(rows["toby-cam-1"]["flash_ok"])
 
 
 class Identity(unittest.TestCase):

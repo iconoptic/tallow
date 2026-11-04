@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # USB flasher for the boards in firmware/mesh/devices.jsonl. Start it while
-# attaching nodes or toby-cam-0, and stop it with Ctrl-C. It is not a login
+# attaching nodes or cams, and stop it with Ctrl-C. It is not a login
 # service. A new port is read with esptool, and that chip's MAC, path, and
-# flash manufacturer are written into the catalog and boards.tsv. A later
+# flash manufacturer are written into the catalog and boards.tsv. A chip
+# never seen before becomes the next node-N or toby-cam-N and is flashed. A later
 # poll does not open a port whose read succeeded, or a CP2102 whose read
 # failed. A USB serial that is a MAC is that chip: the board last recorded
 # on the path is not, and a failed read of such a port is tried again, up to
@@ -115,7 +116,7 @@ with open(sys.argv[1], encoding="utf-8") as handle:
 ' "$1"
 }
 
-# type, name, and 1 or 0 for flash_ok. Empty when this cable is not that chip.
+# type, name, 1 or 0 for flash_ok, and the Wi-Fi MAC. Empty when this cable is not that chip.
 # A USB serial that is a MAC is the chip. The path's previous row is not.
 catalog_lookup() {
   python3 "${ROOT}/tools/fleet_catalog.py" lookup "$1" "$2" "${3:-}"
@@ -153,39 +154,49 @@ with open(sys.argv[1], encoding="utf-8") as handle:
 ' "$1"
 }
 
-# 0 when this board was already written with this image id.
+# 0 when this board was already written with this image id. A row with a
+# wifi_mac is that chip. An older row without one needs the path and the name.
 # The path alone is not the board: a later chip on the same port is not skipped.
 journal_has() {
-  local file="$1" path="$2" image="$3" name="$4"
+  local file="$1" path="$2" image="$3" name="$4" mac="${5:-}"
   [[ -f "$file" && -n "$name" ]] || return 1
   python3 -c '
 import json, sys
-file, path, image, name = sys.argv[1:]
+file, path, image, name, mac = sys.argv[1:]
+mac = mac.lower()
 with open(file, encoding="utf-8") as handle:
     for line in handle:
         if not line.strip():
             continue
         obj = json.loads(line)
-        if obj.get("usb_path") == path and obj.get("image_id") == image and obj.get("name") == name:
+        if obj.get("image_id") != image:
+            continue
+        recorded = str(obj.get("wifi_mac", "")).lower()
+        if recorded:
+            if mac and recorded == mac:
+                raise SystemExit(0)
+            continue
+        if obj.get("usb_path") == path and obj.get("name") == name:
             raise SystemExit(0)
 raise SystemExit(1)
-' "$file" "$path" "$image" "$name"
+' "$file" "$path" "$image" "$name" "$mac"
 }
 
 journal_add() {
-  local file="$1" path="$2" name="$3" image="$4" command="$5"
+  local file="$1" path="$2" name="$3" image="$4" command="$5" mac="${6:-}"
   mkdir -p "$(dirname "$file")"
   python3 -c '
 import json, sys
-file, path, name, image, command = sys.argv[1:]
+file, path, name, image, command, mac = sys.argv[1:]
 with open(file, "a", encoding="utf-8") as handle:
     handle.write(json.dumps({
         "usb_path": path,
         "name": name,
+        "wifi_mac": mac.lower(),
         "image_id": image,
         "command": command,
     }) + "\n")
-' "$file" "$path" "$name" "$image" "$command"
+' "$file" "$path" "$name" "$image" "$command" "$mac"
 }
 
 # SHA-256 of the sha256sum lines for the bootloader and the app ELF.
@@ -251,7 +262,7 @@ fleet_plan() {
     mesh=1
   fi
   printf 'mesh_ready\t%s\n' "$mesh"
-  local i type="" name="" flash_ok="" applied image action lookup
+  local i type="" name="" flash_ok="" mac="" applied image action lookup
   for i in "${!ports[@]}"; do
     port="${ports[$i]}"
     path="${paths[$i]}"
@@ -260,19 +271,20 @@ fleet_plan() {
     type=""
     name=""
     flash_ok="0"
+    mac=""
     lookup="$(catalog_lookup "$catalog" "$path" "$serial" || true)"
     if [[ -n "$lookup" ]]; then
-      IFS=$'\t' read -r type name flash_ok <<<"$lookup"
+      IFS=$'\t' read -r type name flash_ok mac <<<"$lookup"
     fi
     image="$node_image"
     [[ "$type" == esp32s3-cam ]] && image="$cam_image"
     applied=0
-    if [[ -n "$image" ]] && journal_has "$journal" "$path" "$image" "$name"; then
+    if [[ -n "$image" ]] && journal_has "$journal" "$path" "$image" "$name" "$mac"; then
       applied=1
     fi
     action="$(fleet_decide "$type" "$port" "$applied" "$mesh" "$flash_ok" 0)"
     # A pipe keeps an empty name. Tab would collapse it and shift the log fields.
-    printf '%s|%s|%s|%s|%s|%s\n' "$port" "$path" "$name" "${model//|/}" "$action" "$serial"
+    printf '%s|%s|%s|%s|%s|%s|%s\n' "$port" "$path" "$name" "${model//|/}" "$action" "$serial" "$mac"
   done
 }
 
@@ -361,7 +373,7 @@ ensure_cam_image() {
 }
 
 do_flash() {
-  local kind="$1" name="$2" port="$3" path="$4" image="$5"
+  local kind="$1" name="$2" port="$3" path="$4" image="$5" mac="${6:-}"
   local output code
   local -a cmd
   if [[ "$kind" == cam && -z "$image" ]]; then
@@ -388,7 +400,7 @@ do_flash() {
   code=$?
   set -e
   if [[ "$code" -eq 0 ]]; then
-    journal_add "$JOURNAL" "$path" "$name" "$image" "${cmd[*]}"
+    journal_add "$JOURNAL" "$path" "$name" "$image" "${cmd[*]}" "$mac"
     log_debug "wrote ${name} on ${port}"
   else
     failure_log "$name" "$port" "$path" "$code" "$output" "${cmd[*]}"
@@ -450,7 +462,7 @@ learn_attached() {
 }
 
 poll_once() {
-  local plan line port path name model action serial mesh_line
+  local plan line port path name model action serial mac mesh_line
   local -A now=()
   local -a nodes=() cams=()
   learn_attached
@@ -462,7 +474,7 @@ poll_once() {
     log_debug "no serial ports"
     plan=""
   fi
-  while IFS='|' read -r port path name model action serial; do
+  while IFS='|' read -r port path name model action serial mac; do
     [[ -n "${port:-}" ]] || continue
     now["$path"]=1
     # A CP2102 serial is shared, so the path's name is only the last chip read
@@ -476,25 +488,25 @@ poll_once() {
     fi
     log_debug "port ${port} path ${path:-unknown} name ${name:-unknown} model ${model:-unknown} decision ${action}"
     case "$action" in
-      flash-node) nodes+=("${name}"$'\t'"${port}"$'\t'"${path}") ;;
-      flash-cam) cams+=("${name}"$'\t'"${port}"$'\t'"${path}") ;;
+      flash-node) nodes+=("${name}"$'\t'"${port}"$'\t'"${path}"$'\t'"${mac}") ;;
+      flash-cam) cams+=("${name}"$'\t'"${port}"$'\t'"${path}"$'\t'"${mac}") ;;
     esac
   done <<<"$plan"
   for path in "${!ATTEMPTED[@]}"; do
     [[ -n "${now[$path]+x}" ]] || unset 'ATTEMPTED[$path]'
   done
-  local sorted name port path
+  local sorted name port path mac
   if [[ "${#nodes[@]}" -gt 0 ]]; then
     sorted="$(printf '%s\n' "${nodes[@]}" | sort)"
-    while IFS=$'\t' read -r name port path; do
+    while IFS=$'\t' read -r name port path mac; do
       [[ -n "${name:-}" ]] || continue
-      do_flash node "$name" "$port" "$path" "$NODE_IMAGE"
+      do_flash node "$name" "$port" "$path" "$NODE_IMAGE" "$mac"
     done <<<"$sorted"
   fi
   if [[ "${#cams[@]}" -gt 0 ]]; then
     for line in "${cams[@]}"; do
-      IFS=$'\t' read -r name port path <<<"$line"
-      do_flash cam "$name" "$port" "$path" "$CAM_IMAGE"
+      IFS=$'\t' read -r name port path mac <<<"$line"
+      do_flash cam "$name" "$port" "$path" "$CAM_IMAGE" "$mac"
     done
   fi
   sync_panel_cams
@@ -518,14 +530,6 @@ sync_panel_cams() {
   [[ -z "$output" ]] || log_debug "cam page: ${output//$'\n'/; }"
 }
 
-path_present() {
-  local want="$1" port path
-  while IFS=$'\t' read -r port path _; do
-    [[ "$path" == "$want" ]] && return 0
-  done < <(list_ports)
-  return 1
-}
-
 main() {
   local err
   if ! err="$(catalog_agrees "$CATALOG" "$BOARDS" 2>&1)"; then
@@ -544,14 +548,9 @@ main() {
     exit 1
   }
   log_debug "node image ${NODE_IMAGE}"
-  if path_present 11; then
-    run_build "cam-build" "${ROOT}/tools/mesh.sh" cam-build
-    CAM_IMAGE="$(image_id "$CAM_BOOT" "$CAM_ELF")" || {
-      failure_log cam-image "" "" 1 "no cam bootloader or ELF after build" "image_id"
-      exit 1
-    }
-    log_debug "cam image ${CAM_IMAGE}"
-  fi
+  # Any cam may be plugged in later, so the cam image is built now. A failure
+  # is logged and leaves cams unflashed; nodes still flash.
+  ensure_cam_image || log_debug "no cam image: cams will not be flashed"
   while true; do
     poll_once
     sleep "$POLL_SECONDS"

@@ -18,21 +18,12 @@ import socket
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from fleet_catalog import load_reservations  # noqa: E402
+
 NODE_PORT = 6053
 MAC = re.compile(r"^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$")
 SLUG = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
-
-
-def on_iot_net(address: str) -> bool:
-    """The panel's rule: 10.87.0.0/24, not the network, the AP, or broadcast."""
-    parts = address.split(".")
-    if parts[:3] != ["10", "87", "0"] or len(parts) != 4:
-        return False
-    try:
-        last = int(parts[3])
-    except ValueError:
-        return False
-    return 2 <= last <= 254 and str(last) == parts[3]
 
 
 def load_catalog(path: Path) -> list[dict]:
@@ -43,22 +34,6 @@ def load_catalog(path: Path) -> list[dict]:
         if line.strip():
             rows.append(json.loads(line))
     return rows
-
-
-def load_reservations(path: Path) -> dict[str, str]:
-    found: dict[str, str] = {}
-    if not path.exists():
-        return found
-    for line in path.read_text(encoding="utf-8").splitlines():
-        text = line.strip().lower()
-        if not text or text.startswith("#") or "," not in text:
-            continue
-        mac, address = text.split(",", 1)
-        mac = mac.strip()
-        address = address.strip()
-        if MAC.fullmatch(mac) and on_iot_net(address):
-            found[mac] = address
-    return found
 
 
 def load_inventory(path: Path) -> dict:
@@ -110,6 +85,8 @@ def sync_inventory(
         if by_id is not None and by_address is not None and by_id is not by_address:
             label = str(by_address.get("name") or by_id.get("name") or name)
             old = str(by_address.get("id", ""))
+            if "rotation" not in by_address and "rotation" in by_id:
+                by_address["rotation"] = by_id["rotation"]
             by_address["id"] = name
             by_address["name"] = label
             rows.remove(by_id)
