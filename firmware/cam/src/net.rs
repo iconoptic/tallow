@@ -1,11 +1,14 @@
-//! Join `tallow-iot` as `toby-cam-0`.
+//! Join `tallow-iot`.
 //!
-//! WPA2 is required. The address is static: `10.87.0.21/24`, gateway and DNS
-//! `10.87.0.1`. There is no DHCP client and no access-point configuration, so
-//! a failed join does not open a fallback network. Modem sleep stays on.
+//! WPA2 is required. Every cam runs this one image, so the address comes from
+//! DHCP: `tools/mesh.sh cam-flash` reserves one address per cam MAC with
+//! `tools/setup_iot_ap.sh reserve`, and dnsmasq hands it out. The DHCP
+//! hostname is `tallow-cam-` and the last three MAC bytes. There is no
+//! access-point configuration, so a failed join does not open a fallback
+//! network. Modem sleep stays off.
 //!
 //! The SSID and the password are baked by `build.rs` from
-//! `firmware/esphome/secrets.yaml`. They are not printed.
+//! `firmware/cam/secrets.yaml`. They are not printed.
 
 use core::str;
 
@@ -13,8 +16,7 @@ use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::ipv4::{
-    ClientConfiguration as Ipv4Client, ClientSettings, Configuration as Ipv4Configuration, Mask,
-    Subnet,
+    ClientConfiguration as Ipv4Client, Configuration as Ipv4Configuration, DHCPClientSettings,
 };
 use esp_idf_svc::netif::{EspNetif, NetifConfiguration, NetifStack};
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
@@ -22,7 +24,6 @@ use esp_idf_svc::sys::{self, EspError};
 use esp_idf_svc::wifi::{
     AuthMethod, BlockingWifi, ClientConfiguration, Configuration, EspWifi, WifiDriver,
 };
-use std::net::Ipv4Addr;
 
 const SSID: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/wifi_ssid.bin"));
 const PASSWORD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/wifi_password.bin"));
@@ -58,7 +59,7 @@ impl Link {
     }
 }
 
-/// Start the station and return it once `10.87.0.21` is up.
+/// Start the station and return it once DHCP has given it an address.
 /// A bad bake spins here. It does not join an open network.
 pub fn join(nvs: Option<EspDefaultNvsPartition>) -> Link {
     let config = match client_config() {
@@ -112,7 +113,7 @@ fn start(
     let peripherals = Peripherals::take()?;
     let sysloop = EspSystemEventLoop::take()?;
     let driver = WifiDriver::new(peripherals.modem, sysloop.clone(), nvs)?;
-    // Hand over the static interface here. `EspWifi::wrap` builds a default
+    // Hand over the named interface here. `EspWifi::wrap` builds a default
     // station interface first, and a second one with the same `WIFI_STA_DEF`
     // key is refused by `esp_netif_new`, so swapping afterwards cannot work.
     // `wrap_all` takes an access-point interface as well because softAP
@@ -132,18 +133,30 @@ fn start(
 
 fn sta_netif() -> NetifConfiguration {
     let mut conf = NetifConfiguration::wifi_default_client();
-    conf.ip_configuration = Some(Ipv4Configuration::Client(Ipv4Client::Fixed(
-        ClientSettings {
-            ip: Ipv4Addr::new(10, 87, 0, 21),
-            subnet: Subnet {
-                gateway: Ipv4Addr::new(10, 87, 0, 1),
-                mask: Mask(24),
-            },
-            dns: Some(Ipv4Addr::new(10, 87, 0, 1)),
-            secondary_dns: None,
+    let name = hostname(station_mac());
+    conf.ip_configuration = Some(Ipv4Configuration::Client(Ipv4Client::DHCP(
+        DHCPClientSettings {
+            hostname: name.as_str().try_into().ok(),
         },
     )));
     conf
+}
+
+/// `tallow-cam-` and the last three bytes of the station MAC, or `tallow-cam`
+/// when the MAC could not be read.
+fn hostname(mac: Option<[u8; 6]>) -> String {
+    match mac {
+        Some(m) => format!("tallow-cam-{:02x}{:02x}{:02x}", m[3], m[4], m[5]),
+        None => "tallow-cam".to_owned(),
+    }
+}
+
+fn station_mac() -> Option<[u8; 6]> {
+    let mut mac = [0u8; 6];
+    // SAFETY: `mac` is six bytes owned by this call, the size ESP-IDF writes
+    // for a station MAC. The getter reads eFuse and does not keep the pointer.
+    let code = unsafe { sys::esp_read_mac(mac.as_mut_ptr(), sys::esp_mac_type_t_ESP_MAC_WIFI_STA) };
+    (code == sys::ESP_OK).then_some(mac)
 }
 
 fn connect(wifi: &mut BlockingWifi<EspWifi<'static>>) -> Result<(), EspError> {

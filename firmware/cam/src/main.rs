@@ -1,6 +1,6 @@
-//! Firmware for the Keyestudio MB0200 camera `toby-cam-0`.
+//! Firmware for the Keyestudio MB0200 cameras (`toby-cam-N`). Every cam runs this one image.
 //!
-//! It joins `tallow-iot` at `10.87.0.21` and serves MJPEG on port 8080.
+//! It takes its `tallow-iot` address by DHCP and serves MJPEG on port 8080.
 //! Port 6053 accepts a TCP connection so the panel's status check can pass.
 //! Port 3232 takes one signed image, and the cam reboots into it. The station
 //! and those listeners come up before the sensor starts, so a stuck sensor
@@ -124,8 +124,11 @@ fn main() {
         }
     };
     let mut logged_frame = false;
+    let mut misses = 0u8;
     loop {
-        if !link.up() || !link.heard() {
+        let (again, next) = stream::reconnect_now(link.up(), link.heard(), misses);
+        misses = next;
+        if again {
             println!("wifi down");
             if link.reconnect().is_err() {
                 println!("wifi join failed");

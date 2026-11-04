@@ -23,3 +23,23 @@ pub fn part_prefix(len: usize) -> Vec<u8> {
 
 /// The line break after a JPEG. The next part's headers follow it.
 pub const PART_SUFFIX: &[u8] = b"\r\n";
+
+/// Missed AP records in a row before a station that is still up reconnects.
+pub const MISSES: u8 = 3;
+
+/// Whether this loop pass should reconnect, and the miss count to keep.
+/// A down netif reconnects at once. A missed AP record waits for [`MISSES`].
+pub fn reconnect_now(up: bool, heard: bool, misses: u8) -> (bool, u8) {
+    if !up {
+        return (true, 0);
+    }
+    if heard {
+        return (false, 0);
+    }
+    let next = misses.saturating_add(1);
+    if next >= MISSES {
+        (true, 0)
+    } else {
+        (false, next)
+    }
+}

@@ -374,6 +374,32 @@ fn a_write_to_a_reader_finishes_inside_the_deadline() {
 }
 
 #[test]
+fn two_missed_records_do_not_reconnect_and_three_do() {
+    let (again, misses) = stream::reconnect_now(true, false, 0);
+    assert!(!again);
+    assert_eq!(misses, 1);
+    let (again, misses) = stream::reconnect_now(true, false, misses);
+    assert!(!again);
+    assert_eq!(misses, 2);
+    let (again, misses) = stream::reconnect_now(true, false, misses);
+    assert!(again);
+    assert_eq!(misses, 0);
+    let (again, misses) = stream::reconnect_now(true, true, 2);
+    assert!(!again);
+    assert_eq!(misses, 0);
+}
+
+#[test]
+fn a_down_netif_reconnects_at_once() {
+    let (again, misses) = stream::reconnect_now(false, true, 2);
+    assert!(again);
+    assert_eq!(misses, 0);
+    let (again, misses) = stream::reconnect_now(false, false, 0);
+    assert!(again);
+    assert_eq!(misses, 0);
+}
+
+#[test]
 fn a_client_that_stops_reading_is_dropped_at_the_frame_deadline() {
     let (mut near, _peer) = pair();
     let body = vec![7u8; 64 * 1024 * 1024];
