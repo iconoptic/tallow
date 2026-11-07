@@ -2,7 +2,7 @@
 
 Move tallow's firmware and host runtime to Rust, and finish the mesh on the way. Work is split into small tasks that a cheaper model can do from the task text alone.
 
-**Status (2026-10-31):** "Code done" means the code is in the tree and has not run on hardware. Frame version is `0xA8` in the source (`0xA7` after G6 on 2026-11-01) and `0xA1` on the boards, so flash every board together ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#source-ahead-of-the-boards-frame-version-0xa8)).
+**Status (2026-10-31):** "Code done" means the code is in the tree and has not run on hardware. Frame version is `0xAB` in the source (`0xA7` after G6 on 2026-11-01, `0xA8` for the product and version in OTA Begin, `0xA9` for the camera `LEAF` bit, `0xAA` for kind 14 Identity, `0xAB` for kind 15 Neighbours) and `0xA1` on the boards, so flash every board together ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#source-ahead-of-the-boards-frame-version-0xa9)). No board has been flashed with `0xA8`, `0xA9`, `0xAA`, or `0xAB`.
 - Phase 0: done. The mesh ran on two classic ESP32s over one physical hop ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#multi-hop-mesh)).
 - Phase 1: done or code done: T1.1 to T1.7, T1.8b, T1.9, T1.9a, T1.10. T1.9 is code done (2026-11-01), not run on hardware. Waiting on the user: T1.8 (a third board), the T1.9 leaf update and rollback trial, T1.11, T1.12, and the hardware checks named in the phase file.
 - Phase 2: done or code done: T2.1 to T2.7. Waiting on the user: the T2.7 trial and service check.
@@ -48,7 +48,7 @@ These are settled. A task does not reopen them.
 | Panel and H7020 behaviour is pinned first by tests that run against the Python | A port then has a pass mark. The tests are the spec |
 | Rust reads the same files under `data/panel/` and `secrets/panel/` | No migration, and a rollback is restarting Python |
 | New light drivers are Rust crates, not wrapped Python | One crate per protocol family, built like the H7020's: golden packets dumped from the upstream Python library, a pure codec, then BLE or LAN I/O. `tinytuya`, `flux_led`, and the like stay as sources of test vectors. Only the H7020 is in this plan. No other driver exists yet |
-| Cams never join the mesh | An S3 has no Bluetooth Classic, and video needs the radio |
+| A cam may join the mesh as a leaf | Supersedes "Cams never join the mesh" for membership only (2026-11-04). An S3 still runs no Classic stack and no GATT client. Video stays on `tallow-iot`. The TCP signed update stays on port 3232, and that same inactive slot also takes a mesh image. The cam does not bridge: no mesh frame on a socket, and no TCP byte on ESP-NOW. Classic `firmware/mesh/node` still joins no SSID. See [docs/01](../01-bluetooth-server-hardware-and-proxies.md#camera-leaves) |
 | Experiments run on spare boards, never `toby-cam-1` | A bad build on 2026-10-31 left it crash-looping, and it is taped to a wall |
 
 ## Phases

@@ -96,5 +96,5 @@ The user's own steps are in [user-actions.md](user-actions.md). None of them are
 ## Not in this plan
 
 - The Klipsch Core 100 next steps (Connect Plus APK, HCI capture). They need the user's phone. Nothing in `tools/klipsch_ble.py` needed fixing.
-- Flashing `0xA8` to the mesh boards, or USB `cam-flash` of the current cam source.
+- Flashing `0xAA` to the mesh boards (no board has `0xA8`, `0xA9`, or `0xAA`), or USB `cam-flash` of the current cam source. The camera leaf trial is the same: a spare cam plus every classic board, never `toby-cam-1` ([docs/01](../../01-bluetooth-server-hardware-and-proxies.md#camera-leaves)).
 - Any change to frame bytes, `wire.rs`, or OTA.

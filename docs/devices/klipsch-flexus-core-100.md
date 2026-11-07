@@ -96,4 +96,4 @@ The one-byte values (`f02` `0a`, `f03` `0c`, `fea` `0a`, `f24` `02`, `f26` `03`,
 
 A Connect Plus write capture (power, volume, input, dialog, night, EQ) parsed with `tools/parse_btsnoop.py`. No phone was attached on this pass, so `com.klipsch.connectxp` was not pulled. The control logic in that app is in `libapp.so`. The HTTP functions already recovered for the Core 300 are the Wi-Fi path.
 
-The bar stays off `tallow-iot`. The host path for a later capture is the seed adapter, the same one this fingerprint used.
+The bar stays off `tallow-iot`. A later capture uses the host seed ([docs/01](../01-bluetooth-server-hardware-and-proxies.md#this-host)). The 2026-11-02 fingerprint above was read on the UB500.

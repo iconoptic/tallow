@@ -4,7 +4,7 @@ The nodes hear the house over one hop. This phase proves many hops, finds Classi
 
 Files live in `firmware/mesh/`. Read `core/src/mesh.rs` and `core/tests/sim.rs` before any routing task.
 
-**Flash state (2026-10-31).** Both boards run the cross-check build, frame version `0xA1`: Classic RSSI and class of device, inquiry cut before name requests, beacon source check, parent events. Classic readings from before that flash are meaningless. The source is ahead of them at `0xA8`, and boards on different versions refuse each other's frames, so flash every board in one pass. **You:** `tools/mesh.sh build`, then `tools/mesh.sh flash <port>` on each.
+**Flash state (2026-10-31).** Both boards run the cross-check build, frame version `0xA1`: Classic RSSI and class of device, inquiry cut before name requests, beacon source check, parent events. Classic readings from before that flash are meaningless. The source is ahead of them at `0xAB` (`0xA8` was the OTA Begin change, `0xA9` the camera `LEAF` bit, `0xAA` kind 14 Identity, `0xAB` kind 15 Neighbours, and none of those was flashed), and boards on different versions refuse each other's frames, so flash every board in one pass ([docs/01](../../01-bluetooth-server-hardware-and-proxies.md#source-ahead-of-the-boards-frame-version-0xa9)). **You:** `tools/mesh.sh build`, then `tools/mesh.sh flash <port>` on each.
 
 ## T1.1 Golden frames
 

@@ -14,13 +14,11 @@ Settled for this run (2026-11-02), using the defaults already written here. Say 
 
 Do this before the first agent starts. It folds in step 1 of "Now".
 
-**Run the panel from a copy that builds cannot touch, as your user.** The panel resolves its own path once and respawns `tallowd run` from that file after every pause or failure. On 2026-11-02 that file was `host/target/release/tallowd`, which every agent's `tools/mesh.sh daemon build` rewrites. A copy at `host/target/live/` keeps the panel's repo-root lookup (four directories up) and is never written by cargo. Stop the panel with Ctrl-C in its terminal, then:
+**Install the panel and the broker as your user.** On 2026-11-02 the panel was `host/target/release/tallowd`, which `tools/mesh.sh daemon build` rewrites. `tools/deploy_panel.sh` replaces that hand start ([govee](../../devices/govee-h7020.md#rust-panel-tallowd-panel)). If `data/mesh/map.json` is still owned by root from the 2026-11-02 sudo panel, give it back first:
 
 ```bash
-mkdir -p host/target/live
-cp host/target/release/tallowd host/target/live/tallowd
 sudo chown "$(id -un):$(id -gn)" data/mesh/map.json
-sg dialout -c 'host/target/live/tallowd panel'
+tools/deploy_panel.sh
 ```
 
 Agents check `pgrep -af 'tallowd (panel|run)'`. While it still shows `host/target/release/tallowd`, they skip `daemon build` and the HTTP contract and say so.
@@ -29,12 +27,12 @@ Agents check `pgrep -af 'tallowd (panel|run)'`. While it still shows `host/targe
 
 1. **Restart the panel as your user.** Covered by [Before the run](#before-the-run). It was running as `sudo host/target/release/tallowd panel` (started about 19:26 on 2026-11-02), and its child writes `data/mesh/map.json` as root `0600`.
 
-2. **Check the two pushed cams.** `toby-cam-2` (`10.87.0.24`) and `toby-cam-3` (`10.87.0.25`) took the signed image on the evening of 2026-11-02. It is marked valid after five minutes of Wi-Fi and a frame, and rolls back if that does not happen within 15 minutes. Nobody watched that window. `tools/mesh.sh fleet` shows whether each answers on 6053. `toby-cam-3` is not in `data/panel/cams.json`, so run `tools/mesh.sh cams` to add it.
+2. **Check the two pushed cams.** `toby-cam-2` (`10.87.0.24`) and `toby-cam-3` (`10.87.0.25`) took the signed image on the evening of 2026-11-02. Nobody watched the five-minute valid mark. On 2026-11-06 USB `cam-flash` overwrote `toby-cam-2` and erased otadata, so that board does not roll back to the evening image ([device note](../../devices/keyestudio-mb0200-s3-cam.md#esp-now-leaf)). `toby-cam-3` was not part of that flash. `tools/mesh.sh fleet` shows whether each answers on 6053. `toby-cam-3` is not in `data/panel/cams.json`, so run `tools/mesh.sh cams` to add it.
 3. **Confirm `toby-cam-0`'s MAC.** The catalog, `boards.tsv`, and the cam note all give `44:bd:8d:7a:51:60`. The last docs pass flagged it. Only the board can settle it.
 
 ## After chunks B, C, and D land
 
-1. `tools/mesh.sh daemon build`, copy `host/target/release/tallowd` over `host/target/live/tallowd`, and restart the panel as in [Before the run](#before-the-run).
+1. `tools/deploy_panel.sh`, as in [Before the run](#before-the-run).
 2. Wait about 10 minutes for the first two reconciles, then check that no cluster holds addresses heard at the same time:
 
    ```bash
@@ -48,4 +46,4 @@ Agents check `pgrep -af 'tallowd (panel|run)'`. While it still shows `host/targe
 ## When you want to
 
 - Commit the tree. Agents do not commit unless you ask.
-- The mesh boards still run frame `0xA1`, and the source is `0xA8`. Flash every board together, by USB, when you choose ([docs/01](../../01-bluetooth-server-hardware-and-proxies.md#source-ahead-of-the-boards-frame-version-0xa8)).
+- The mesh boards still run frame `0xA1`, and the source is `0xAB`. No board was flashed with `0xA8`, `0xA9`, `0xAA`, or `0xAB`. Flash every board together, by USB, when you choose ([docs/01](../../01-bluetooth-server-hardware-and-proxies.md#source-ahead-of-the-boards-frame-version-0xa9)). The first trial that includes a camera is a spare cam plus every classic board, and never `toby-cam-1`.

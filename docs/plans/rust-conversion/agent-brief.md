@@ -39,7 +39,7 @@ Reporting a blocker is a good result. A guess in firmware costs a physical trip 
 
 - Never commit, push, or open a PR unless the user asks.
 - Never flash a board, press on with a failed flash, or run `tools/esphome.sh run`. Hardware steps belong to **You**: give the exact command and what to look for.
-- Never touch the `toby-cam-1` board. It has no catalog row, so `cam-flash` or `fleetd` would learn it like any ESP32-S3: keep it off USB. The Rust cam image takes its address by DHCP from the per-MAC reservation `cam-flash` writes (`toby-cam-0` keeps `10.87.0.21`), and `cam-push` allows only an address reserved for a catalog cam. On 2026-11-02 `cam-flash` wrote a modem-sleep image. USB `cam-flash` of the later source has not been run. The evening `cam-push` is in the [device note](../../devices/keyestudio-mb0200-s3-cam.md#signed-push).
+- Never touch the `toby-cam-1` board. It has no catalog row, so `cam-flash` or `fleetd` would learn it like any ESP32-S3: keep it off USB. The Rust cam image takes its address by DHCP from the per-MAC reservation `cam-flash` writes (`toby-cam-0` keeps `10.87.0.21`), and `cam-push` allows only an address reserved for a catalog cam. On 2026-11-02 `cam-flash` wrote a modem-sleep image. The 2026-11-06 leaf flash is in the [device note](../../devices/keyestudio-mb0200-s3-cam.md#esp-now-leaf). The evening `cam-push` is in the [device note](../../devices/keyestudio-mb0200-s3-cam.md#signed-push).
 - Never print, log, copy, or commit `firmware/mesh/mesh.key`, or anything in `secrets/`.
 - Never add an unauthenticated frame kind, a default key, or a way to build without a key.
 - Never make a mesh node join Wi-Fi or open a socket. See `.cursor/rules/iot-network-isolation.mdc`.
@@ -54,10 +54,10 @@ Reporting a blocker is a good result. A guess in firmware costs a physical trip 
 - `firmware/mesh/core` is `no_std`, uses no heap, and makes no OS calls. Time comes in as a `now_ms` argument. Use `wrapping_sub` for all clock maths: the clock wraps.
 - Every parser of bytes off the air or off the wire is bounds-checked and returns `Option`. No indexing without a length check, no `unwrap` on outside data.
 - Fixed-size tables only in the core. A full table drops the oldest entry or counts a drop. It never grows.
-- `unsafe` is allowed only in `firmware/mesh/node/src/radio.rs`, `bluetooth.rs`, `main.rs`, and files a task names. Each block gets a comment saying why it is sound.
+- `unsafe` is allowed only in `firmware/mesh/node/src/radio.rs`, `bluetooth.rs`, `main.rs`, the cam files that already hold it (`firmware/cam/src/camera.rs`, `net.rs`, `ota.rs`, `main.rs`, `mesh_link.rs`, and `radio.rs`), and files a task names. Each block gets a comment saying why it is sound.
 - A delay in firmware is `FreeRtos::delay_ms`. `std::thread::sleep` below one tick busy-waits and trips the watchdog.
 - Callbacks on the Wi-Fi or Bluetooth task copy data and return. No blocking, no serial writes.
-- A change to bytes on the air bumps `VERSION` in `wire.rs`, updates the golden frames, and updates `core/README.md`. Boards on another version refuse the frames, so flash every board together. The source is `0xA8`, including OTA (`0xA7`) and the product and version in OTA Begin (`0xA8`), and has not been flashed. The boards run `0xA1`.
+- A change to bytes on the air bumps `VERSION` in `wire.rs`, updates the golden frames, and updates `core/README.md`. Boards on another version refuse the frames, so flash every board together. The source is `0xAB` (`0xA7` added OTA, `0xA8` put the product and version into OTA Begin, `0xA9` is the camera `LEAF` bit, `0xAA` adds kind 14 Identity, `0xAB` adds kind 15 Neighbours) and has not been flashed. The boards run `0xA1`. No board has been flashed with `0xA8`, `0xA9`, `0xAA`, or `0xAB` ([docs/01](../../01-bluetooth-server-hardware-and-proxies.md#camera-leaves)).
 - New tests are named as sentences, like the ones in `firmware/mesh/core/tests/sim.rs`.
 
 ## Commands

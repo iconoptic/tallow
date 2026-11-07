@@ -9,6 +9,8 @@ Every Wi-Fi IoT device lives on an isolated network, `tallow-iot`. Clients on re
 
 Rust mesh nodes (`firmware/mesh/`) join no Wi-Fi network at all. They speak ESP-NOW to each other, and the mesh key decides who can join. Their only path to anything else is the root node's USB link to this host. They are part of the sandbox, and this rule's boundary applies to them the same way.
 
+A camera in `firmware/cam` may hold that same key and speak ESP-NOW to those nodes, as a leaf. It still associates to `tallow-iot` for its stream and its signed update. It does not route between the two: a mesh frame is never written to a socket, and a TCP byte is never written to ESP-NOW. Classic mesh nodes still join no SSID and open no socket.
+
 ## Radio
 
 - Prefer **2.4 GHz** Wi-Fi for range and device compatibility. Throughput is not a design constraint.
@@ -34,9 +36,11 @@ The control-panel web app is the only path from regular Wi-Fi into the sandbox. 
 ```text
 # BAD — bulb on the house SSID, open mesh or BLE pairing,
 #       NAT or a route from the LAN into the IoT network,
-#       a mesh node joining a Wi-Fi network or holding a socket
+#       a mesh node joining a Wi-Fi network or holding a socket,
+#       a camera bridging Wi-Fi bytes onto ESP-NOW or the reverse
 # GOOD — bulb on the isolated 2.4 GHz network;
 #        mesh nodes on keyed ESP-NOW, reaching only this host over USB;
+#        a camera on tallow-iot that is also an ESP-NOW leaf, with no bridge;
 #        whitelist = mesh controllers + controlled devices;
 #        phone uses the control panel only
 ```

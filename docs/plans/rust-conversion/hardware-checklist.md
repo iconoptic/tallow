@@ -2,7 +2,7 @@
 
 The steps only you can do. Nothing here is for an agent, and each has its pass mark. Agents hand you commands, and you run them.
 
-Boards on different frame versions refuse each other. The source is already `0xA8` (G6 set `0xA7`, and the OTA Begin change set `0xA8`). The boards still run `0xA1`. No board was flashed in that work. Flash every board in one pass, from one commit.
+Boards on different frame versions refuse each other. The source is `0xAB` (G6 set `0xA7`, the OTA Begin change set `0xA8`, the camera `LEAF` bit set `0xA9`, kind 14 Identity set `0xAA`, and kind 15 Neighbours set `0xAB`). The boards still run `0xA1`. No board was flashed with `0xA8`, `0xA9`, `0xAA`, or `0xAB`. Flash every board in one pass, from one commit ([docs/01](../../01-bluetooth-server-hardware-and-proxies.md#source-ahead-of-the-boards-frame-version-0xa9)).
 
 ## Before the Grok run
 
@@ -35,12 +35,12 @@ These check code the Grok run builds on. Doing them first gives the review real 
 6. **Try the Rust panel on the light (T3.7).** Stop the Python panel, and close Govee Home. The box takes one connection.
 
    ```bash
-   host/target/release/tallowd panel
+   tools/deploy_panel.sh
    ```
 
-   **Pass:** power, brightness, and solid red work on `/lights`, and 30 s pass with no `BLE link down` line. To roll back, press Ctrl-C and run `.venv/bin/python app/h7020_panel.py`. Scenes and paints have never been sent to this string, from either language, so leave them out.
+   **Pass:** power, brightness, and solid red work on `/lights`, and 30 s pass with no `BLE link down` line. The live process is the user unit ([govee](../../devices/govee-h7020.md#rust-panel-tallowd-panel)). The Python panel is archived. Scenes and paints have never been sent to this string, so leave them out.
 
-7. **Check the panel's mesh host (T2.7).** Skip `tools/setup_mesh_host.sh` unless you want a host with no panel: the real panel now finds the root board and keeps `data/mesh/map.json` by itself. Needs access to the port first: `sudo setfacl -m u:$USER:rw /dev/ttyUSB0` for now, or `tools/setup_mesh_host.sh` for the udev rule. Restart `host/target/release/tallowd panel` and open `/devices`.
+7. **Check the panel's mesh host (T2.7).** Skip `tools/setup_mesh_host.sh` unless you want a host with no panel: the real panel now finds the root board and keeps `data/mesh/map.json` by itself. Needs access to the port first: `sudo setfacl -m u:$USER:rw /dev/ttyUSB0` for now, or `tools/setup_mesh_host.sh` for the udev rule. Restart with `tools/deploy_panel.sh` ([govee](../../devices/govee-h7020.md#rust-panel-tallowd-panel)) and open `/devices`.
    **Pass:** the page shows the map within a minute, and `GET /api/mesh/map` says `host.state` is `running`. Then run `tools/mesh.sh monitor <port> 5`: the panel lets go of the port and takes it back. With no board plugged in, `host.state` is `waiting` and the panel starts no child. Plug a listed classic ESP32 in and it becomes `running`. Do not also enable `tallowd.service`. States: [docs/01](../../01-bluetooth-server-hardware-and-proxies.md#not-built).
 
 ## Any time
@@ -58,7 +58,7 @@ These check code the Grok run builds on. Doing them first gives the review real 
 12. **OTA a leaf (T1.9).** This needs G7, G8, and a USB flash of every board, because the bootloader changes. Update a leaf one hop away, then push a build that crashes after 90 s.
     **Pass:** it updates, then rolls back. Do not roll out to any board that is not on a desk.
 
-13. **Rust on `toby-cam-0` (T4.3, T4.4).** On 2026-11-02 `cam-flash` of `/dev/ttyACM0` wrote the modem-sleep image and exited success. The station associated, then hostapd dropped it for inactivity, and it has not associated again. The source now uses `WIFI_PS_NONE` and has not been flashed ([device note](../../devices/keyestudio-mb0200-s3-cam.md#rust-image)). `cam-backup` has not been run. The image takes its address by DHCP; `toby-cam-0`'s reservation is `10.87.0.21`. `archive/tools/tests/cam_stream_check.py` still allows only `10.87.0.23` and refuses `10.87.0.21` before any socket, so it will not count frames from this image. Then push a crashing build. **Pass:** the panel shows the picture, and the crash rolls back. Nothing moves to `toby-cam-1` until it does. The evening `cam-push` did not reach this board ([device note](../../devices/keyestudio-mb0200-s3-cam.md#signed-push)).
+13. **Rust on `toby-cam-0` (T4.3, T4.4).** On 2026-11-02 `cam-flash` of `/dev/ttyACM0` wrote the modem-sleep image and exited success. The station associated, then hostapd dropped it for inactivity, and it has not associated again. The `WIFI_PS_NONE` source has not been flashed onto this board ([device note](../../devices/keyestudio-mb0200-s3-cam.md#rust-image)). The 2026-11-06 leaf flash was `toby-cam-2` ([device note](../../devices/keyestudio-mb0200-s3-cam.md#esp-now-leaf)). `cam-backup` has not been run. The image takes its address by DHCP; `toby-cam-0`'s reservation is `10.87.0.21`. `archive/tools/tests/cam_stream_check.py` still allows only `10.87.0.23` and refuses `10.87.0.21` before any socket, so it will not count frames from this image. Then push a crashing build. **Pass:** the panel shows the picture, and the crash rolls back. Nothing moves to `toby-cam-1` until it does. The evening `cam-push` did not reach this board ([device note](../../devices/keyestudio-mb0200-s3-cam.md#signed-push)).
 
 14. **Fleet, cut-over, wall cam (T1.12, T3.10, T4.5).** In that order, each when the one before has held for its full soak.
 

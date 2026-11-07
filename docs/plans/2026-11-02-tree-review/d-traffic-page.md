@@ -1,6 +1,6 @@
 # Chunk D: the traffic page (`app/traffic_page.html`)
 
-What the user asked for (session `48f6ca04`): *"Don't just show devices grouped around their nearest AP. Use the relationships between my own devs and the dB estimates from various sources to attempt a triangulation of the device location."* The model is in the page: `rssi = tx - 10·n·log10(d)`. `n` is fitted from the nodes' own parent links, one listener sits beside its node, two split the segment, and three or more are solved by Gauss-Newton.
+What the user asked for (session `48f6ca04`): *"Don't just show devices grouped around their nearest AP. Use the relationships between my own devs and the dB estimates from various sources to attempt a triangulation of the device location."* At review the model was `rssi = tx - 10·n·log10(d)`. `n` was fitted from the nodes' own parent links, one listener sat beside its node, two split the segment, and three or more were solved by Gauss-Newton of position and transmit level. The page now solves x and y only ([docs/01](../../01-bluetooth-server-hardware-and-proxies.md#traffic-log)).
 
 The page builds DOM with `textContent` and `createElementNS`. Keep it that way: no `innerHTML`, `outerHTML`, or `insertAdjacentHTML`. `tools/tests/test_traffic_page.py` checks this.
 
