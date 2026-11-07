@@ -21,7 +21,8 @@ use serde_json::{json, Map, Value};
 use tallow_govee::scene;
 
 use super::access::{
-    authenticate, cookie_value, secret_eq, session_token, Agent, Channel, Principal, COOKIE, SCOPES,
+    authenticate, cookie_value, secret_eq, session_token, Agent, Channel, Principal, COOKIE,
+    SCOPES, TRAFFIC_SCOPE,
 };
 use super::mesh_map;
 use super::pages;
@@ -518,6 +519,90 @@ async fn traffic_clear(State(panel): State<Arc<Panel>>, req: Request) -> Respons
     };
     match tokio::task::spawn_blocking(move || traffic::clear(&db)).await {
         Ok(Ok(())) => json_response(StatusCode::OK, &json!({"ok": true})),
+        Ok(Err(_)) | Err(_) => ApiError::new(500, "Internal Server Error").into_response(),
+    }
+}
+
+async fn traffic_live(State(panel): State<Arc<Panel>>, req: Request) -> Response {
+    traffic_summary(panel, req, "live").await
+}
+
+async fn traffic_hour(State(panel): State<Arc<Panel>>, req: Request) -> Response {
+    traffic_summary(panel, req, "hour").await
+}
+
+async fn traffic_day(State(panel): State<Arc<Panel>>, req: Request) -> Response {
+    traffic_summary(panel, req, "day").await
+}
+
+async fn traffic_week(State(panel): State<Arc<Panel>>, req: Request) -> Response {
+    traffic_summary(panel, req, "week").await
+}
+
+/// The addresses behind one summary label. The house LAN gets the same 404 as
+/// the summaries. The body is only `alias`, because a query string cannot carry it.
+async fn traffic_alias(State(panel): State<Arc<Panel>>, req: Request) -> Response {
+    if channel(&req) != Channel::Agent {
+        return ApiError::new(404, "not found").into_response();
+    }
+    if let Err(error) = require(&panel, &req, TRAFFIC_SCOPE) {
+        return error.into_response();
+    }
+    let body = match read_body(req).await {
+        Ok(body) => body,
+        Err(error) => return error.into_response(),
+    };
+    if let Err(error) = only_fields(&body, &["alias"]) {
+        return error.into_response();
+    }
+    let alias = match alias_text(&body) {
+        Ok(alias) => alias,
+        Err(error) => return error.into_response(),
+    };
+    let db = traffic_db(&panel);
+    match tokio::task::spawn_blocking(move || traffic::addresses_for_alias(db.as_deref(), &alias))
+        .await
+    {
+        Ok(Ok(document)) => json_response(StatusCode::OK, &document),
+        Ok(Err(_)) | Err(_) => ApiError::new(500, "Internal Server Error").into_response(),
+    }
+}
+
+fn alias_text(body: &Map<String, Value>) -> Result<String, ApiError> {
+    let Some(text) = body.get("alias").and_then(Value::as_str) else {
+        return Err(ApiError::new(400, "alias must be a string"));
+    };
+    let text = text.trim();
+    if text.is_empty() || text.chars().count() > 80 || text.chars().any(char::is_control) {
+        return Err(ApiError::new(400, "alias must be a short name"));
+    }
+    Ok(text.to_string())
+}
+
+/// A compact window for the agent socket. The house LAN gets the same 404 as the
+/// other socket-only routes. `week` is the log's seven-day retention, not a page window.
+async fn traffic_summary(panel: Arc<Panel>, req: Request, name: &str) -> Response {
+    if channel(&req) != Channel::Agent {
+        return ApiError::new(404, "not found").into_response();
+    }
+    if let Err(error) = require(&panel, &req, TRAFFIC_SCOPE) {
+        return error.into_response();
+    }
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX))
+        .unwrap_or(0);
+    let (from, to) = if name == "week" {
+        traffic::week(now)
+    } else {
+        match traffic::window(now, name) {
+            Some(bounds) => bounds,
+            None => return ApiError::new(404, "not found").into_response(),
+        }
+    };
+    let db = traffic_db(&panel);
+    match tokio::task::spawn_blocking(move || traffic::summary(db.as_deref(), from, to)).await {
+        Ok(Ok(document)) => json_response(StatusCode::OK, &document),
         Ok(Err(_)) | Err(_) => ApiError::new(500, "Internal Server Error").into_response(),
     }
 }
@@ -1092,6 +1177,11 @@ pub fn router(panel: Arc<Panel>, chan: Channel) -> Router {
         )
         .route("/api/mesh/map", get_only(mesh_map_route))
         .route("/api/traffic", get_only(traffic_route))
+        .route("/api/traffic/live", get_only(traffic_live))
+        .route("/api/traffic/hour", get_only(traffic_hour))
+        .route("/api/traffic/day", get_only(traffic_day))
+        .route("/api/traffic/week", get_only(traffic_week))
+        .route("/api/traffic/alias", post(traffic_alias))
         .route("/api/traffic/layout", post(traffic_layout))
         .route("/api/traffic/clear", post(traffic_clear))
         .route("/api/state", get_only(state))

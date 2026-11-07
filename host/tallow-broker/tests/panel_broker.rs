@@ -376,6 +376,11 @@ const ALLOWED: &[(&str, &str)] = &[
     ("GET", "/api/schedules"),
     ("GET", "/api/patterns/evening-walk"),
     ("GET", "/api/schedules/evening"),
+    ("GET", "/api/traffic/live"),
+    ("GET", "/api/traffic/hour"),
+    ("GET", "/api/traffic/day"),
+    ("GET", "/api/traffic/week"),
+    ("POST", "/api/traffic/alias"),
     ("POST", "/api/power"),
     ("POST", "/api/brightness"),
     ("POST", "/api/color"),
@@ -394,6 +399,14 @@ const PATHS: &[&str] = &[
     "/api/manifest",
     "/api/patterns",
     "/api/schedules",
+    "/api/traffic/live",
+    "/api/traffic/hour",
+    "/api/traffic/day",
+    "/api/traffic/week",
+    "/api/traffic/alias",
+    "/api/traffic",
+    "/api/traffic/clear",
+    "/api/traffic/layout",
     "/api/power",
     "/api/brightness",
     "/api/color",
@@ -509,6 +522,10 @@ fn every_route_the_panel_exposes_outside_the_allowlist_is_refused() {
         ("PUT", "/api/schedules/evening"),
         ("DELETE", "/api/patterns/evening-walk"),
         ("DELETE", "/api/schedules/evening"),
+        ("GET", "/api/traffic"),
+        ("GET", "/traffic"),
+        ("POST", "/api/traffic/layout"),
+        ("POST", "/api/traffic/clear"),
     ];
     for (method, path) in panel_routes {
         assert_eq!(
@@ -517,6 +534,63 @@ fn every_route_the_panel_exposes_outside_the_allowlist_is_refused() {
             "{method} {path} should be refused with 403"
         );
     }
+}
+
+#[test]
+fn traffic_summaries_are_forwarded_and_the_log_writes_are_not() {
+    for path in [
+        "/api/traffic/live",
+        "/api/traffic/hour",
+        "/api/traffic/day",
+        "/api/traffic/week",
+    ] {
+        assert_eq!(
+            label(&raw(&format!("GET {path} HTTP/1.1"), &[], b"")),
+            "forward",
+            "{path}"
+        );
+    }
+    assert_eq!(
+        label(&raw("GET /api/traffic/live?window=day HTTP/1.1", &[], b"")),
+        "400"
+    );
+    assert_eq!(label(&raw("GET /api/traffic HTTP/1.1", &[], b"")), "403");
+    let json = [
+        ("Content-Type", "application/json"),
+        ("Content-Length", "2"),
+    ];
+    assert_eq!(
+        label(&raw("POST /api/traffic/clear HTTP/1.1", &json, b"{}")),
+        "403"
+    );
+    assert_eq!(
+        label(&raw("POST /api/traffic/layout HTTP/1.1", &json, b"{}")),
+        "403"
+    );
+    let alias = [
+        ("Content-Type", "application/json"),
+        ("Content-Length", "20"),
+    ];
+    assert_eq!(
+        label(&raw(
+            "POST /api/traffic/alias HTTP/1.1",
+            &alias,
+            br#"{"alias":"Calm Fox"}"#,
+        )),
+        "forward"
+    );
+    assert_eq!(
+        label(&raw("GET /api/traffic/alias HTTP/1.1", &[], b"")),
+        "403"
+    );
+    assert_eq!(
+        label(&raw(
+            "POST /api/traffic/alias?x=1 HTTP/1.1",
+            &alias,
+            br#"{"alias":"Calm Fox"}"#,
+        )),
+        "400"
+    );
 }
 
 // ---------------------------------------------------------------------------

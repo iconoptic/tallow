@@ -16,7 +16,7 @@ class TrafficPageTest(unittest.TestCase):
     def test_the_page_shows_a_move_a_pass_by_and_a_hostile_name_as_text(self) -> None:
         run = subprocess.run(["node", str(HARNESS)], capture_output=True, text=True, timeout=30, check=False)
         self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
-        self.assertGreaterEqual(run.stdout.count("ok "), 16)
+        self.assertGreaterEqual(run.stdout.count("ok "), 22)
 
     def test_the_page_never_writes_markup_from_the_log(self) -> None:
         source = (ROOT / "app" / "traffic_page.html").read_text(encoding="utf-8")

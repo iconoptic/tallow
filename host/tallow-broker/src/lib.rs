@@ -35,14 +35,21 @@ pub const GET_EXACT: &[&str] = &[
     "/api/manifest",
     "/api/patterns",
     "/api/schedules",
+    "/api/traffic/live",
+    "/api/traffic/hour",
+    "/api/traffic/day",
+    "/api/traffic/week",
 ];
-/// Control routes that match a path exactly. Python: `POST_EXACT`.
+/// Control routes that match a path exactly, and the traffic alias lookup.
+/// The lookup is a read. It is a POST because a query string is refused and an
+/// alias can contain a space. Python: `POST_EXACT`, which does not include it.
 pub const POST_EXACT: &[&str] = &[
     "/api/power",
     "/api/brightness",
     "/api/color",
     "/api/scene",
     "/api/paint",
+    "/api/traffic/alias",
 ];
 /// Headers the guest may not send. Python: `REFUSED_HEADERS`, compared lowercase.
 pub const REFUSED_HEADERS: &[&str] = &[

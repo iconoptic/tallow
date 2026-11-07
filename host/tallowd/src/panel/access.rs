@@ -17,6 +17,14 @@ pub const COOKIE: &str = "tallow_panel";
 /// The label the cookie HMAC is taken over. A browser logged in to Python stays logged in.
 const SESSION_LABEL: &[u8] = b"tallow-h7020-panel";
 pub const SCOPES: [&str; 4] = ["read", "control", "library", "schedule"];
+/// The sighting log. It is not one of `SCOPES`: the browser cookie and the
+/// light manifest stay on those four, and a token gains the log only when its
+/// record names this.
+pub const TRAFFIC_SCOPE: &str = "traffic";
+
+fn scope_known(text: &str) -> bool {
+    SCOPES.contains(&text) || text == TRAFFIC_SCOPE
+}
 
 /// Which listener a request came in on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -238,19 +246,23 @@ pub fn load_agents(path: &Path) -> Result<Vec<Agent>, AgentFileError> {
         let requested: Vec<&str> = match scopes {
             Some(list) if !list.is_empty() => list
                 .iter()
-                .map(|scope| scope.as_str().filter(|text| SCOPES.contains(text)))
+                .map(|scope| scope.as_str().filter(|text| scope_known(text)))
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| AgentFileError::value(path, "has bad scopes"))?,
             _ => return Err(AgentFileError::value(path, "has bad scopes")),
         };
+        let mut granted: Vec<String> = SCOPES
+            .iter()
+            .filter(|scope| requested.contains(scope))
+            .map(|scope| (*scope).to_owned())
+            .collect();
+        if requested.contains(&TRAFFIC_SCOPE) {
+            granted.push(TRAFFIC_SCOPE.to_owned());
+        }
         cleaned.push(Agent {
             name: name.to_owned(),
             token_sha256: digest.to_owned(),
-            scopes: SCOPES
-                .iter()
-                .filter(|scope| requested.contains(scope))
-                .map(|scope| (*scope).to_owned())
-                .collect(),
+            scopes: granted,
         });
     }
     Ok(cleaned)

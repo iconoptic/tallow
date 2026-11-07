@@ -4,7 +4,7 @@
 //! The page reads that file and decides, at read time, which stays are a linger, a move,
 //! or a pass-by. Nothing here is sent off the host. The file is mode 0600.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, OpenOptions};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -14,6 +14,7 @@ use anyhow::Context;
 use rusqlite::{params, Connection};
 use serde_json::{json, Map, Value};
 use tallow_mesh_core::sightings::Kind;
+use tallow_mesh_core::stats::HeardRecords;
 use tallow_mesh_core::wire::FrameKind;
 
 use crate::decode::{self, Named, Sighting};
@@ -35,9 +36,18 @@ const LEAD_DB: i16 = 3;
 const RETAIN_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 const PRUNE_EVERY_MS: i64 = 60_000;
 const SAMPLE_CAP: i64 = 100_000;
+/// Tracks a summary returns. The rest are dropped and `truncated` is set.
+const SUMMARY_CAP: usize = 64;
+/// Addresses one alias lookup returns. The rest are dropped and `truncated` is set.
+const ALIAS_CAP: usize = 64;
 const LIVE_MS: i64 = 15 * 60 * 1000;
 const HOUR_MS: i64 = 60 * 60 * 1000;
 const DAY_MS: i64 = 24 * HOUR_MS;
+/// One stored neighbour RSSI per directed edge per minute.
+const LINK_GAP_MS: i64 = 60_000;
+/// A range needs this many kept samples, spread over at least an hour.
+const LINK_MIN_SAMPLES: usize = 30;
+const LINK_MIN_SPAN_MS: i64 = HOUR_MS;
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS sightings (
@@ -56,6 +66,13 @@ CREATE TABLE IF NOT EXISTS names (
     name TEXT NOT NULL,
     PRIMARY KEY (addr, kind)
 );
+CREATE TABLE IF NOT EXISTS links (
+    ts INTEGER NOT NULL,
+    hearer TEXT NOT NULL,
+    heard TEXT NOT NULL,
+    rssi INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS links_edge ON links(hearer, heard, ts);
 ";
 
 /// The sighting log beside the map. A failure here never stops the map writer.
@@ -153,6 +170,12 @@ struct NameRow {
     name: String,
 }
 
+struct LinkRow {
+    hearer: String,
+    heard: String,
+    rssi: i8,
+}
+
 struct Obs {
     ts: i64,
     node: String,
@@ -175,6 +198,11 @@ pub fn window(now_ms: i64, name: &str) -> Option<(i64, i64)> {
         _ => return None,
     };
     Some((now_ms.saturating_sub(span), now_ms))
+}
+
+/// The seven days the log keeps. The page's `window` does not accept this name.
+pub fn week(now_ms: i64) -> (i64, i64) {
+    (now_ms.saturating_sub(RETAIN_MS), now_ms)
 }
 
 impl Journal {
@@ -228,14 +256,16 @@ impl Journal {
         if copied == 0 && names.is_empty() {
             return Ok(0);
         }
-        self.insert(&rows, &names, 0.0)?;
+        self.insert(&rows, &names, &[], 0.0)?;
         Ok(copied)
     }
 
-    /// Record the Report and Name frames in `lines`. `now` is unix seconds, as `unix_now` gives.
+    /// Record the Report, Name, and Neighbours frames in `lines`.
+    /// `now` is unix seconds, as `unix_now` gives.
     pub fn note_lines(&mut self, lines: &[String], now: f64) -> anyhow::Result<()> {
         let mut rows = Vec::new();
         let mut names = Vec::new();
+        let mut links = Vec::new();
         for text in lines {
             let Some(line) = parse_line(text) else {
                 continue;
@@ -256,13 +286,30 @@ impl Journal {
                         }
                     }
                 }
+                Some(FrameKind::Neighbours) => {
+                    let hearer = line.origin.to_ascii_lowercase();
+                    for heard in HeardRecords::new(&line.payload) {
+                        if !(-95..=-20).contains(&heard.rssi) {
+                            continue;
+                        }
+                        let id = format!("{:08x}", heard.id);
+                        if id == hearer {
+                            continue;
+                        }
+                        links.push(LinkRow {
+                            hearer: hearer.clone(),
+                            heard: id,
+                            rssi: heard.rssi,
+                        });
+                    }
+                }
                 _ => {}
             }
         }
-        if rows.is_empty() && names.is_empty() {
+        if rows.is_empty() && names.is_empty() && links.is_empty() {
             return self.maybe_prune(now);
         }
-        self.insert(&rows, &names, now)
+        self.insert(&rows, &names, &links, now)
     }
 
     /// Record one poll from the host's own adapter.
@@ -276,16 +323,23 @@ impl Journal {
         if rows.is_empty() && names.is_empty() {
             return self.maybe_prune(now);
         }
-        self.insert(&rows, &names, now)
+        self.insert(&rows, &names, &[], now)
     }
 
-    fn insert(&mut self, rows: &[Row], names: &[NameRow], now: f64) -> anyhow::Result<()> {
+    fn insert(
+        &mut self,
+        rows: &[Row],
+        names: &[NameRow],
+        links: &[LinkRow],
+        now: f64,
+    ) -> anyhow::Result<()> {
         let mut kept = Vec::new();
         for row in rows {
             if accept(&mut self.last, row) {
                 kept.push(row);
             }
         }
+        let now_ms = ms(now);
         let tx = self.conn.transaction()?;
         for row in kept {
             tx.execute(
@@ -298,6 +352,24 @@ impl Journal {
                 "INSERT INTO names (addr, kind, name) VALUES (?1, ?2, ?3)
                  ON CONFLICT(addr, kind) DO UPDATE SET name = excluded.name",
                 params![name.addr, name.kind, name.name],
+            )?;
+        }
+        for link in links {
+            let recent = match tx.query_row(
+                "SELECT ts FROM links WHERE hearer = ?1 AND heard = ?2 ORDER BY ts DESC LIMIT 1",
+                params![link.hearer, link.heard],
+                |row| row.get::<_, i64>(0),
+            ) {
+                Ok(ts) => now_ms.saturating_sub(ts) < LINK_GAP_MS,
+                Err(rusqlite::Error::QueryReturnedNoRows) => false,
+                Err(err) => return Err(err.into()),
+            };
+            if recent {
+                continue;
+            }
+            tx.execute(
+                "INSERT INTO links (ts, hearer, heard, rssi) VALUES (?1, ?2, ?3, ?4)",
+                params![now_ms, link.hearer, link.heard, i64::from(link.rssi)],
             )?;
         }
         tx.commit()?;
@@ -321,6 +393,9 @@ impl Journal {
             )",
             [],
         )?;
+        let link_cutoff = now_ms.saturating_sub(DAY_MS);
+        self.conn
+            .execute("DELETE FROM links WHERE ts < ?1", params![link_cutoff])?;
         let fresh = now_ms.saturating_sub(REPEAT_MS);
         self.last.retain(|_, (ts, _)| *ts >= fresh);
         privatize(&self.path);
@@ -357,7 +432,9 @@ pub fn clear(path: &Path) -> anyhow::Result<()> {
     secure_delete(&conn)?;
     conn.execute_batch(SCHEMA)?;
     crate::cluster::ensure(&conn)?;
-    conn.execute_batch("DELETE FROM sightings; DELETE FROM names; DELETE FROM clusters;")?;
+    conn.execute_batch(
+        "DELETE FROM sightings; DELETE FROM names; DELETE FROM clusters; DELETE FROM links;",
+    )?;
     checkpoint_truncate(&conn)?;
     privatize(path);
     Ok(())
@@ -383,6 +460,8 @@ fn checkpoint_truncate(conn: &Connection) -> anyhow::Result<()> {
 }
 
 /// The document `GET /api/traffic` answers with. A missing log is an empty picture.
+/// Every node in the live map is drawn, including a camera leaf that has heard
+/// no device.
 pub fn picture(db: Option<&Path>, from_ms: i64, to_ms: i64) -> anyhow::Result<Value> {
     let layout = db.map(|path| read_layout(&path.with_file_name("layout.json")));
     let rooms = db.map(|path| read_rooms(&path.with_file_name("rooms.toml")));
@@ -481,6 +560,11 @@ pub fn picture(db: Option<&Path>, from_ms: i64, to_ms: i64) -> anyhow::Result<Va
     for id in rooms.keys() {
         node_ids.insert(id.clone(), ());
     }
+    if let Some(path) = db {
+        for id in read_node_ids(&path_of_map(path)) {
+            node_ids.insert(id, ());
+        }
+    }
     for (id, (parent, _)) in &links {
         if node_ids.contains_key(id) {
             node_ids.insert(parent.clone(), ());
@@ -505,6 +589,10 @@ pub fn picture(db: Option<&Path>, from_ms: i64, to_ms: i64) -> anyhow::Result<Va
         .iter()
         .map(|((from, to), count)| json!({"from": from, "to": to, "count": count}))
         .collect();
+    let ranges = match db {
+        Some(path) if path.is_file() => read_ranges(path, to_ms)?,
+        _ => Vec::new(),
+    };
     Ok(json!({
         "now": to_ms,
         "from": from_ms,
@@ -513,7 +601,154 @@ pub fn picture(db: Option<&Path>, from_ms: i64, to_ms: i64) -> anyhow::Result<Va
         "nodes": nodes,
         "tracks": tracks,
         "edges": edge_list,
+        "ranges": ranges,
     }))
+}
+
+/// A short track list for the agent socket. No samples and no addresses.
+/// A missing log is an empty list. `truncated` is set when the sample cap or
+/// `SUMMARY_CAP` dropped something.
+pub fn summary(db: Option<&Path>, from_ms: i64, to_ms: i64) -> anyhow::Result<Value> {
+    let keys = match db {
+        Some(path) => Keys::load(&path.with_file_name("irks.toml")).unwrap_or_else(|err| {
+            eprintln!("traffic: {err:#}");
+            Keys::default()
+        }),
+        None => Keys::default(),
+    };
+    let identities = match db {
+        Some(path) => {
+            Identities::load(&path.with_file_name("devices.toml")).unwrap_or_else(|err| {
+                eprintln!("traffic: {err:#}");
+                Identities::default()
+            })
+        }
+        None => Identities::default(),
+    };
+    let (samples, sample_truncated) = match db {
+        Some(path) if path.exists() => load_samples(path, from_ms, to_ms, &keys, &identities)?,
+        _ => (Vec::new(), false),
+    };
+    let mut grouped: BTreeMap<String, Group> = BTreeMap::new();
+    for sample in samples {
+        let group = grouped.entry(sample.key).or_insert_with(|| Group {
+            label: sample.label.clone(),
+            named: sample.named,
+            samples: Vec::new(),
+        });
+        if sample.named && !group.named {
+            group.label = sample.label;
+            group.named = true;
+        }
+        group.samples.push(Obs {
+            ts: sample.ts,
+            node: sample.node,
+            rssi: sample.rssi,
+        });
+    }
+    let mut tracks = Vec::new();
+    for (_, mut group) in grouped {
+        group.samples.sort_by_key(|sample| sample.ts);
+        let (class, stays) = segment(&group.samples, to_ms);
+        let Some(last) = stays.last() else {
+            continue;
+        };
+        tracks.push(json!({
+            "label": group.label,
+            "class": class,
+            "named": group.named,
+            "last_node": last.node,
+            "last_rssi": last.rssi,
+            "last_end": last.end,
+            "stay_count": stays.len(),
+        }));
+    }
+    tracks.sort_by(|left, right| {
+        let end = |value: &Value| value.get("last_end").and_then(Value::as_i64).unwrap_or(0);
+        end(right).cmp(&end(left))
+    });
+    let truncated = sample_truncated || tracks.len() > SUMMARY_CAP;
+    tracks.truncate(SUMMARY_CAP);
+    Ok(json!({
+        "now": to_ms,
+        "from": from_ms,
+        "to": to_ms,
+        "truncated": truncated,
+        "tracks": tracks,
+    }))
+}
+
+/// Addresses whose current label is `alias`, most recently heard first.
+/// The label is the same order as a summary track: an identity name, then an
+/// IRK name, then a name from the air, then the stable generated name.
+/// Comparison ignores ASCII case. A missing log is an empty list.
+pub fn addresses_for_alias(db: Option<&Path>, alias: &str) -> anyhow::Result<Value> {
+    let wanted = alias.trim();
+    let Some(path) = db.filter(|path| path.exists()) else {
+        return Ok(json!({"addrs": [], "truncated": false}));
+    };
+    if wanted.is_empty() {
+        return Ok(json!({"addrs": [], "truncated": false}));
+    }
+    let keys = Keys::load(&path.with_file_name("irks.toml")).unwrap_or_else(|err| {
+        eprintln!("traffic: {err:#}");
+        Keys::default()
+    });
+    let identities = Identities::load(&path.with_file_name("devices.toml")).unwrap_or_else(|err| {
+        eprintln!("traffic: {err:#}");
+        Identities::default()
+    });
+    let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .with_context(|| format!("open {}", path.display()))?;
+    conn.busy_timeout(Duration::from_secs(1))?;
+    let mut names = BTreeMap::new();
+    {
+        let mut name_stmt = conn.prepare("SELECT addr, kind, name FROM names")?;
+        let mut name_rows = name_stmt.query([])?;
+        while let Some(row) = name_rows.next()? {
+            let addr: String = row.get(0)?;
+            let kind: String = row.get(1)?;
+            let name: String = row.get(2)?;
+            names.insert(format!("{addr} {kind}"), name);
+        }
+    }
+    let clusters = crate::cluster::load(&conn).unwrap_or_default();
+    let faces = track_faces(&clusters, &names, &keys, &identities);
+    let mut seen: BTreeMap<(String, String), i64> = BTreeMap::new();
+    {
+        let mut stmt =
+            conn.prepare("SELECT addr, kind, MAX(ts) FROM sightings GROUP BY addr, kind")?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            seen.insert((row.get(0)?, row.get(1)?), row.get(2)?);
+        }
+    }
+    for group in clusters.groups() {
+        for addr in &group.members {
+            seen.entry((addr.clone(), group.kind.clone())).or_insert(0);
+        }
+    }
+    let mut best: BTreeMap<String, i64> = BTreeMap::new();
+    for ((addr, kind), last) in seen {
+        let label = match faces.get(&format!("{addr} {kind}")) {
+            Some(face) => face.label.clone(),
+            None => unclustered(&addr, &kind, &names, &keys, &identities).1,
+        };
+        if !label.eq_ignore_ascii_case(wanted) {
+            continue;
+        }
+        let slot = best.entry(addr).or_insert(last);
+        if last > *slot {
+            *slot = last;
+        }
+    }
+    let mut ranked: Vec<(i64, String)> =
+        best.into_iter().map(|(addr, last)| (last, addr)).collect();
+    ranked.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
+    let truncated = ranked.len() > ALIAS_CAP;
+    ranked.truncate(ALIAS_CAP);
+    let addrs: Vec<String> = ranked.into_iter().map(|(_, addr)| addr).collect();
+    Ok(json!({"addrs": addrs, "truncated": truncated}))
 }
 
 /// Write `data/mesh/layout.json`. `body` is the JSON object, and it must be only `nodes`.
@@ -857,6 +1092,24 @@ fn path_of_map(db: &Path) -> PathBuf {
     db.with_file_name("mesh-map.json")
 }
 
+/// Every node id in the live map. A leaf with no sighting is still drawn.
+fn read_node_ids(path: &Path) -> Vec<String> {
+    let Ok(text) = fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&text) else {
+        return Vec::new();
+    };
+    let Some(nodes) = value.get("nodes").and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    nodes
+        .keys()
+        .filter(|id| !id.is_empty())
+        .map(|id| id.to_ascii_lowercase())
+        .collect()
+}
+
 /// Parent id and the RSSI of that link, for the listeners this host has heard.
 fn read_links(path: &Path) -> BTreeMap<String, (String, i64)> {
     let Ok(text) = fs::read_to_string(path) else {
@@ -1044,6 +1297,80 @@ fn heard_ms(now: f64, age_s: u8) -> i64 {
         return 0;
     }
     (seconds * 1000.0).round() as i64
+}
+
+/// Undirected edges whose day of neighbour RSSI is long enough to trust.
+/// One direction is enough. Both directions use the mean of the two medians.
+fn read_ranges(path: &Path, to_ms: i64) -> anyhow::Result<Vec<Value>> {
+    let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .with_context(|| format!("open {}", path.display()))?;
+    conn.busy_timeout(Duration::from_secs(1))?;
+    let from_ms = to_ms.saturating_sub(DAY_MS);
+    let mut stmt =
+        conn.prepare("SELECT hearer, heard, rssi, ts FROM links WHERE ts >= ?1 AND ts <= ?2")?;
+    let mut rows = stmt.query(params![from_ms, to_ms])?;
+    struct Bucket {
+        rssi: Vec<i64>,
+        min_ts: i64,
+        max_ts: i64,
+    }
+    let mut dirs: BTreeMap<(String, String), Bucket> = BTreeMap::new();
+    while let Some(row) = rows.next()? {
+        let hearer: String = row.get(0)?;
+        let heard: String = row.get(1)?;
+        let rssi: i64 = row.get(2)?;
+        let ts: i64 = row.get(3)?;
+        let bucket = dirs.entry((hearer, heard)).or_insert_with(|| Bucket {
+            rssi: Vec::new(),
+            min_ts: ts,
+            max_ts: ts,
+        });
+        bucket.rssi.push(rssi);
+        bucket.min_ts = bucket.min_ts.min(ts);
+        bucket.max_ts = bucket.max_ts.max(ts);
+    }
+    let mut qualified: BTreeMap<(String, String), i64> = BTreeMap::new();
+    for (key, bucket) in &mut dirs {
+        let span = bucket.max_ts.saturating_sub(bucket.min_ts);
+        if bucket.rssi.len() >= LINK_MIN_SAMPLES && span >= LINK_MIN_SPAN_MS {
+            qualified.insert(key.clone(), median_rssi(&mut bucket.rssi));
+        }
+    }
+    let mut ranges = Vec::new();
+    let mut used = BTreeSet::new();
+    for (hearer, heard) in qualified.keys() {
+        let (a, b) = if hearer <= heard {
+            (hearer.clone(), heard.clone())
+        } else {
+            (heard.clone(), hearer.clone())
+        };
+        if !used.insert((a.clone(), b.clone())) {
+            continue;
+        }
+        let forward = qualified.get(&(a.clone(), b.clone())).copied();
+        let back = qualified.get(&(b.clone(), a.clone())).copied();
+        let Some(rssi) = (match (forward, back) {
+            (Some(left), Some(right)) if a != b => Some(left.saturating_add(right) / 2),
+            (Some(one), None) | (None, Some(one)) => Some(one),
+            _ => None,
+        }) else {
+            continue;
+        };
+        ranges.push(json!({"a": a, "b": b, "rssi": rssi}));
+    }
+    Ok(ranges)
+}
+
+/// Odd count takes the middle. Even count averages the two central samples and
+/// truncates toward zero, the same rule as the page.
+fn median_rssi(values: &mut [i64]) -> i64 {
+    values.sort_unstable();
+    let count = values.len();
+    if count % 2 == 1 {
+        values[count / 2]
+    } else {
+        values[count / 2 - 1].saturating_add(values[count / 2]) / 2
+    }
 }
 
 fn ms(now: f64) -> i64 {
@@ -1437,6 +1764,149 @@ mod tests {
         assert_eq!(empty["truncated"], json!(false));
     }
 
+    #[test]
+    fn week_is_not_a_page_window_and_the_summary_omits_samples_and_addresses() {
+        assert!(window(1_000, "week").is_none());
+        let (from, to) = week(RETAIN_MS + 5);
+        assert_eq!((from, to), (5, RETAIN_MS + 5));
+        let empty = summary(None, 0, 1).unwrap();
+        assert_eq!(empty["tracks"].as_array().unwrap().len(), 0);
+        assert_eq!(empty["truncated"], json!(false));
+        assert!(empty.get("samples").is_none());
+        assert!(empty.get("nodes").is_none());
+
+        let dir = scratch("summary");
+        let db = dir.join("traffic.db");
+        let mut journal = Journal::open(&db).unwrap();
+        let now = 1_700_000_000.0;
+        let addr = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x10];
+        journal
+            .note_batch(&named("aaaaaaaa", addr, -60, "Speaker"), now)
+            .unwrap();
+        journal
+            .note_batch(&named("bbbbbbbb", addr, -40, "Speaker"), now + 20.0)
+            .unwrap();
+        let drawn = summary(Some(&db), ms(now) - 1_000, ms(now + 20.0) + 1_000).unwrap();
+        let text = drawn.to_string();
+        assert!(!text.contains("samples"), "{text}");
+        assert!(!text.contains("AA:BB:CC:DD:EE:10"), "{text}");
+        let tracks = drawn["tracks"].as_array().unwrap();
+        assert_eq!(tracks.len(), 1, "{tracks:?}");
+        assert_eq!(tracks[0]["label"], json!("Speaker"));
+        assert_eq!(tracks[0]["named"], json!(true));
+        assert_eq!(tracks[0]["class"], json!("move"));
+        assert_eq!(tracks[0]["last_node"], json!("bbbbbbbb"));
+        assert_eq!(tracks[0]["last_rssi"], json!(-40));
+        assert!(tracks[0].get("addr").is_none());
+        assert!(tracks[0].get("id").is_none());
+        assert!(tracks[0]["stay_count"].as_u64().unwrap() >= 1);
+
+        for n in 0..65u16 {
+            let other = [(n >> 8) as u8, n as u8, 1, 2, 3, 4];
+            journal
+                .note_batch(&batch("aaaaaaaa", other, -70), now + f64::from(n))
+                .unwrap();
+        }
+        let capped = summary(Some(&db), ms(now) - 1_000, ms(now + 70.0) + 1_000).unwrap();
+        assert_eq!(capped["truncated"], json!(true));
+        assert_eq!(capped["tracks"].as_array().unwrap().len(), SUMMARY_CAP);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_alias_resolves_to_the_addresses_behind_its_label() {
+        let missing = addresses_for_alias(None, "Speaker").unwrap();
+        assert_eq!(missing["addrs"].as_array().unwrap().len(), 0);
+        assert_eq!(missing["truncated"], json!(false));
+
+        let dir = scratch("alias");
+        let db = dir.join("traffic.db");
+        let mut journal = Journal::open(&db).unwrap();
+        let now = 1_700_000_000.0;
+        let speaker = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x02];
+        let quiet = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x03];
+        journal
+            .note_batch(&named("aaaaaaaa", speaker, -50, "Speaker"), now)
+            .unwrap();
+        journal
+            .note_batch(&batch("aaaaaaaa", quiet, -70), now)
+            .unwrap();
+        let older = [0x11, 0x22, 0x33, 0x44, 0x55, 0x01];
+        let newer = [0x11, 0x22, 0x33, 0x44, 0x55, 0x02];
+        journal
+            .note_batch(&random_batch("aaaaaaaa", older, -60), now)
+            .unwrap();
+        journal
+            .note_batch(
+                &random_batch("aaaaaaaa", older, -60),
+                now + 15.0 * 60.0 - 60.0,
+            )
+            .unwrap();
+        journal
+            .note_batch(&random_batch("aaaaaaaa", older, -60), now + 15.0 * 60.0)
+            .unwrap();
+        journal
+            .note_batch(
+                &random_batch("aaaaaaaa", newer, -60),
+                now + 15.0 * 60.0 + 10.0,
+            )
+            .unwrap();
+        journal
+            .note_batch(
+                &random_batch("aaaaaaaa", newer, -60),
+                now + 15.0 * 60.0 + 70.0,
+            )
+            .unwrap();
+        journal
+            .note_batch(&random_batch("aaaaaaaa", newer, -60), now + 31.0 * 60.0)
+            .unwrap();
+        journal.reconcile_clusters().unwrap();
+        fs::write(
+            db.with_file_name("devices.toml"),
+            "[[device]]\nname = \"Phone\"\ntype = \"phone\"\naddresses = [\"11:22:33:44:55:01\"]\n",
+        )
+        .unwrap();
+
+        let found = addresses_for_alias(Some(&db), "speaker").unwrap();
+        assert_eq!(found["truncated"], json!(false));
+        assert_eq!(found["addrs"], json!(["AA:BB:CC:DD:EE:02"]));
+        let quiet_name = crate::cluster::cute_name("AA:BB:CC:DD:EE:03");
+        let quiet_found = addresses_for_alias(Some(&db), &quiet_name).unwrap();
+        assert_eq!(quiet_found["addrs"], json!(["AA:BB:CC:DD:EE:03"]));
+        let phone = addresses_for_alias(Some(&db), "Phone").unwrap();
+        let phone_addrs = phone["addrs"].as_array().unwrap();
+        assert_eq!(phone_addrs.len(), 2, "{phone}");
+        assert!(phone_addrs.contains(&json!("11:22:33:44:55:01")));
+        assert!(phone_addrs.contains(&json!("11:22:33:44:55:02")));
+        assert_eq!(phone_addrs[0], json!("11:22:33:44:55:02"));
+        let seed_name = crate::cluster::cute_name("11:22:33:44:55:01");
+        let hidden = addresses_for_alias(Some(&db), &seed_name).unwrap();
+        assert!(hidden["addrs"].as_array().unwrap().is_empty(), "{hidden}");
+        let unknown = addresses_for_alias(Some(&db), "No such alias").unwrap();
+        assert!(unknown["addrs"].as_array().unwrap().is_empty());
+
+        let crowd = scratch("alias-cap");
+        let crowd_db = crowd.join("traffic.db");
+        let mut journal = Journal::open(&crowd_db).unwrap();
+        for n in 0..65u8 {
+            let addr = [0x30, 0x00, 0x00, 0x00, 0x00, n];
+            journal
+                .note_batch(
+                    &named("aaaaaaaa", addr, -60, "Crowd"),
+                    now + f64::from(n) * 10.0,
+                )
+                .unwrap();
+        }
+        let capped = addresses_for_alias(Some(&crowd_db), "Crowd").unwrap();
+        assert_eq!(capped["truncated"], json!(true));
+        let capped_addrs = capped["addrs"].as_array().unwrap();
+        assert_eq!(capped_addrs.len(), ALIAS_CAP);
+        assert_eq!(capped_addrs[0], json!("30:00:00:00:00:40"));
+        assert!(!capped_addrs.contains(&json!("30:00:00:00:00:00")));
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&crowd);
+    }
+
     fn random_batch(node: &str, addr: [u8; 6], rssi: i8) -> Batch {
         Batch {
             node: node.to_string(),
@@ -1602,8 +2072,10 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .find(|node| node["id"] == "bbbbbbbb");
-        assert!(hall.is_none(), "a node with no sighting is not invented");
+            .find(|node| node["id"] == "bbbbbbbb")
+            .unwrap();
+        assert_eq!(hall["parent"], json!("aaaaaaaa"));
+        assert_eq!(hall["parent_rssi"], json!(-55));
         journal
             .note_batch(&random_batch("bbbbbbbb", newer, -50), now + 31.0 * 60.0)
             .unwrap();
@@ -1616,6 +2088,99 @@ mod tests {
             .unwrap();
         assert_eq!(hall["parent"], json!("aaaaaaaa"));
         assert_eq!(hall["parent_rssi"], json!(-55));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn link_count(path: &Path) -> i64 {
+        let conn = Connection::open(path).unwrap();
+        conn.query_row("SELECT COUNT(*) FROM links", [], |row| row.get(0))
+            .unwrap()
+    }
+
+    fn neighbour_line(hearer: &str, heard: u32, rssi: i8) -> String {
+        let mut payload = heard.to_le_bytes().to_vec();
+        payload.push(rssi as u8);
+        let hex: String = payload.iter().map(|byte| format!("{byte:02x}")).collect();
+        format!("@U 15 {hearer} 1 1 0 0 {hex}")
+    }
+
+    #[test]
+    fn a_neighbour_report_is_stored_once_a_minute() {
+        let dir = scratch("links-minute");
+        let db = dir.join("traffic.db");
+        let mut journal = Journal::open(&db).unwrap();
+        let now = 1_700_000_000.0;
+        let line = neighbour_line("eeeeeeee", 0xffff_ffff, -70);
+        journal
+            .note_lines(std::slice::from_ref(&line), now)
+            .unwrap();
+        journal
+            .note_lines(std::slice::from_ref(&line), now + 30.0)
+            .unwrap();
+        journal
+            .note_lines(
+                &[
+                    neighbour_line("eeeeeeee", 0xffff_ffff, -10),
+                    neighbour_line("eeeeeeee", 0xffff_ffff, -100),
+                    neighbour_line("eeeeeeee", 0xeeee_eeee, -70),
+                ],
+                now + 31.0,
+            )
+            .unwrap();
+        assert_eq!(link_count(&db), 1);
+        journal.note_lines(&[line], now + 61.0).unwrap();
+        assert_eq!(link_count(&db), 2);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_day_of_neighbour_rssi_is_a_range_and_a_short_span_is_not() {
+        let dir = scratch("links-range");
+        let db = dir.join("traffic.db");
+        let mut journal = Journal::open(&db).unwrap();
+        let start = 1_700_000_000.0;
+        for step in 0..31 {
+            let rssi = if step == 10 { -40 } else { -70 };
+            journal
+                .note_lines(
+                    &[neighbour_line("aaaaaaaa", 0xbbbb_bbbb, rssi)],
+                    start + f64::from(step) * 120.0,
+                )
+                .unwrap();
+            journal
+                .note_lines(
+                    &[neighbour_line("bbbbbbbb", 0xaaaa_aaaa, -80)],
+                    start + f64::from(step) * 120.0,
+                )
+                .unwrap();
+            journal
+                .note_lines(
+                    &[neighbour_line("eeeeeeee", 0xffff_ffff, -65)],
+                    start + f64::from(step) * 120.0,
+                )
+                .unwrap();
+        }
+        for step in 0..30 {
+            journal
+                .note_lines(
+                    &[neighbour_line("cccccccc", 0xdddd_dddd, -60)],
+                    start + f64::from(step) * 61.0,
+                )
+                .unwrap();
+        }
+        let end = ms(start + 30.0 * 120.0);
+        let drawn = picture(Some(&db), 0, end).unwrap();
+        let ranges = drawn["ranges"].as_array().unwrap();
+        assert_eq!(ranges.len(), 2, "{ranges:?}");
+        assert_eq!(ranges[0]["a"], json!("aaaaaaaa"));
+        assert_eq!(ranges[0]["b"], json!("bbbbbbbb"));
+        assert_eq!(ranges[0]["rssi"], json!(-75));
+        assert_eq!(ranges[1]["a"], json!("eeeeeeee"));
+        assert_eq!(ranges[1]["b"], json!("ffffffff"));
+        assert_eq!(ranges[1]["rssi"], json!(-65));
+        clear(&db).unwrap();
+        let cleared = picture(Some(&db), 0, end).unwrap();
+        assert_eq!(cleared["ranges"].as_array().unwrap().len(), 0);
         let _ = fs::remove_dir_all(&dir);
     }
 }

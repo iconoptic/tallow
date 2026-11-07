@@ -355,6 +355,85 @@ new Function("document", "fetch", "setInterval", "confirm", "vis", script)(
     assert.ok(Math.hypot(x - 500, y - 448) < 10, `${x},${y}`);
   });
 
+  const spikeListeners = [
+    { x: 0.1, y: 0.1 },
+    { x: 0.9, y: 0.1 },
+    { x: 0.5, y: 0.9 },
+  ];
+  const spikeDevice = { x: 0.3, y: 0.3 };
+  answer = placed(spikeListeners, spikeDevice);
+  const spikeTrack = answer.tracks[0];
+  spikeTrack.id = "spike";
+  const calm = spikeTrack.samples[0].rssi;
+  spikeTrack.samples = [
+    { t: answer.to - 10_000, node: "n0", rssi: calm },
+    { t: answer.to - 5_000, node: "n0", rssi: calm },
+    { t: answer.to, node: "n0", rssi: calm + 15 },
+    ...spikeTrack.samples.slice(1),
+  ];
+  await ids["win-live"].listeners.click[0]();
+  await settle();
+  check("a fresh spike does not pull the dot off the median", () => {
+    const dot = trackDot();
+    assert.ok(dot, "no dot");
+    const x = Number(dot.attrs.cx);
+    const y = Number(dot.attrs.cy);
+    assert.ok(Math.hypot(x - 300, y - 192) < 10, `${x},${y}`);
+  });
+
+  const lineDevice = { x: 0.3, y: 0.2 };
+  answer = placed(
+    [
+      { x: 0.1, y: 0.5 },
+      { x: 0.5, y: 0.5 },
+      { x: 0.9, y: 0.5 },
+    ],
+    lineDevice,
+  );
+  answer.tracks[0].id = "line";
+  // Places stick to the first coordinates seen for an id. These listeners are a new row.
+  answer.nodes.forEach((node, index) => {
+    const next = "c" + index;
+    answer.tracks[0].samples.forEach((sample) => {
+      if (sample.node === node.id) sample.node = next;
+    });
+    answer.tracks[0].stays.forEach((stay) => {
+      if (stay.node === node.id) stay.node = next;
+    });
+    node.id = next;
+    node.label = next;
+  });
+  await ids["win-live"].listeners.click[0]();
+  await settle();
+  check("collinear listeners keep the dot on the segment", () => {
+    const dot = trackDot();
+    assert.ok(dot, "no dot");
+    const x = Number(dot.attrs.cx);
+    const y = Number(dot.attrs.cy);
+    assert.ok(Math.hypot(x - 300, y - 320) < 10, `${x},${y}`);
+  });
+
+  const square = [
+    { x: 0.1, y: 0.1 },
+    { x: 0.9, y: 0.1 },
+    { x: 0.5, y: 0.9 },
+    { x: 0.1, y: 0.9 },
+  ];
+  const squareDevice = { x: 0.5, y: 0.7 };
+  answer = placed(square, squareDevice);
+  answer.tracks[0].id = "outlier";
+  const stray = answer.tracks[0].samples[3];
+  stray.rssi -= 20;
+  await ids["win-live"].listeners.click[0]();
+  await settle();
+  check("one bad listener is left out of the fix", () => {
+    const dot = trackDot();
+    assert.ok(dot, "no dot");
+    const x = Number(dot.attrs.cx);
+    const y = Number(dot.attrs.cy);
+    assert.ok(Math.hypot(x - 500, y - 448) < 10, `${x},${y}`);
+  });
+
   const firstTo = NOW + 60_000;
   answer = {
     now: firstTo,
@@ -431,6 +510,102 @@ new Function("document", "fetch", "setInterval", "confirm", "vis", script)(
   await settle();
   check("a failed clear says the log was not cleared", () => {
     assert.equal(ids.error.textContent, "The log was not cleared.");
+  });
+
+  function nodeAt(id) {
+    const circle = ids.map.children.find((child) => child.attrs && child.attrs["data-node"] === id);
+    assert.ok(circle, id);
+    return { x: Number(circle.attrs.cx), y: Number(circle.attrs.cy) };
+  }
+
+  function linkRssi(a, b) {
+    const distance = Math.hypot(a.x - b.x, (a.y - b.y) * 0.64);
+    return -45 - 27 * Math.log10(distance);
+  }
+
+  const cornerA = { x: 0.2, y: 0.25 };
+  const cornerB = { x: 0.5, y: 0.25 };
+  const cornerC = { x: 0.2, y: 0.875 };
+  answer = {
+    now: NOW,
+    from: NOW - 60_000,
+    to: NOW,
+    truncated: false,
+    nodes: [
+      { id: "s0", label: "s0", x: cornerA.x, y: cornerA.y },
+      { id: "s1", label: "s1", x: cornerB.x, y: cornerB.y },
+      { id: "s2", label: "s2", x: 0.45, y: 0.45 },
+    ],
+    tracks: [],
+    edges: [],
+    ranges: [
+      { a: "s0", b: "s1", rssi: linkRssi(cornerA, cornerB) },
+      { a: "s0", b: "s2", rssi: linkRssi(cornerA, cornerC) },
+      { a: "s1", b: "s2", rssi: linkRssi(cornerB, cornerC) },
+    ],
+  };
+  await ids["win-live"].listeners.click[0]();
+  await settle();
+  check("a ranged triangle pulls a node onto the model", () => {
+    const at = nodeAt("s2");
+    assert.ok(Math.hypot(at.x - 200, at.y - 560) < 10, `${at.x},${at.y}`);
+    assert.ok(Math.hypot(nodeAt("s0").x - 200, nodeAt("s0").y - 160) < 1);
+    assert.ok(Math.hypot(nodeAt("s1").x - 500, nodeAt("s1").y - 160) < 1);
+  });
+
+  answer = {
+    now: NOW,
+    from: NOW - 60_000,
+    to: NOW,
+    truncated: false,
+    nodes: [
+      { id: "t0", label: "t0", x: 0.2, y: 0.4 },
+      { id: "t1", label: "t1", x: 0.5, y: 0.4 },
+      { id: "t2", label: "t2", x: 0.8, y: 0.8 },
+    ],
+    tracks: [],
+    edges: [],
+    ranges: [
+      { a: "t0", b: "t1", rssi: -55 },
+      { a: "t1", b: "t2", rssi: -75 },
+    ],
+  };
+  await ids["win-live"].listeners.click[0]();
+  await settle();
+  check("a chain of three stays on the drag", () => {
+    const end = nodeAt("t2");
+    assert.ok(Math.abs(end.x - 800) < 1 && Math.abs(end.y - 512) < 1, `${end.x},${end.y}`);
+    assert.ok(Math.abs(nodeAt("t0").x - 200) < 1);
+  });
+
+  const spare = { x: 0.5, y: 0.875 };
+  answer = {
+    now: NOW,
+    from: NOW - 60_000,
+    to: NOW,
+    truncated: false,
+    nodes: [
+      { id: "u0", label: "u0", x: cornerA.x, y: cornerA.y },
+      { id: "u1", label: "u1", x: cornerB.x, y: cornerB.y },
+      { id: "u2", label: "u2", x: cornerC.x, y: cornerC.y },
+      { id: "u3", label: "u3", x: spare.x, y: spare.y },
+    ],
+    tracks: [],
+    edges: [],
+    ranges: [
+      { a: "u0", b: "u1", rssi: linkRssi(cornerA, cornerB) },
+      { a: "u0", b: "u2", rssi: linkRssi(cornerA, cornerC) },
+      { a: "u1", b: "u2", rssi: linkRssi(cornerB, cornerC) },
+      { a: "u0", b: "u3", rssi: linkRssi(cornerA, spare) - 20 },
+    ],
+  };
+  await ids["win-live"].listeners.click[0]();
+  await settle();
+  check("one bad edge does not pull the other nodes", () => {
+    const at = nodeAt("u2");
+    assert.ok(Math.hypot(at.x - 200, at.y - 560) < 10, `${at.x},${at.y}`);
+    assert.ok(Math.hypot(nodeAt("u0").x - 200, nodeAt("u0").y - 160) < 1);
+    assert.ok(Math.hypot(nodeAt("u1").x - 500, nodeAt("u1").y - 160) < 1);
   });
 })().catch((error) => {
   console.error(error);

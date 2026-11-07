@@ -58,7 +58,10 @@ let windowName = "live";
 let scrub = null;
 let following = true;
 let places = {};
+let anchors = {};
+let lastFix = {};
 let drag = null;
+let dragAt = null;
 let timeline = null;
 let itemSet = null;
 let groupSet = null;
@@ -109,20 +112,32 @@ function stayAt(track, time) {
   return found;
 }
 
-function ensurePlaces(nodes) {
+function ensureAnchors(nodes) {
   nodes.forEach((node, index) => {
-    if (places[node.id]) return;
+    if (anchors[node.id]) return;
     if (typeof node.x === "number" && typeof node.y === "number") {
-      places[node.id] = { x: node.x, y: node.y };
+      anchors[node.id] = { x: node.x, y: node.y };
       return;
     }
     const angle = -Math.PI / 2 + (index / Math.max(nodes.length, 1)) * Math.PI * 2;
-    places[node.id] = { x: clamp(0.5 + Math.cos(angle) * 0.34), y: clamp(0.5 + Math.sin(angle) * 0.34) };
+    anchors[node.id] = { x: clamp(0.5 + Math.cos(angle) * 0.34), y: clamp(0.5 + Math.sin(angle) * 0.34) };
   });
 }
 
 const FRESH_MS = 60000;
+const WARM_MS = 20000;
+const THIN_AREA = 0.01;
+const OUTLIER_DB = 8;
 const LN10 = Math.LN10;
+
+// Same rule as the firmware: odd count takes the middle, even count averages the
+// two central samples and truncates toward zero.
+function medianRssi(values) {
+  const sorted = values.slice().sort((a, b) => a - b);
+  const count = sorted.length;
+  if (count % 2 === 1) return sorted[(count - 1) / 2];
+  return Math.trunc((sorted[count / 2 - 1] + sorted[count / 2]) / 2);
+}
 
 function readingsAt(track, time) {
   const by = {};
@@ -130,10 +145,13 @@ function readingsAt(track, time) {
     if (typeof sample.t !== "number" || typeof sample.rssi !== "number" || !sample.node) return;
     if (sample.t > time || time - sample.t > FRESH_MS) return;
     if (sample.rssi <= -100 || sample.rssi === -127) return;
-    const prev = by[sample.node];
-    if (!prev || sample.t >= prev.t) by[sample.node] = sample;
+    if (!by[sample.node]) by[sample.node] = [];
+    by[sample.node].push(sample);
   });
-  const list = Object.keys(by).map((id) => ({ id: id, rssi: by[id].rssi }));
+  const list = Object.keys(by).map((id) => {
+    const recent = by[id].sort((a, b) => a.t - b.t).slice(-3);
+    return { id: id, rssi: medianRssi(recent.map((sample) => sample.rssi)) };
+  });
   if (list.length) return list;
   const stay = stayAt(track, time);
   if (!stay || typeof stay.rssi !== "number" || stay.rssi <= -100 || stay.rssi === -127) return [];
@@ -198,72 +216,98 @@ function section(p1, p2, n) {
   return storedPoint({ x: (a.x + ratio * b.x) / denom, y: (a.y + ratio * b.y) / denom });
 }
 
-function solve3(a00, a01, a02, a11, a12, a22, b0, b1, b2) {
-  const m = [
-    [a00, a01, a02, b0],
-    [a01, a11, a12, b1],
-    [a02, a12, a22, b2],
-  ];
-  for (let col = 0; col < 3; col++) {
-    let pivot = col;
-    for (let row = col + 1; row < 3; row++) {
-      if (Math.abs(m[row][col]) > Math.abs(m[pivot][col])) pivot = row;
-    }
-    if (Math.abs(m[pivot][col]) < 1e-12) return null;
-    const swap = m[col];
-    m[col] = m[pivot];
-    m[pivot] = swap;
-    const div = m[col][col];
-    for (let k = col; k < 4; k++) m[col][k] /= div;
-    for (let row = 0; row < 3; row++) {
-      if (row === col) continue;
-      const factor = m[row][col];
-      for (let k = col; k < 4; k++) m[row][k] -= factor * m[col][k];
-    }
-  }
-  return [m[0][3], m[1][3], m[2][3]];
+function solve2(a00, a01, a11, b0, b1) {
+  const det = a00 * a11 - a01 * a01;
+  if (Math.abs(det) < 1e-12) return null;
+  return [(b0 * a11 - a01 * b1) / det, (a00 * b1 - a01 * b0) / det];
 }
 
-function solvePlane(readings, n) {
+function triangleArea(a, b, c) {
+  const p = proportion(a);
+  const q = proportion(b);
+  const r = proportion(c);
+  return Math.abs(p.x * (q.y - r.y) + q.x * (r.y - p.y) + r.x * (p.y - q.y)) / 2;
+}
+
+function thin(loud) {
+  return loud.length < 3 || triangleArea(loud[0], loud[1], loud[2]) < THIN_AREA;
+}
+
+function distanceAt(at, node) {
+  const point = proportion(node);
+  const dist = Math.hypot(at.x - point.x, at.y - point.y);
+  return dist < 0.02 ? 0.02 : dist;
+}
+
+// How far each reading sits from one transmit level. The level is the median
+// implied by the readings, so one wild RSSI is the one that stands out.
+function worstOff(readings, spot, n) {
+  const at = proportion(spot);
+  const rows = readings.map((node) => {
+    const dist = distanceAt(at, node);
+    return { node: node, tx: node.rssi + 10 * n * Math.log10(dist) };
+  });
+  const levels = rows.map((row) => row.tx).sort((a, b) => a - b);
+  const mid = levels.length % 2 === 1
+    ? levels[(levels.length - 1) / 2]
+    : (levels[levels.length / 2 - 1] + levels[levels.length / 2]) / 2;
+  let worst = null;
+  rows.forEach((row) => {
+    const db = Math.abs(row.tx - mid);
+    if (!worst || db > worst.db) worst = { node: row.node, db: db };
+  });
+  return worst;
+}
+
+function solvePlane(readings, n, startStored) {
   const scaled = readings.map(proportion);
-  const loud = readings.slice().sort((a, b) => b.rssi - a.rssi);
-  const start = proportion(section(loud[0], loud[1], n));
-  let x = start.x;
-  let y = start.y;
-  let tx = loud[0].rssi + 10 * n * Math.log10(0.15);
+  let loudIndex = 0;
+  scaled.forEach((node, index) => {
+    if (node.rssi > scaled[loudIndex].rssi) loudIndex = index;
+  });
+  const loud = scaled[loudIndex];
+  let x;
+  let y;
+  if (startStored && isFinite(startStored.x) && isFinite(startStored.y)) {
+    const warm = proportion(startStored);
+    x = warm.x;
+    y = warm.y;
+  } else {
+    const ordered = readings.slice().sort((a, b) => b.rssi - a.rssi);
+    const start = proportion(section(ordered[0], ordered[1], n));
+    x = start.x;
+    y = start.y;
+  }
   for (let iter = 0; iter < 8; iter++) {
+    let loudDx = x - loud.x;
+    let loudDy = y - loud.y;
+    let dLoud = Math.hypot(loudDx, loudDy);
+    if (dLoud < 0.02) dLoud = 0.02;
     let a00 = 0;
     let a01 = 0;
-    let a02 = 0;
     let a11 = 0;
-    let a12 = 0;
-    let a22 = 0;
     let b0 = 0;
     let b1 = 0;
-    let b2 = 0;
-    for (const node of scaled) {
+    for (let index = 0; index < scaled.length; index++) {
+      if (index === loudIndex) continue;
+      const node = scaled[index];
       let dx = x - node.x;
       let dy = y - node.y;
       let dist = Math.hypot(dx, dy);
       if (dist < 0.02) dist = 0.02;
-      const predicted = tx - 10 * n * Math.log10(dist);
-      const residual = node.rssi - predicted;
-      const scale = -10 * n / (dist * dist * LN10);
-      const jx = -scale * dx;
-      const jy = -scale * dy;
-      const jt = -1;
+      // r = (rssi - rssi_loud) + 10·n·log10(d / d_loud). Transmit power cancels.
+      const residual = (node.rssi - loud.rssi) + 10 * n * Math.log10(dist / dLoud);
+      const scale = (10 * n) / LN10;
+      const jx = scale * (dx / (dist * dist) - loudDx / (dLoud * dLoud));
+      const jy = scale * (dy / (dist * dist) - loudDy / (dLoud * dLoud));
       a00 += jx * jx;
       a01 += jx * jy;
-      a02 += jx * jt;
       a11 += jy * jy;
-      a12 += jy * jt;
-      a22 += jt * jt;
-      // J is the Jacobian of residual = rssi - predicted, so JᵀJ·δ = −Jᵀr.
+      // J is ∂r/∂(x, y), so JᵀJ·δ = −Jᵀr.
       b0 -= jx * residual;
       b1 -= jy * residual;
-      b2 -= jt * residual;
     }
-    const delta = solve3(a00, a01, a02, a11, a12, a22, b0, b1, b2);
+    const delta = solve2(a00, a01, a11, b0, b1);
     if (!delta) return null;
     let stepX = delta[0];
     let stepY = delta[1];
@@ -274,8 +318,7 @@ function solvePlane(readings, n) {
     }
     x += stepX;
     y += stepY;
-    tx += delta[2];
-    if (!isFinite(x) || !isFinite(y) || !isFinite(tx)) return null;
+    if (!isFinite(x) || !isFinite(y)) return null;
   }
   const back = storedPoint({ x: x, y: y });
   if (back.x < -0.25 || back.x > 1.25 || back.y < -0.25 || back.y > 1.25) return null;
@@ -297,13 +340,276 @@ function placeTrack(track, pos, n, index) {
     rssi: reading.rssi,
   }));
   const loud = layout.slice().sort((a, b) => b.rssi - a.rssi);
-  const spot = layout.length === 2 ? section(layout[0], layout[1], n) : (solvePlane(layout, n) || section(loud[0], loud[1], n));
+  let spot;
+  if (layout.length === 2 || thin(loud)) {
+    spot = section(loud[0], loud[1], n);
+  } else {
+    const prior = track.id && lastFix[track.id];
+    const warm = prior && Math.abs(scrub - prior.t) < WARM_MS ? prior : null;
+    const solved = solvePlane(layout, n, warm);
+    spot = solved || section(loud[0], loud[1], n);
+    // A bad reading pulls the fix, and at that pulled spot the honest node is
+    // the one that looks wrong. Try each listener left out, and keep the set
+    // whose own fix agrees within OUTLIER_DB.
+    if (solved && layout.length >= 4 && worstOff(layout, solved, n).db > OUTLIER_DB) {
+      let best = null;
+      layout.forEach((candidate) => {
+        const rest = layout.filter((node) => node !== candidate);
+        const restLoud = rest.slice().sort((a, b) => b.rssi - a.rssi);
+        if (rest.length < 3 || thin(restLoud)) return;
+        const again = solvePlane(rest, n, null);
+        if (!again) return;
+        const spread = worstOff(rest, again, n).db;
+        if (!best || spread < best.spread) best = { spot: again, spread: spread };
+      });
+      if (best && best.spread <= OUTLIER_DB) spot = best.spot;
+    }
+  }
+  if (track.id) lastFix[track.id] = { x: spot.x, y: spot.y, t: scrub };
   return { x: spot.x * 1000, y: spot.y * 640 };
+}
+
+function rawDistance(a, b) {
+  const from = proportion(a);
+  const to = proportion(b);
+  return Math.hypot(from.x - to.x, from.y - to.y);
+}
+
+function rangeEdges(ranges) {
+  const byKey = {};
+  (ranges || []).forEach((range) => {
+    if (!range || typeof range.rssi !== "number" || !isFinite(range.rssi)) return;
+    const left = range.a;
+    const right = range.b;
+    if (!left || !right || left === right || !anchors[left] || !anchors[right]) return;
+    const a = left < right ? left : right;
+    const b = left < right ? right : left;
+    const key = a + "\0" + b;
+    if (!byKey[key]) byKey[key] = { a: a, b: b, rssi: range.rssi };
+  });
+  return Object.keys(byKey).map((key) => byKey[key]);
+}
+
+function rangeComponents(edges) {
+  const ids = {};
+  edges.forEach((edge) => {
+    ids[edge.a] = true;
+    ids[edge.b] = true;
+  });
+  const seen = {};
+  const found = [];
+  Object.keys(ids).forEach((start) => {
+    if (seen[start]) return;
+    const members = [];
+    const queue = [start];
+    seen[start] = true;
+    while (queue.length) {
+      const id = queue.pop();
+      members.push(id);
+      edges.forEach((edge) => {
+        const other = edge.a === id ? edge.b : edge.b === id ? edge.a : null;
+        if (other && !seen[other]) {
+          seen[other] = true;
+          queue.push(other);
+        }
+      });
+    }
+    const member = {};
+    members.forEach((id) => { member[id] = true; });
+    const local = edges.filter((edge) => member[edge.a] && member[edge.b]);
+    if (local.length >= members.length) found.push({ members: members, edges: local });
+  });
+  return found;
+}
+
+function zeroRows(n) {
+  const rows = [];
+  for (let row = 0; row < n; row++) {
+    const line = [];
+    for (let col = 0; col < n; col++) line.push(0);
+    rows.push(line);
+  }
+  return rows;
+}
+
+function solveLinear(matrix, vector) {
+  const n = vector.length;
+  const a = matrix.map((row, index) => row.concat([vector[index]]));
+  for (let col = 0; col < n; col++) {
+    let pivot = col;
+    for (let row = col + 1; row < n; row++) {
+      if (Math.abs(a[row][col]) > Math.abs(a[pivot][col])) pivot = row;
+    }
+    if (Math.abs(a[pivot][col]) < 1e-12) return null;
+    const swap = a[col];
+    a[col] = a[pivot];
+    a[pivot] = swap;
+    const div = a[col][col];
+    for (let k = col; k <= n; k++) a[col][k] /= div;
+    for (let row = 0; row < n; row++) {
+      if (row === col) continue;
+      const factor = a[row][col];
+      for (let k = col; k <= n; k++) a[row][k] -= factor * a[col][k];
+    }
+  }
+  return a.map((row) => row[n]);
+}
+
+function edgeResidual(edge, ruler, at, n) {
+  const left = at[edge.a] || anchors[edge.a];
+  const right = at[edge.b] || anchors[edge.b];
+  let dist = rawDistance(left, right);
+  let ref = rawDistance(anchors[ruler.a], anchors[ruler.b]);
+  if (dist < 0.02) dist = 0.02;
+  if (ref < 0.02) ref = 0.02;
+  return (edge.rssi - ruler.rssi) + 10 * n * Math.log10(dist / ref);
+}
+
+// Pin the loudest edge and move the other nodes so each remaining edge matches
+// d / d_ruler = 10^((rssi_ruler - rssi) / (10·n)). n is searched, not taken from the sketch.
+function relaxRanges(free, edges, ruler, n) {
+  const index = {};
+  free.forEach((id, i) => { index[id] = i; });
+  const dim = free.length * 2;
+  if (!dim) return null;
+  const x = [];
+  free.forEach((id) => {
+    const p = proportion(anchors[id]);
+    x.push(p.x, p.y);
+  });
+  const pin = {};
+  pin[ruler.a] = proportion(anchors[ruler.a]);
+  pin[ruler.b] = proportion(anchors[ruler.b]);
+  let dRef = Math.hypot(pin[ruler.a].x - pin[ruler.b].x, pin[ruler.a].y - pin[ruler.b].y);
+  if (dRef < 0.02) dRef = 0.02;
+  const scale = (10 * n) / LN10;
+  function coord(id) {
+    if (pin[id]) return pin[id];
+    const i = index[id];
+    return { x: x[2 * i], y: x[2 * i + 1] };
+  }
+  for (let iter = 0; iter < 8; iter++) {
+    const matrix = zeroRows(dim);
+    const vector = [];
+    for (let i = 0; i < dim; i++) vector.push(0);
+    edges.forEach((edge) => {
+      if (edge === ruler) return;
+      const p = coord(edge.a);
+      const q = coord(edge.b);
+      const dx = p.x - q.x;
+      const dy = p.y - q.y;
+      let dist = Math.hypot(dx, dy);
+      if (dist < 0.02) dist = 0.02;
+      const residual = (edge.rssi - ruler.rssi) + 10 * n * Math.log10(dist / dRef);
+      const jx = scale * dx / (dist * dist);
+      const jy = scale * dy / (dist * dist);
+      const cols = [];
+      if (index[edge.a] !== undefined) {
+        cols.push([2 * index[edge.a], jx]);
+        cols.push([2 * index[edge.a] + 1, jy]);
+      }
+      if (index[edge.b] !== undefined) {
+        cols.push([2 * index[edge.b], -jx]);
+        cols.push([2 * index[edge.b] + 1, -jy]);
+      }
+      cols.forEach((col) => {
+        vector[col[0]] -= col[1] * residual;
+        cols.forEach((other) => {
+          matrix[col[0]][other[0]] += col[1] * other[1];
+        });
+      });
+    });
+    const delta = solveLinear(matrix, vector);
+    if (!delta) return null;
+    let step = 0;
+    delta.forEach((value) => { step += value * value; });
+    step = Math.sqrt(step);
+    const cap = step > 0.5 ? 0.5 / step : 1;
+    for (let i = 0; i < dim; i++) {
+      x[i] += delta[i] * cap;
+      if (!isFinite(x[i])) return null;
+    }
+  }
+  const at = {};
+  for (let i = 0; i < free.length; i++) {
+    const stored = storedPoint({ x: x[2 * i], y: x[2 * i + 1] });
+    if (!isFinite(stored.x) || !isFinite(stored.y)) return null;
+    if (stored.x < -0.25 || stored.x > 1.25 || stored.y < -0.25 || stored.y > 1.25) return null;
+    at[free[i]] = stored;
+  }
+  let abs = 0;
+  let count = 0;
+  edges.forEach((edge) => {
+    if (edge === ruler) return;
+    abs += Math.abs(edgeResidual(edge, ruler, at, n));
+    count += 1;
+  });
+  if (!count) return null;
+  return { at: at, mean: abs / count };
+}
+
+function solveComponent(members, edges) {
+  let ruler = edges[0];
+  edges.forEach((edge) => {
+    if (edge.rssi > ruler.rssi) ruler = edge;
+  });
+  if (rawDistance(anchors[ruler.a], anchors[ruler.b]) < 0.02) return null;
+  const free = members.filter((id) => id !== ruler.a && id !== ruler.b);
+  if (!free.length) return null;
+  let best = null;
+  for (let step = 15; step <= 45; step++) {
+    const n = step / 10;
+    const solved = relaxRanges(free, edges, ruler, n);
+    if (!solved) continue;
+    // A triangle fits every n, so a tie keeps the house default, 2.7.
+    const closer = best && Math.abs(solved.mean - best.mean) <= 0.05 && Math.abs(n - 2.7) < Math.abs(best.n - 2.7);
+    if (!best || solved.mean < best.mean - 0.05 || closer) {
+      best = { at: solved.at, n: n, mean: solved.mean };
+    }
+  }
+  if (!best) return null;
+  if (edges.length >= 4) {
+    let worst = null;
+    edges.forEach((edge) => {
+      if (edge === ruler) return;
+      const db = Math.abs(edgeResidual(edge, ruler, best.at, best.n));
+      if (!worst || db > worst.db) worst = { edge: edge, db: db };
+    });
+    if (worst && worst.db > OUTLIER_DB) {
+      const rest = edges.filter((edge) => edge !== worst.edge);
+      const again = relaxRanges(free, rest, ruler, best.n);
+      if (again) return { at: again.at, n: best.n, edges: edges.length };
+    }
+  }
+  return { at: best.at, n: best.n, edges: edges.length };
+}
+
+function placeNodes(ranges) {
+  const parts = rangeComponents(rangeEdges(ranges));
+  const fits = [];
+  parts.forEach((part) => {
+    const fit = solveComponent(part.members, part.edges);
+    if (fit) fits.push(fit);
+  });
+  if (!fits.length) return null;
+  fits.sort((left, right) => right.edges - left.edges);
+  const at = {};
+  fits.forEach((fit) => {
+    Object.keys(fit.at).forEach((id) => { at[id] = fit.at[id]; });
+  });
+  return { at: at, n: fits[0].n };
 }
 
 function drawMap() {
   const nodes = payload && payload.nodes || [];
-  ensurePlaces(nodes);
+  ensureAnchors(nodes);
+  const fit = placeNodes(payload && payload.ranges);
+  const shown = {};
+  nodes.forEach((node) => {
+    shown[node.id] = (fit && fit.at[node.id]) || anchors[node.id];
+  });
+  if (drag && dragAt && anchors[drag]) shown[drag] = dragAt;
+  places = shown;
   const pos = {};
   mapEl.replaceChildren();
   nodes.forEach((node) => {
@@ -346,7 +652,7 @@ function drawMap() {
     text.textContent = node.label || node.id;
     mapEl.append(text);
   });
-  const n = exponent(nodes);
+  const n = fit ? fit.n : exponent(nodes);
   shownTracks().forEach((track, index) => {
     const at = placeTrack(track, pos, n, index);
     if (!at) return;
@@ -368,19 +674,21 @@ function onMove(event) {
   if (!drag) return;
   const rect = mapEl.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
-  places[drag] = {
+  dragAt = {
     x: clamp((event.clientX - rect.left) / rect.width),
     y: clamp((event.clientY - rect.top) / rect.height),
   };
+  anchors[drag] = dragAt;
   drawMap();
 }
 
 function onUp() {
   if (!drag) return;
   drag = null;
+  dragAt = null;
   const nodes = {};
-  Object.keys(places).forEach((id) => {
-    nodes[id] = { x: clamp(places[id].x), y: clamp(places[id].y) };
+  Object.keys(anchors).forEach((id) => {
+    nodes[id] = { x: clamp(anchors[id].x), y: clamp(anchors[id].y) };
   });
   fetch("/api/traffic/layout", {
     method: "POST",
@@ -391,6 +699,7 @@ function onUp() {
   }).catch(() => {
     errorEl.textContent = "The layout was not saved.";
   });
+  drawMap();
 }
 
 function summarize() {

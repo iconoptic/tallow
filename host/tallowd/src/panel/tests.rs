@@ -382,6 +382,244 @@ async fn the_traffic_page_is_lan_only_and_reads_the_log_beside_the_map() {
     assert_eq!(json_body(&body)["tracks"].as_array().unwrap().len(), 0);
 }
 
+#[tokio::test]
+async fn the_agent_reads_a_compact_traffic_summary_and_the_lan_does_not() {
+    let dir = TempDir::new("traffic-agent");
+    write_agents(
+        &dir.path().join("agents.json"),
+        &[
+            ("hermes", HERMES, &["read", "control"]),
+            ("watcher", READER, &["traffic"]),
+        ],
+    );
+    let panel = panel_in(&dir, Vec::new(), None, true);
+    let cookie = browser();
+    for path in [
+        "/api/traffic/live",
+        "/api/traffic/hour",
+        "/api/traffic/day",
+        "/api/traffic/week",
+    ] {
+        let (status, _, body) =
+            send(&panel, "GET", path, Channel::Lan, None, Some(&cookie), b"").await;
+        assert_eq!(status, 404, "{path} on the LAN");
+        assert_eq!(text(&body), r#"{"detail":"not found"}"#, "{path}");
+    }
+    let (status, _, body) = send(
+        &panel,
+        "GET",
+        "/api/traffic/live",
+        Channel::Agent,
+        Some(HERMES),
+        None,
+        b"",
+    )
+    .await;
+    assert_eq!(status, 403);
+    assert_eq!(text(&body), r#"{"detail":"missing scope"}"#);
+
+    let db = dir.path().join("traffic.db");
+    let mut journal = crate::traffic::Journal::open(&db).unwrap();
+    let now = crate::link::unix_now();
+    let addr = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x10];
+    journal
+        .note_batch(&heard("aaaaaaaa", addr, -60), now - 20.0)
+        .unwrap();
+    journal
+        .note_batch(&heard("bbbbbbbb", addr, -40), now)
+        .unwrap();
+    let (status, _, body) = send(
+        &panel,
+        "GET",
+        "/api/traffic/live",
+        Channel::Agent,
+        Some(READER),
+        None,
+        b"",
+    )
+    .await;
+    assert_eq!(status, 200);
+    let doc = json_body(&body);
+    let rendered = text(&body);
+    assert!(!rendered.contains("samples"), "{rendered}");
+    assert!(!rendered.contains("AA:BB:CC:DD:EE:10"), "{rendered}");
+    assert!(doc.get("samples").is_none());
+    let track = &doc["tracks"][0];
+    assert_eq!(track["class"], json!("move"));
+    assert!(track.get("addr").is_none());
+    assert!(track.get("id").is_none());
+    assert!(track["stay_count"].as_u64().unwrap() >= 1);
+    let (status, _, body) = send(
+        &panel,
+        "GET",
+        "/api/traffic/week",
+        Channel::Agent,
+        Some(READER),
+        None,
+        b"",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert!(!text(&body).contains("samples"));
+
+    for (method, path) in [
+        ("GET", "/api/traffic"),
+        ("GET", "/traffic"),
+        ("POST", "/api/traffic/clear"),
+        ("POST", "/api/traffic/layout"),
+    ] {
+        let (status, _, body) = send(
+            &panel,
+            method,
+            path,
+            Channel::Agent,
+            Some(READER),
+            None,
+            b"{}",
+        )
+        .await;
+        assert_eq!(status, 404, "{method} {path}");
+        assert_eq!(text(&body), r#"{"detail":"not found"}"#, "{method} {path}");
+    }
+    let (status, _, body) = send(
+        &panel,
+        "GET",
+        "/api/manifest",
+        Channel::Agent,
+        Some(HERMES),
+        None,
+        b"",
+    )
+    .await;
+    assert_eq!(status, 200);
+    let manifest = text(&body);
+    assert!(!manifest.contains("/api/traffic/"));
+    assert_eq!(
+        json_body(&body)["scopes"],
+        json!(["read", "control", "library", "schedule"])
+    );
+    let audit = std::fs::read_to_string(dir.path().join("data").join("audit.jsonl"))
+        .expect("the audit log");
+    assert!(audit.contains("watcher"));
+    assert!(audit.contains("/api/traffic/live"));
+    assert!(!audit.contains(READER));
+}
+
+#[tokio::test]
+async fn the_agent_reads_the_addresses_behind_one_alias_and_the_lan_does_not() {
+    let dir = TempDir::new("traffic-alias");
+    write_agents(
+        &dir.path().join("agents.json"),
+        &[
+            ("hermes", HERMES, &["read", "control"]),
+            ("watcher", READER, &["traffic"]),
+        ],
+    );
+    let panel = panel_in(&dir, Vec::new(), None, true);
+    let cookie = browser();
+    let alias = crate::cluster::cute_name("AA:BB:CC:DD:EE:10");
+    let payload = serde_json::to_vec(&json!({"alias": alias})).unwrap();
+    let (status, _, body) = send(
+        &panel,
+        "POST",
+        "/api/traffic/alias",
+        Channel::Lan,
+        None,
+        Some(&cookie),
+        &payload,
+    )
+    .await;
+    assert_eq!(status, 404);
+    assert_eq!(text(&body), r#"{"detail":"not found"}"#);
+    let (status, _, body) = send(
+        &panel,
+        "POST",
+        "/api/traffic/alias",
+        Channel::Agent,
+        Some(HERMES),
+        None,
+        &payload,
+    )
+    .await;
+    assert_eq!(status, 403);
+    assert_eq!(text(&body), r#"{"detail":"missing scope"}"#);
+
+    let db = dir.path().join("traffic.db");
+    let mut journal = crate::traffic::Journal::open(&db).unwrap();
+    journal
+        .note_batch(
+            &heard("aaaaaaaa", [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x10], -50),
+            1_700_000_000.0,
+        )
+        .unwrap();
+    let (status, _, body) = send(
+        &panel,
+        "POST",
+        "/api/traffic/alias",
+        Channel::Agent,
+        Some(READER),
+        None,
+        &payload,
+    )
+    .await;
+    assert_eq!(status, 200);
+    let doc = json_body(&body);
+    assert_eq!(doc["addrs"], json!(["AA:BB:CC:DD:EE:10"]));
+    assert_eq!(doc["truncated"], json!(false));
+    let folded = serde_json::to_vec(&json!({"alias": format!("  {alias}  ")})).unwrap();
+    let (status, _, body) = send(
+        &panel,
+        "POST",
+        "/api/traffic/alias",
+        Channel::Agent,
+        Some(READER),
+        None,
+        &folded,
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(json_body(&body)["addrs"], json!(["AA:BB:CC:DD:EE:10"]));
+    let (status, _, body) = send(
+        &panel,
+        "POST",
+        "/api/traffic/alias",
+        Channel::Agent,
+        Some(READER),
+        None,
+        br#"{"alias":"No such alias"}"#,
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert!(json_body(&body)["addrs"].as_array().unwrap().is_empty());
+    for (bytes, detail) in [
+        (br#"{"alias":""}"#.as_slice(), "alias must be a short name"),
+        (
+            br#"{"alias":"x","extra":1}"#.as_slice(),
+            "unknown fields: extra",
+        ),
+        (br#"{"alias":1}"#.as_slice(), "alias must be a string"),
+    ] {
+        let (status, _, body) = send(
+            &panel,
+            "POST",
+            "/api/traffic/alias",
+            Channel::Agent,
+            Some(READER),
+            None,
+            bytes,
+        )
+        .await;
+        assert_eq!(status, 400, "{}", text(&body));
+        assert!(text(&body).contains(detail), "{}", text(&body));
+    }
+    let audit = std::fs::read_to_string(dir.path().join("data").join("audit.jsonl"))
+        .expect("the audit log");
+    assert!(audit.contains("watcher"));
+    assert!(audit.contains("/api/traffic/alias"));
+    assert!(!audit.contains(READER));
+    assert!(!audit.contains("AA:BB:CC:DD:EE:10"));
+}
+
 fn heard(node: &str, addr: [u8; 6], rssi: i8) -> crate::local::Batch {
     crate::local::Batch {
         node: node.to_string(),
