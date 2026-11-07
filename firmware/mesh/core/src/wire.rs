@@ -20,7 +20,7 @@
 use chacha20poly1305::aead::{AeadInPlace, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce, Tag};
 
-pub const VERSION: u8 = 0xA8;
+pub const VERSION: u8 = 0xAB;
 pub const HEADER: usize = 16;
 pub const TAG: usize = 16;
 /// ESP-NOW v1 limit. Staying here keeps airtime short on a shared radio.
@@ -50,6 +50,10 @@ pub enum FrameKind {
     GattUp = 12,
     /// An OTA status or result, sent up. See `ota::decode_up`.
     OtaUp = 13,
+    /// Product, running version, and floor, sent up. See `ota::Identity`.
+    Identity = 14,
+    /// Each neighbour's id and short RSSI average, sent up. See `stats::Heard`.
+    Neighbours = 15,
 }
 
 impl FrameKind {
@@ -68,6 +72,8 @@ impl FrameKind {
             11 => Self::Ping,
             12 => Self::GattUp,
             13 => Self::OtaUp,
+            14 => Self::Identity,
+            15 => Self::Neighbours,
             _ => return None,
         })
     }

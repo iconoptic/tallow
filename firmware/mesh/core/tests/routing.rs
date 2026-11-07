@@ -1,7 +1,7 @@
 //! Parent changes and who a beacon may come from, one node at a time.
 
 use tallow_mesh_core::mesh::{
-    Reason, BEACON_MS, NEIGHBOUR_TIMEOUT_MS, PARENT_FAILURES, ROOT_TIMEOUT_MS, TX_RETRIES,
+    Reason, BEACON_MS, LEAF, NEIGHBOUR_TIMEOUT_MS, PARENT_FAILURES, ROOT_TIMEOUT_MS, TX_RETRIES,
 };
 use tallow_mesh_core::wire::{Frame, FrameKind, Sealer};
 use tallow_mesh_core::{Event, Mesh, MAX_FRAME, NO_RANK};
@@ -225,6 +225,40 @@ fn a_recorded_beacon_cannot_repoint_a_parent() {
         .find(|known| known.id == host.id)
         .map(|known| known.rank);
     assert_eq!(rank, Some(0), "an older boot changed the host's entry");
+}
+
+#[test]
+fn a_leaf_with_a_route_is_stored_and_not_chosen() {
+    let mut cam = board(1);
+    cam.set_leaf();
+    let mut host = root(2, 0);
+    let mut ignored = Vec::new();
+    beacon_into(&mut host, &mut cam, 0, &mut ignored);
+    assert_eq!(ignored, [Some(host.id)]);
+    assert_eq!(
+        cam.rank, 1,
+        "the leaf has a route, so rank is not what excludes it"
+    );
+    // Joining queued a Route frame. Drain it so the next send is the beacon.
+    while cam.next_tx().is_some() {
+        cam.tx_done(0, true, &mut quiet);
+    }
+
+    let mut node = board(3);
+    let mut parents = Vec::new();
+    beacon_into(&mut cam, &mut node, 0, &mut parents);
+    assert!(parents.is_empty(), "a leaf beacon is not a parent change");
+    let known = node.neighbours().next().expect("the leaf is a neighbour");
+    assert_eq!(known.id, cam.id);
+    assert_eq!(known.flags & LEAF, LEAF);
+    assert_eq!(known.rank, 1);
+    assert!(node.parent().is_none());
+
+    let mut classic = root(4, 0);
+    beacon_into(&mut classic, &mut node, 0, &mut parents);
+    assert_eq!(parents, [Some(classic.id)]);
+    assert_eq!(node.neighbours().count(), 2);
+    assert_eq!(node.parent().map(|parent| parent.id), Some(classic.id));
 }
 
 #[test]

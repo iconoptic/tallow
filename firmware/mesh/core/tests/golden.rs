@@ -81,12 +81,23 @@ fn command_with(set: impl FnOnce(&mut Command)) -> [u8; Command::WIRE] {
 
 #[test]
 fn a_sealed_beacon_is_these_bytes() {
-    // Rank 1, parent 0x11223344, beacon 0x5566, four unread zeros.
+    // Rank 1, parent 0x11223344, beacon 0x5566, flags 0, three unread zeros.
     let payload = [1, 0x44, 0x33, 0x22, 0x11, 0x66, 0x55, 0, 0, 0, 0];
     assert_golden(
         FrameKind::Beacon,
         &payload,
-        "a8011000040302010d0c0b0a141312113552a8ec7193390a6490d459d393bf2b8294c4bbcc766998ea939f",
+        "ab011000040302010d0c0b0a141312113552a8ec7193390a6490d4b464a9a6c82a1ad58660ed5a460f4b50",
+    );
+}
+
+#[test]
+fn a_sealed_leaf_beacon_is_these_bytes() {
+    // The same beacon with LEAF set in the flags byte.
+    let payload = [1, 0x44, 0x33, 0x22, 0x11, 0x66, 0x55, 1, 0, 0, 0];
+    assert_golden(
+        FrameKind::Beacon,
+        &payload,
+        "ab011000040302010d0c0b0a141312113552a8ec7193390b6490d4566fbb9bb46c7eb3a62e68840571b464",
     );
 }
 
@@ -97,7 +108,7 @@ fn a_sealed_report_is_these_bytes() {
     assert_golden(
         FrameKind::Report,
         &payload,
-        "a8021000040302010d0c0b0a141312119ead57138e0a6cce67921f1c9892234b146ac03741a062a716bd",
+        "ab021000040302010d0c0b0a141312119ead57138e0a6cce679275adad79c0f3997a8bcbb79110cccd6d",
     );
 }
 
@@ -111,7 +122,7 @@ fn a_sealed_name_is_these_bytes() {
     assert_golden(
         FrameKind::Name,
         &payload,
-        "a8031000040302010d0c0b0a141312119ead57138e0a6e466491d673a050b2f7672fdfd2be9df15448be76b52664184bc49656",
+        "ab031000040302010d0c0b0a141312119ead57138e0a6e466491d673a050b2f7672fdf6e1986ee9fee23cf2965dbedbc7c5205",
     );
 }
 
@@ -130,7 +141,7 @@ fn a_sealed_stats_frame_is_these_bytes() {
     assert_golden(
         FrameKind::Stats,
         &payload,
-        "a8041000040302010d0c0b0a1413121135169bce62f56c0a6790d470a216de9e120feaa0701a72be6f2b769df6f1c447d945377a79b0e752af465d7f1dab8367ee011fe4177e2ca55e699a0ba51caa3c0b7b1b957db1f1a1870147bf4895a53e2fbdc0ab857352c3ca9fb785a4685a7fc224e10fdc599dbe",
+        "ab041000040302010d0c0b0a1413121135169bce62f56c0a6790d470a216de9e120feaa0701a72be6f2b769df6f1c447d945377a79b0e752af465d7f1dab8367ee011fe4177e2ca55e699a0ba51caa3c0b7b1b957db1f1a1870147bf4895a53e2fbdc0ab857352c3db1c2ac3f915c7b21c201582de7e0b4f",
     );
 }
 
@@ -141,7 +152,7 @@ fn a_sealed_probe_is_these_bytes() {
     assert_golden(
         FrameKind::Probe,
         &payload,
-        "a8051000040302010d0c0b0a141312114c40afdc60f56c0adc68619f44c6f0bc700d641836364d87",
+        "ab051000040302010d0c0b0a141312114c40afdc60f56c0a37fa7686e16e76cd3ba1da09e45a0438",
     );
 }
 
@@ -156,7 +167,7 @@ fn a_sealed_route_is_these_bytes() {
     assert_golden(
         FrameKind::Route,
         &payload,
-        "a8071000040302010d0c0b0a14131211e6129bce24c64e1bece7b225a7670a1d8e7f87c9be98451240be361be0",
+        "ab071000040302010d0c0b0a14131211e6129bce24c64e1bece7b225a7c29b32751c304fcf63d988316c5bd290",
     );
 }
 
@@ -173,7 +184,7 @@ fn a_sealed_watch_is_these_bytes() {
         addresses,
     }
     .encode(&mut wire);
-    assert_golden(FrameKind::Watch, &wire[..length], "a8081000040302010d0c0b0a1413121100049964db39b1e49b81f643e243b804fe84a76339c4fe41ba7df268cdd767");
+    assert_golden(FrameKind::Watch, &wire[..length], "ab081000040302010d0c0b0a1413121100049964db39b1e49b81f643e243b85f8f9a8e00e2490f0d4ef4e316f28e18");
 }
 
 #[test]
@@ -258,7 +269,7 @@ fn a_sealed_command_is_these_bytes() {
     assert_golden(
         FrameKind::Command,
         &payload,
-        "a8061000040302010d0c0b0a14131211331685ce04f5500a6092f47b5fdb02e86ce92a4d4979056779f0e2",
+        "ab061000040302010d0c0b0a14131211331685ce04f5500a6092f4d6f0f0e984156f3b18ddeff6149ea793",
     );
 }
 
@@ -487,7 +498,8 @@ fn a_real_report_matches_the_documented_layout() {
     table.observe(1500, address, Kind::Classic, -70);
     let mut out = [0u8; RECORD];
     assert_eq!(table.drain(3500, &mut out), RECORD);
-    assert_eq!(out, [0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 2, 0xc4, 2, 2]);
+    // -60 and -70: the median is -65 (0xBF), not the louder of the two.
+    assert_eq!(out, [0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 2, 0xbf, 2, 2]);
 
     table.observe(0, address, Kind::BleRandom, -60);
     table.drain(255_000 + 5_000, &mut out);
@@ -536,7 +548,7 @@ fn a_sealed_gatt_connect_is_these_bytes() {
     assert_golden(
         FrameKind::Gatt,
         &payload,
-        "a80a1000040302010d0c0b0a1413121136179b64db39b1e49b91a582c580a0e0dd8b19e0d3a7e4846209",
+        "ab0a1000040302010d0c0b0a1413121136179b64db39b1e49b910014db673d89639ce4734a9992a919ba",
     );
 }
 
@@ -547,7 +559,7 @@ fn a_sealed_gatt_write_is_these_bytes() {
     assert_golden(
         FrameKind::Gatt,
         &payload,
-        "a80a1000040302010d0c0b0a1413121137169aef60f46e09435e4f64e130973b6decc19410c5bd85",
+        "ab0a1000040302010d0c0b0a1413121137169aef60f46e0999ef644b7ed91c4c38803886bee97436",
     );
 }
 
@@ -558,7 +570,7 @@ fn a_sealed_gatt_answer_is_these_bytes() {
     assert_golden(
         FrameKind::GattUp,
         &payload,
-        "a80c1000040302010d0c0b0a1413121137169acebe5826eaac5fb7453e7d51ed816fd5cdfe9f",
+        "ab0c1000040302010d0c0b0a1413121137169acebe58817bc24654eec38d1c81f86083f2b550",
     );
 }
 
@@ -569,7 +581,7 @@ fn a_sealed_gatt_notification_is_these_bytes() {
     assert_golden(
         FrameKind::GattUp,
         &payload,
-        "a80c1000040302010d0c0b0a14131211361699ef600a6c8a7bf5823c42872329df75c9a7bbde56b6",
+        "ab0c1000040302010d0c0b0a14131211361699ef600a6c8ad6869823df2fa939aa09409969030e67",
     );
 }
 
@@ -580,7 +592,7 @@ fn a_sealed_ota_chunk_is_these_bytes() {
     assert_golden(
         FrameKind::Ota,
         &payload,
-        "a8091000040302010d0c0b0a1413121136169bce60e44e21ba751603a16fabba20b0d639ec8f6b",
+        "ab091000040302010d0c0b0a1413121136169bce60e44e7c4b8bfd9f49f5bb85b426c8e710471c",
     );
 }
 
@@ -607,7 +619,7 @@ fn a_sealed_ota_begin_is_these_bytes() {
     assert_golden(
         FrameKind::Ota,
         &payload,
-        "a8091000040302010d0c0b0a1413121135168bce60f46b0a6490c561b707cf8f061efbb1670b63af793a678cefe0d556c154266b62a1f643b5577f5d3389a145c1233dc63b5c0e87734bb829973e881e385939b74d93d383b623659d7eb7871c189fe289a552a8b1c694389f34ab4b8551cb18be05a395c8bcb5b97c0886bdd516a52f578521f56fcda5",
+        "ab091000040302010d0c0b0a1413121135168bce60f46b0a6490c561b707cf8f061efbb1670b63af793a678cefe0d556c154266b62a1f643b5577f5d3389a145c1233dc63b5c0e87734bb829973e881e385939b74d93d383b623659d7eb7871c189fe289a552a8b1c694389f34ab4b8551cb18be05a395c8bcb50bf6f16b53c70acb0e7353d6357a37ea",
     );
 }
 
@@ -618,7 +630,7 @@ fn a_sealed_ota_result_is_these_bytes() {
     assert_golden(
         FrameKind::OtaUp,
         &payload,
-        "a80d1000040302010d0c0b0a14131211361680746ca27dce177133724ef989bc94a3",
+        "ab0d1000040302010d0c0b0a141312113616d60582891a779d81fe05c5ea37e14b54",
     );
 }
 
@@ -628,10 +640,39 @@ fn the_gatt_and_ota_kinds_go_down_and_up_and_decode_from_their_bytes() {
     assert_eq!(FrameKind::from_u8(10), Some(FrameKind::Gatt));
     assert_eq!(FrameKind::from_u8(12), Some(FrameKind::GattUp));
     assert_eq!(FrameKind::from_u8(13), Some(FrameKind::OtaUp));
+    assert_eq!(FrameKind::from_u8(14), Some(FrameKind::Identity));
+    assert_eq!(FrameKind::from_u8(15), Some(FrameKind::Neighbours));
     assert!(is_down(FrameKind::Ota));
     assert!(is_down(FrameKind::Gatt));
     assert!(!is_down(FrameKind::OtaUp), "status travels up, not down");
     assert!(!is_down(FrameKind::GattUp), "answers travel up, not down");
+    assert!(!is_down(FrameKind::Identity), "a version report travels up");
+    assert!(
+        !is_down(FrameKind::Neighbours),
+        "a neighbour report travels up"
+    );
+}
+
+#[test]
+fn a_sealed_neighbour_report_is_these_bytes() {
+    // Neighbour 0x11223344 at -55, then neighbour 2 at -80.
+    let payload = [0x44, 0x33, 0x22, 0x11, 0xc9, 0x02, 0x00, 0x00, 0x00, 0xb0];
+    assert_golden(
+        FrameKind::Neighbours,
+        &payload,
+        "ab0f1000040302010d0c0b0a141312117025b9dfa9f76c0a642090ed78b6fb5db6c1abed1b20d5ba26bc",
+    );
+}
+
+#[test]
+fn a_sealed_identity_is_these_bytes() {
+    // Product 1, running version 4, floor 4.
+    let payload = [1, 4, 0, 0, 0, 4, 0, 0, 0];
+    assert_golden(
+        FrameKind::Identity,
+        &payload,
+        "ab0e1000040302010d0c0b0a1413121135129bce60f16c0a64bf4451186a3e2c1af64aea6876caf9aa",
+    );
 }
 
 #[test]

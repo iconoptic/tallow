@@ -62,6 +62,57 @@ pub const PRODUCT_NODE: u8 = 1;
 /// The product id of a `toby-cam-0` image.
 pub const PRODUCT_CAM0: u8 = 2;
 
+/// Bytes in an [`Identity`] payload.
+pub const IDENTITY_WIRE: usize = 9;
+
+/// What a board is running, sent up so the host can decide whether to push.
+///
+/// `running` is the image that is executing. `floor` is the highest version
+/// this board has confirmed. A board that has not reported this is not updated.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct Identity {
+    pub product: u8,
+    pub running: u32,
+    pub floor: u32,
+}
+
+impl Identity {
+    /// The 9-byte payload: product, running version, floor, each integer little-endian.
+    pub fn encode(self) -> [u8; IDENTITY_WIRE] {
+        let mut out = [0u8; IDENTITY_WIRE];
+        out[0] = self.product;
+        out[1..5].copy_from_slice(&self.running.to_le_bytes());
+        out[5..9].copy_from_slice(&self.floor.to_le_bytes());
+        out
+    }
+
+    /// `None` unless the payload is exactly [`IDENTITY_WIRE`] bytes.
+    pub fn decode(payload: &[u8]) -> Option<Self> {
+        if payload.len() != IDENTITY_WIRE {
+            return None;
+        }
+        Some(Self {
+            product: payload[0],
+            running: u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]),
+            floor: u32::from_le_bytes([payload[5], payload[6], payload[7], payload[8]]),
+        })
+    }
+}
+
+/// The version a board reports as running.
+///
+/// A pending-verify boot reports the stored pending version, so the host does
+/// not push the same image over one that is still proving itself. A missing
+/// pending record reports [`u32::MAX`] for the same reason. Any other boot
+/// reports the confirmed floor.
+pub fn running_version(pending_verify: bool, pending: Option<u32>, floor: u32) -> u32 {
+    if pending_verify {
+        pending.unwrap_or(u32::MAX)
+    } else {
+        floor
+    }
+}
+
 /// The fixed prefix of the signed message. A change to the layout changes this.
 pub const SIGNED_CONTEXT: &[u8; 13] = b"tallow-ota-v1";
 /// Length of [`signed_message`].
@@ -101,16 +152,29 @@ pub fn verify(
 /// Most bytes of image one Chunk carries. `send_down` takes four bytes for the
 /// target id, and 175 bytes of Chunk still fit in what remains.
 pub const CHUNK: usize = 170;
-/// The app slot in `partitions.csv`, `app0` and `app1`. A larger image is refused.
+/// The app slot in the classic node's `partitions.csv`, `app0` and `app1`.
 pub const SLOT: u32 = 0x1C_0000;
+/// The app slot in the camera partition table, `app0` and `app1`.
+pub const CAM_SLOT: u32 = 0x7C_0000;
 /// Chunks in one Status bitmap.
 pub const WINDOW: usize = 256;
 /// Bytes in that bitmap.
 pub const WINDOW_BYTES: usize = WINDOW / 8;
+
+/// Bytes in a bitmap that can name every chunk of an image of `slot` bytes.
+pub const fn bitmap_bytes(slot: u32) -> usize {
+    (slot as usize).div_ceil(CHUNK).div_ceil(8)
+}
+
 /// The most chunks an image of [`SLOT`] bytes can need.
 pub const MAX_CHUNKS: usize = (SLOT as usize).div_ceil(CHUNK);
-/// One bit per chunk, for the whole slot. A transfer never grows this.
+/// One bit per chunk of [`SLOT`]. The node receiver uses this and nothing larger.
 pub const BITMAP: usize = MAX_CHUNKS.div_ceil(8);
+/// One bit per chunk of [`CAM_SLOT`]. Only a camera receiver uses this.
+pub const CAM_BITMAP: usize = bitmap_bytes(CAM_SLOT);
+
+const _: () = assert!(BITMAP == bitmap_bytes(SLOT));
+const _: () = assert!(CAM_BITMAP == bitmap_bytes(CAM_SLOT));
 
 const KIND_BEGIN: u8 = 1;
 const KIND_CHUNK: u8 = 2;
@@ -371,7 +435,12 @@ pub const SILENCE_MS: u32 = 60_000;
 /// One image being received. Chunks are accepted only in order, so the hash is
 /// the hash of the bytes [`Action::Write`] carried, and a chunk that arrives
 /// early is still missing. A chunk that was already accepted is ignored.
-pub struct Receiver {
+///
+/// `MAX` is the largest image this receiver will accept. `N` is the bitmap for
+/// that slot, from [`bitmap_bytes`]. The defaults are the classic node slot, so
+/// a node receiver stays the size the 12 KB budget measures. A camera passes
+/// [`CAM_SLOT`] and [`CAM_BITMAP`].
+pub struct Receiver<const MAX: u32 = SLOT, const N: usize = BITMAP> {
     product: u8,
     floor: u32,
     active: bool,
@@ -381,7 +450,7 @@ pub struct Receiver {
     signature: [u8; 64],
     hash: ImageHash,
     cursor: u32,
-    bitmap: [u8; BITMAP],
+    bitmap: [u8; N],
     steps: [Step; 2],
     step_len: u8,
     write_at: u32,
@@ -389,7 +458,7 @@ pub struct Receiver {
     write_data: [u8; CHUNK],
 }
 
-impl Receiver {
+impl<const MAX: u32, const N: usize> Receiver<MAX, N> {
     /// `product` is what this board runs. `floor` is the highest version it has
     /// confirmed. An image below `floor` is refused, and an equal one is a retry.
     pub fn new(product: u8, floor: u32) -> Self {
@@ -403,7 +472,7 @@ impl Receiver {
             signature: [0; 64],
             hash: ImageHash::new(),
             cursor: 0,
-            bitmap: [0; BITMAP],
+            bitmap: [0; N],
             steps: [Step::None; 2],
             step_len: 0,
             write_at: 0,
@@ -505,7 +574,7 @@ impl Receiver {
         signature: [u8; 64],
         public_key: &[u8; 32],
     ) -> Option<Up> {
-        let refusal = if size == 0 || size > SLOT {
+        let refusal = if size == 0 || size > MAX {
             Some(Code::Refused)
         } else if product != self.product {
             Some(Code::WrongProduct)
@@ -528,7 +597,7 @@ impl Receiver {
         self.signature = signature;
         self.hash = ImageHash::new();
         self.cursor = 0;
-        self.bitmap = [0; BITMAP];
+        self.bitmap = [0; N];
         if restart {
             self.queue(Step::Abort);
         }
@@ -625,7 +694,7 @@ impl Receiver {
         self.size = 0;
         self.cursor = 0;
         self.hash = ImageHash::new();
-        self.bitmap = [0; BITMAP];
+        self.bitmap = [0; N];
     }
 
     fn missing(&self, window: u16) -> [u8; WINDOW_BYTES] {
@@ -925,5 +994,25 @@ mod tests {
             "fb9acea581539e312e8229e840a80a1edc0865b195d16cc349c8b0524307ab05"
         ));
         assert!(check(&public, &digest_of(MESSAGE), &signature));
+    }
+
+    #[test]
+    fn an_identity_round_trips_and_a_short_payload_does_not() {
+        let identity = Identity {
+            product: PRODUCT_CAM0,
+            running: 7,
+            floor: 4,
+        };
+        assert_eq!(Identity::decode(&identity.encode()), Some(identity));
+        assert_eq!(Identity::decode(&identity.encode()[..8]), None);
+        assert_eq!(Identity::decode(&[0; 10]), None);
+    }
+
+    #[test]
+    fn the_reported_running_version_is_the_image_that_is_executing() {
+        assert_eq!(running_version(false, Some(9), 4), 4);
+        assert_eq!(running_version(true, Some(9), 4), 9);
+        assert_eq!(running_version(true, None, 4), u32::MAX);
+        assert_eq!(running_version(false, None, 0), 0);
     }
 }

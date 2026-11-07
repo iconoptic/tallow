@@ -14,7 +14,8 @@
 //! board's own serial port. `G id hex` sends a GATT request, in hex, down to the
 //! board with that id. A send the root cannot route prints `@G refused`. Answers
 //! come back up as `@U 12` lines. `O id hex` sends an OTA payload, in hex, down
-//! to the board with that id. A send the root cannot route prints `@O refused`.
+//! to the board with that id. The root's own id is applied here instead of on
+//! the radio. A send the root cannot route prints `@O refused`.
 //! A downward OTA frame is written to the inactive slot from this loop. Only a
 //! finished image is set to boot, and the board restarts into it. A line longer
 //! than `LINE_MAX` is dropped whole.
@@ -40,15 +41,13 @@ use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs};
 use esp_idf_svc::sys;
 use esp_idf_svc::wifi::{ClientConfiguration, Configuration, WifiDriver};
 use tallow_mesh_core::gatt::{Client, Done, Reply};
-use tallow_mesh_core::mesh::next_boot;
-use tallow_mesh_core::ota::{Code, Down, Health, Receiver, Sample, Up, PRODUCT_NODE};
-use tallow_mesh_core::stats::Stats;
+use tallow_mesh_core::mesh::{next_boot, CHANNEL, MAX_NEIGHBOURS};
+use tallow_mesh_core::ota::{Code, Down, Health, Receiver, Sample, Up, BITMAP, PRODUCT_NODE, SLOT};
+use tallow_mesh_core::stats::{Stats, HEARD_WIRE};
 use tallow_mesh_core::wire::{Command, WATCH_MAX};
 use tallow_mesh_core::{Dest, Event, FrameKind, Mesh, MAX_PAYLOAD};
 
 const KEY: &[u8; 32] = include_bytes!(concat!(env!("OUT_DIR"), "/mesh_key.bin"));
-/// The cleanest channel in the 2026-10-31 survey, away from tallow-iot on 6.
-const CHANNEL: u8 = 1;
 const REPORT_MS: u32 = 5_000;
 const STATS_MS: u32 = 10_000;
 const TX_TIMEOUT_MS: u32 = 250;
@@ -380,7 +379,7 @@ fn main() -> Result<(), sys::EspError> {
     let mut link = gatt::Link::default();
     // The receiver is about 1.7 KB, and it lives on the heap to keep it out of the
     // main task's stack, which `tools/tests/stack_budget.py` checks.
-    let mut receiver = Box::new(Receiver::new(PRODUCT_NODE, slot.floor()));
+    let mut receiver = Box::new(Receiver::<SLOT, BITMAP>::new(PRODUCT_NODE, slot.floor()));
     let mut health = Health::new();
 
     let mut line = String::with_capacity(600);
@@ -476,7 +475,13 @@ fn main() -> Result<(), sys::EspError> {
                 }
             } else if typed.starts_with('O') {
                 if let Some((target, body, length)) = parse_ota(&typed) {
-                    if !mesh.send_down(now, target, FrameKind::Ota, &body[..length]) {
+                    if target == mesh.id {
+                        if ota_downs.len() < DOWN_QUEUE {
+                            ota_downs.push(body[..length].to_vec());
+                        } else {
+                            print(&uart, "@O refused\n");
+                        }
+                    } else if !mesh.send_down(now, target, FrameKind::Ota, &body[..length]) {
                         print(&uart, "@O refused\n");
                     }
                 }
@@ -707,7 +712,14 @@ fn main() -> Result<(), sys::EspError> {
             if let Some(floor) = slot.confirm_if_ready(ready) {
                 receiver.raise_floor(floor);
             }
+            let identity = slot.identity().encode();
+            mesh.send_up(FrameKind::Identity, &identity, now, events!());
             mesh.send_up(FrameKind::Stats, &stats.encode(), now, events!());
+            let mut heard = [0u8; MAX_NEIGHBOURS * HEARD_WIRE];
+            let heard_len = mesh.encode_neighbours(&mut heard);
+            if heard_len > 0 {
+                mesh.send_up(FrameKind::Neighbours, &heard[..heard_len], now, events!());
+            }
         }
 
         // Warn level, because the build compiles out anything quieter.

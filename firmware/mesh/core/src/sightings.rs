@@ -22,22 +22,74 @@ impl Kind {
     }
 }
 
+/// Samples kept per device. A longer ring would push `Sightings<128>` past the
+/// 12 KB node budget in `tests/sim.rs`.
+const RING: usize = 8;
+/// A page that found a device and has no signal strength. Not a distance, so it
+/// never enters the ring. A ring with no distance still reports this.
+const NO_SIGNAL: i8 = -127;
+
 #[derive(Copy, Clone)]
 struct Entry {
     addr: [u8; 6],
     kind: u8,
-    best: i8,
+    /// How many of `samples` are distances. Zero when every hear was [`NO_SIGNAL`].
+    filled: u8,
+    /// Next write in `samples`. Once the ring is full, the oldest sample is here.
+    cursor: u8,
     count: u8,
+    samples: [i8; RING],
     last_ms: u32,
 }
 
 const EMPTY: Entry = Entry {
     addr: [0; 6],
     kind: 0,
-    best: -128,
+    filled: 0,
+    cursor: 0,
     count: 0,
+    samples: [0; RING],
     last_ms: 0,
 };
+
+impl Entry {
+    fn hear(&mut self, now_ms: u32, rssi: i8) {
+        self.count = self.count.saturating_add(1);
+        self.last_ms = now_ms;
+        if rssi == NO_SIGNAL {
+            return;
+        }
+        self.samples[self.cursor as usize] = rssi;
+        self.cursor = (self.cursor + 1) % RING as u8;
+        if self.filled < RING as u8 {
+            self.filled += 1;
+        }
+    }
+
+    /// The middle of the distances heard since the last drain. An even count
+    /// averages the two central samples, with the division truncating toward zero.
+    fn rssi(&self) -> i8 {
+        let n = self.filled as usize;
+        if n == 0 {
+            return NO_SIGNAL;
+        }
+        // Until the ring wraps, the distances sit in the first `filled` slots.
+        let mut sorted = [0i8; RING];
+        if n < RING {
+            sorted[..n].copy_from_slice(&self.samples[..n]);
+        } else {
+            sorted.copy_from_slice(&self.samples);
+        }
+        sorted[..n].sort_unstable();
+        if n % 2 == 1 {
+            sorted[n / 2]
+        } else {
+            let low = i16::from(sorted[n / 2 - 1]);
+            let high = i16::from(sorted[n / 2]);
+            ((low + high) / 2) as i8
+        }
+    }
+}
 
 /// A fixed table. When it fills, the entry heard longest ago makes way, so a
 /// neighbour's busy street cannot grow this past its size.
@@ -67,9 +119,7 @@ impl<const N: usize> Sightings<N> {
         let mut oldest_age = 0;
         for (index, entry) in self.entries.iter_mut().enumerate() {
             if entry.count > 0 && entry.addr == addr && entry.kind == kind as u8 {
-                entry.count = entry.count.saturating_add(1);
-                entry.best = entry.best.max(rssi);
-                entry.last_ms = now_ms;
+                entry.hear(now_ms, rssi);
                 return;
             }
             let age = if entry.count == 0 {
@@ -85,13 +135,11 @@ impl<const N: usize> Sightings<N> {
         if oldest_age != u32::MAX {
             self.evicted = self.evicted.wrapping_add(1);
         }
-        self.entries[oldest] = Entry {
-            addr,
-            kind: kind as u8,
-            best: rssi,
-            count: 1,
-            last_ms: now_ms,
-        };
+        self.entries[oldest] = EMPTY;
+        let entry = &mut self.entries[oldest];
+        entry.addr = addr;
+        entry.kind = kind as u8;
+        entry.hear(now_ms, rssi);
     }
 
     pub fn is_empty(&self) -> bool {
@@ -121,11 +169,11 @@ impl<const N: usize> Sightings<N> {
             let record = &mut out[written..written + RECORD];
             record[..6].copy_from_slice(&entry.addr);
             record[6] = entry.kind;
-            record[7] = entry.best as u8;
+            record[7] = entry.rssi() as u8;
             record[8] = entry.count;
             record[9] = age.min(255) as u8;
             written += RECORD;
-            entry.count = 0;
+            *entry = EMPTY;
         }
         written
     }
@@ -137,7 +185,9 @@ pub struct Record {
     pub addr: [u8; 6],
     /// The raw code, so a code this build does not know is kept, not dropped.
     pub kind: u8,
-    pub best: i8,
+    /// Median RSSI of the distances in the report window, or -127 when the
+    /// window had none.
+    pub rssi: i8,
     pub count: u8,
     pub age_s: u8,
 }
@@ -164,7 +214,7 @@ impl Iterator for Records<'_> {
         Some(Record {
             addr: record.get(..6)?.try_into().ok()?,
             kind: *record.get(6)?,
-            best: *record.get(7)? as i8,
+            rssi: *record.get(7)? as i8,
             count: *record.get(8)?,
             age_s: *record.get(9)?,
         })
@@ -187,9 +237,9 @@ mod tests {
         assert_eq!(records.len(), 2);
         let first = records.iter().find(|record| record.addr == [7; 6]).unwrap();
         assert_eq!(first.kind, Kind::Classic as u8);
-        assert_eq!((first.best, first.count, first.age_s), (-64, 2, 3));
+        assert_eq!((first.rssi, first.count, first.age_s), (-67, 2, 3));
         let second = records.iter().find(|record| record.addr == [9; 6]).unwrap();
-        assert_eq!((second.kind, second.best, second.count), (1, -90, 1));
+        assert_eq!((second.kind, second.rssi, second.count), (1, -90, 1));
     }
 
     #[test]
@@ -206,13 +256,13 @@ mod tests {
             .next()
             .unwrap();
         assert_eq!(record.kind, 9);
-        assert_eq!(record.best, -80);
+        assert_eq!(record.rssi, -80);
         assert_eq!(Kind::from_u8(record.kind), None);
         assert_eq!(Kind::from_u8(2), Some(Kind::Classic));
     }
 
     #[test]
-    fn merges_repeats_and_keeps_the_strongest_signal() {
+    fn merges_repeats_and_reports_the_median_signal() {
         let mut table = Sightings::<4>::new();
         table.observe(0, [1; 6], Kind::BlePublic, -80);
         table.observe(10, [1; 6], Kind::BlePublic, -60);
@@ -221,10 +271,47 @@ mod tests {
         let mut out = [0u8; 40];
         assert_eq!(table.drain(2020, &mut out), RECORD);
         assert_eq!(&out[..6], &[1; 6]);
-        assert_eq!(out[7] as i8, -60);
+        assert_eq!(out[7] as i8, -80);
         assert_eq!(out[8], 3);
         assert_eq!(out[9], 2);
         assert!(table.is_empty());
+    }
+
+    #[test]
+    fn a_ninth_sample_drops_the_oldest() {
+        let mut table = Sightings::<1>::new();
+        // -10 through -80, then -90. Keeping the first would median to -45.
+        for step in 1..=8 {
+            table.observe(step, [1; 6], Kind::BlePublic, -10 * step as i8);
+        }
+        table.observe(9, [1; 6], Kind::BlePublic, -90);
+        let mut out = [0u8; RECORD];
+        table.drain(9, &mut out);
+        assert_eq!(out[7] as i8, -55);
+        assert_eq!(out[8], 9);
+    }
+
+    #[test]
+    fn a_page_with_no_signal_stays_out_of_the_median() {
+        let mut table = Sightings::<1>::new();
+        table.observe(0, [1; 6], Kind::Classic, -70);
+        table.observe(1, [1; 6], Kind::Classic, NO_SIGNAL);
+        table.observe(2, [1; 6], Kind::Classic, -80);
+        let mut out = [0u8; RECORD];
+        table.drain(2, &mut out);
+        assert_eq!(out[7] as i8, -75);
+        assert_eq!(out[8], 3);
+    }
+
+    #[test]
+    fn a_window_of_only_pages_reports_no_signal() {
+        let mut table = Sightings::<1>::new();
+        table.observe(0, [1; 6], Kind::Classic, NO_SIGNAL);
+        table.observe(1, [1; 6], Kind::Classic, NO_SIGNAL);
+        let mut out = [0u8; RECORD];
+        table.drain(1, &mut out);
+        assert_eq!(out[7] as i8, NO_SIGNAL);
+        assert_eq!(out[8], 2);
     }
 
     #[test]

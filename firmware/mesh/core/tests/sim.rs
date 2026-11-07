@@ -9,8 +9,8 @@ use tallow_mesh_core::mesh::{
     PARENT_FAILURES, SEEN, TX_RETRIES,
 };
 use tallow_mesh_core::ota::{
-    self, Action, Code, Down, Receiver, Up, BEGIN, CHUNK, DIGEST, PRODUCT_CAM0, PRODUCT_NODE, SLOT,
-    WINDOW_BYTES,
+    self, Action, Code, Down, Receiver, Up, BEGIN, BITMAP, CAM_BITMAP, CAM_SLOT, CHUNK, DIGEST,
+    PRODUCT_CAM0, PRODUCT_NODE, SLOT, WINDOW_BYTES,
 };
 use tallow_mesh_core::wire::{Command, Frame, Sealer, Watch, MAX_FRAME, VERSION, WATCH_MAX};
 use tallow_mesh_core::{Dest, Event, FrameKind, Mesh, Sightings, NO_RANK};
@@ -679,13 +679,13 @@ fn a_node_fits_in_twelve_kilobytes() {
     let size = core::mem::size_of::<Mesh>()
         + core::mem::size_of::<Sightings<128>>()
         + core::mem::size_of::<Client>()
-        + core::mem::size_of::<Receiver>();
+        + core::mem::size_of::<Receiver<SLOT, BITMAP>>();
     println!(
         "Mesh {} + Sightings<128> {} + Client {} + Receiver {} = {size} bytes",
         core::mem::size_of::<Mesh>(),
         core::mem::size_of::<Sightings<128>>(),
         core::mem::size_of::<Client>(),
-        core::mem::size_of::<Receiver>()
+        core::mem::size_of::<Receiver<SLOT, BITMAP>>()
     );
     assert!(size <= 12 * 1024, "{size} bytes");
 }
@@ -1804,7 +1804,7 @@ fn sign_image(image: &[u8]) -> ([u8; DIGEST], [u8; 64], [u8; 32]) {
     (digest, signature, *pair.pk)
 }
 
-fn new_receiver() -> Receiver {
+fn new_receiver() -> Receiver<SLOT, BITMAP> {
     Receiver::new(PRODUCT_NODE, 0)
 }
 
@@ -1832,7 +1832,11 @@ fn chunk_at(image: &[u8], offset: usize) -> Down {
     }
 }
 
-fn feed(receiver: &mut Receiver, payload: &[u8], key: &[u8; 32]) -> (Option<Up>, Vec<Action>) {
+fn feed<const MAX: u32, const N: usize>(
+    receiver: &mut Receiver<MAX, N>,
+    payload: &[u8],
+    key: &[u8; 32],
+) -> (Option<Up>, Vec<Action>) {
     let up = receiver.push(payload, key);
     let mut actions = Vec::new();
     while let Some(action) = receiver.take_action() {
@@ -1872,6 +1876,51 @@ fn begin_for(image: &[u8], digest: [u8; DIGEST], signature: [u8; 64]) -> Vec<u8>
         digest,
         signature,
     })
+}
+
+#[test]
+fn a_leaf_still_receives_an_ota_down_aimed_at_it() {
+    let (mut sim, target) = routed_leaf();
+    sim.nodes[2].set_leaf();
+    let arrived = cross(&mut sim, target, &[1, 2, 3]);
+    assert_eq!(arrived.len(), 1);
+    assert_eq!(arrived[0].1, vec![1, 2, 3]);
+}
+
+#[test]
+fn a_camera_receiver_accepts_its_slot_and_the_node_receiver_does_not() {
+    let (digest, _, public) = sign_image(&[1]);
+    let begin_of = |size: u32| {
+        down_bytes(&Down::Begin {
+            size,
+            product: PRODUCT_CAM0,
+            version: OTA_VERSION,
+            digest,
+            signature: sign_digest(PRODUCT_CAM0, OTA_VERSION, &digest),
+        })
+    };
+    let mut camera = Receiver::<CAM_SLOT, CAM_BITMAP>::new(PRODUCT_CAM0, 0);
+    let (up, actions) = feed(&mut camera, &begin_of(CAM_SLOT), &public);
+    assert!(up.is_none());
+    assert_eq!(actions, vec![Action::Begin { size: CAM_SLOT }]);
+    let mut camera = Receiver::<CAM_SLOT, CAM_BITMAP>::new(PRODUCT_CAM0, 0);
+    let (up, actions) = feed(&mut camera, &begin_of(CAM_SLOT + 1), &public);
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::Refused
+        })
+    );
+    assert!(actions.is_empty());
+    let mut node = new_receiver();
+    let (up, actions) = feed(&mut node, &begin_of(CAM_SLOT), &public);
+    assert_eq!(
+        up,
+        Some(Up::Result {
+            code: Code::Refused
+        })
+    );
+    assert!(actions.is_empty());
 }
 
 #[test]
@@ -2096,7 +2145,7 @@ fn an_image_below_the_floor_is_refused_and_an_equal_one_is_a_retry() {
             signature: sign_digest(PRODUCT_NODE, version, &digest),
         })
     };
-    let mut receiver = Receiver::new(PRODUCT_NODE, 5);
+    let mut receiver: Receiver<SLOT, BITMAP> = Receiver::new(PRODUCT_NODE, 5);
     let (up, actions) = feed(&mut receiver, &begin_at(4), &public);
     assert_eq!(
         up,
@@ -2117,7 +2166,7 @@ fn an_image_below_the_floor_is_refused_and_an_equal_one_is_a_retry() {
 fn finish_carries_the_version_that_was_signed() {
     let image = image_of(170);
     let (digest, _, public) = sign_image(&image);
-    let mut receiver = Receiver::new(PRODUCT_NODE, 3);
+    let mut receiver: Receiver<SLOT, BITMAP> = Receiver::new(PRODUCT_NODE, 3);
     let begin = down_bytes(&Down::Begin {
         size: 170,
         product: PRODUCT_NODE,
@@ -2772,7 +2821,7 @@ fn abandoning_with_no_transfer_queues_nothing() {
 fn a_raised_floor_refuses_the_next_lower_image_and_never_goes_down() {
     let image = image_of(500);
     let (begin, public) = signed_begin(&image);
-    let mut receiver = Receiver::new(PRODUCT_NODE, 1);
+    let mut receiver: Receiver<SLOT, BITMAP> = Receiver::new(PRODUCT_NODE, 1);
     receiver.raise_floor(OTA_VERSION + 1);
     receiver.raise_floor(2);
     let (up, actions) = feed(&mut receiver, &begin, &public);
@@ -2789,7 +2838,7 @@ fn a_raised_floor_refuses_the_next_lower_image_and_never_goes_down() {
 fn a_floor_raised_during_a_transfer_refuses_its_commit() {
     let image = image_of(170);
     let (begin, public) = signed_begin(&image);
-    let mut receiver = Receiver::new(PRODUCT_NODE, OTA_VERSION);
+    let mut receiver: Receiver<SLOT, BITMAP> = Receiver::new(PRODUCT_NODE, OTA_VERSION);
     let (up, _) = feed(&mut receiver, &begin, &public);
     assert_eq!(up, None, "a version equal to the floor is a retry");
     feed(&mut receiver, &down_bytes(&chunk_at(&image, 0)), &public);

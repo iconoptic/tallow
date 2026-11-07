@@ -2,7 +2,7 @@
 
 Routing and frames, with no radio and no OS. The firmware in `../node` supplies the clock and the bytes. `tests/sim.rs` runs the mesh on a pretend radio. `tests/routing.rs` covers parent changes one node at a time. `tests/golden.rs` locks one sealed frame of each kind, and the payloads the real code builds.
 
-The header is in `src/wire.rs`. Version is `0xA8`. Boards on another version ignore these frames, so every board is flashed together. Version `0xA8` added the product and version to the OTA Begin. Version `0xA7` added kinds 9 and 13 for OTA. Version `0xA6` added kinds 10 and 12 for GATT (T1.10). Version `0xA5` was the last one before that.
+The header is in `src/wire.rs`. Version is `0xAB`. Boards on another version ignore these frames, so every board is flashed together. Version `0xAB` adds kind 15, Neighbours: each neighbour's id and the short RSSI average. Version `0xAA` adds kind 14, Identity: the product, the running version, and the confirmed floor. Version `0xA9` defines beacon byte 7 bit 0 as `LEAF`: a node that sets it is stored as a neighbour and is never chosen as a parent. Version `0xA8` added the product and version to the OTA Begin. Version `0xA7` added kinds 9 and 13 for OTA. Version `0xA6` added kinds 10 and 12 for GATT (T1.10). Version `0xA5` was the last one before that.
 
 | Offset | Bytes | Field |
 | --- | --- | --- |
@@ -31,7 +31,8 @@ Built in `src/mesh.rs`. A payload of any other length is rejected. A beacon whos
 | 0 | 1 | rank. 0 is the root. 255 means no route |
 | 1 | 4 | parent node id, little-endian. 0 if this node has none |
 | 5 | 2 | beacon number, little-endian, wrapping |
-| 7 | 4 | sent as zero, not read |
+| 7 | 1 | flags. Bit 0 is `LEAF`: this node must not be chosen as a parent. Other bits are zero |
+| 8 | 3 | sent as zero, not read |
 
 ## Report, kind 2
 
@@ -41,7 +42,7 @@ Sighting records from `src/sightings.rs`, 10 bytes each, as many as fit in one f
 | --- | --- | --- |
 | 0 | 6 | address |
 | 6 | 1 | kind: 0 BLE public, 1 BLE random, 2 Classic |
-| 7 | 1 | best RSSI, as `i8` |
+| 7 | 1 | median RSSI of the distances in the window, as `i8`. -127 when the window had none |
 | 8 | 1 | how many times it was heard, saturating at 255 |
 | 9 | 1 | seconds since the last hear, saturating at 255 |
 
@@ -151,7 +152,7 @@ Sent only by the root, with `Mesh::send_down`, and only for a downward kind (`me
 | 0 | 4 | target node id, little-endian |
 | 4 | rest | payload, given to the target as `Event::Down` |
 
-A node learns a route from each upward frame it receives: report, name, stats, probe, route, GATT answer, or OTA status and result. The route is the origin's id and the neighbour the frame came from. The table holds 32 routes, and the one refreshed longest ago is replaced when it is full. A route expires 60 seconds after its last upward frame. A downward frame with no live route is dropped and counted in `down_drops`. Beacons and commands do not teach routes. `Ota` is a downward kind. `OtaUp` and `GattUp` travel up, so they do not use the downward path.
+A node learns a route from each upward frame it receives: report, name, stats, probe, route, GATT answer, OTA status and result, or an identity. The route is the origin's id and the neighbour the frame came from. The table holds 32 routes, and the one refreshed longest ago is replaced when it is full. A route expires 60 seconds after its last upward frame. A downward frame with no live route is dropped and counted in `down_drops`. Beacons and commands do not teach routes. `Ota` is a downward kind. `OtaUp`, `GattUp`, and `Identity` travel up, so they do not use the downward path.
 
 ## Gatt, kind 10, downward
 
@@ -215,7 +216,7 @@ Begin is 106 bytes, so 110 with the target id:
 
 | Offset | Bytes | Field |
 | --- | --- | --- |
-| 1 | 4 | image size, little-endian. 0, or more than `0x1C0000`, is refused |
+| 1 | 4 | image size, little-endian. 0, or larger than this receiver's slot, is refused |
 | 5 | 1 | product: 1 mesh node, 2 `toby-cam-0` |
 | 6 | 4 | version, little-endian |
 | 10 | 32 | SHA-256 of the image |
@@ -230,7 +231,7 @@ The signed message is 50 bytes, from `ota::signed_message`:
 | 14 | 4 | version, little-endian |
 | 18 | 32 | SHA-256 of the image |
 
-Begin is checked before any flash action, in this order: size, product, the version floor, then the signature. A refused Begin answers with a Result, yields no action, and leaves any image in progress alone. A version equal to the floor is a retry and is accepted. The floor is what the board last confirmed, passed to `Receiver::new`.
+Begin is checked before any flash action, in this order: size, product, the version floor, then the signature. A refused Begin answers with a Result, yields no action, and leaves any image in progress alone. A version equal to the floor is a retry and is accepted. The floor is what the board last confirmed, passed to `Receiver::new`. The size cap is that receiver's slot: `SLOT` (`0x1C0000`) for a classic node, `CAM_SLOT` (`0x7C0000`) for a camera.
 
 Chunk is 6 to 175 bytes:
 
@@ -263,3 +264,26 @@ Result, 2 bytes:
 | Offset | Bytes | Field |
 | --- | --- | --- |
 | 1 | 1 | code: 0 ok, 1 bad signature, 2 bad hash, 3 missing chunks, 4 refused, 5 below the version floor (from Begin, or from Commit when the floor rose after Begin), 6 another product |
+
+## Identity, kind 14, upward
+
+What a node or a camera sends up with its stats, every ten seconds. `Identity::encode` writes this payload. `Identity::decode` reads it. A payload of any other length is rejected.
+
+| Offset | Bytes | Field |
+| --- | --- | --- |
+| 0 | 1 | product. 1 is a classic node, 2 is a camera |
+| 1 | 4 | running version, little-endian. The image that is executing |
+| 5 | 4 | floor, little-endian. The highest version this board has confirmed |
+
+While the boot slot is pending verify, the running version is the pending image, so a host does not push that same image again during the five-minute mark. Otherwise the running version is the floor. The host sends an image only when this product matches the signature and the running version is lower.
+
+## Neighbours, kind 15, upward
+
+What a node or a camera sends up with its stats, every ten seconds, when it has at least one neighbour. `Mesh::encode_neighbours` writes this payload from the neighbour table. `HeardRecords` reads it. Each record is 5 bytes, and as many fit as the node has neighbours, at most 12. A short tail is not a record.
+
+The RSSI is the short average the node already keeps for that neighbour, `(3·old + new) / 4` on each beacon. It is not a long median. The host medians these reports over a day.
+
+| Offset | Bytes | Field |
+| --- | --- | --- |
+| 0 | 4 | neighbour node id, little-endian |
+| 4 | 1 | RSSI, as `i8` |

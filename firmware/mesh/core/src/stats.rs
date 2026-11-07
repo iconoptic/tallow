@@ -1,11 +1,14 @@
-//! Fixed-layout records a node sends up: Stats (kind 4) and Route (kind 7).
-//! The layouts are in `core/README.md`. The firmware builds them with `encode`,
-//! and the host reads them with `decode`, so neither side keeps its own offsets.
+//! Fixed-layout records a node sends up: Stats (kind 4), Route (kind 7), and
+//! Neighbours (kind 15). The layouts are in `core/README.md`. The firmware builds
+//! them with `encode`, and the host reads them with `decode`, so neither side
+//! keeps its own offsets.
 
 /// A Stats payload: 21 little-endian `u32`s, then four bytes.
 pub const STATS_WIRE: usize = 88;
 /// A Route payload: uptime, old parent, new parent, reason.
 pub const ROUTE_WIRE: usize = 13;
+/// One neighbour in a kind-15 payload: id, then RSSI.
+pub const HEARD_WIRE: usize = 5;
 
 /// What a node reports about itself, every ten seconds.
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -142,6 +145,52 @@ impl Route {
     }
 }
 
+/// One neighbour a node hears. `rssi` is the short average already kept for that neighbour.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct Heard {
+    pub id: u32,
+    pub rssi: i8,
+}
+
+/// Writes as many records as fit in `out`. Returns the bytes written.
+pub fn encode_heard(out: &mut [u8], heard: impl IntoIterator<Item = Heard>) -> usize {
+    let mut written = 0;
+    for item in heard {
+        let Some(slot) = out.get_mut(written..written + HEARD_WIRE) else {
+            break;
+        };
+        slot[..4].copy_from_slice(&item.id.to_le_bytes());
+        slot[4] = item.rssi as u8;
+        written += HEARD_WIRE;
+    }
+    written
+}
+
+/// The neighbours in a kind-15 payload. A partial record at the end is not returned.
+pub struct HeardRecords<'a> {
+    chunks: core::slice::ChunksExact<'a, u8>,
+}
+
+impl<'a> HeardRecords<'a> {
+    pub fn new(payload: &'a [u8]) -> Self {
+        Self {
+            chunks: payload.chunks_exact(HEARD_WIRE),
+        }
+    }
+}
+
+impl Iterator for HeardRecords<'_> {
+    type Item = Heard;
+
+    fn next(&mut self) -> Option<Heard> {
+        let record = self.chunks.next()?;
+        Some(Heard {
+            id: u32::from_le_bytes(record.get(..4)?.try_into().ok()?),
+            rssi: *record.get(4)? as i8,
+        })
+    }
+}
+
 fn word(payload: &[u8], at: usize) -> Option<u32> {
     Some(u32::from_le_bytes(
         payload.get(at..at + 4)?.try_into().ok()?,
@@ -225,5 +274,23 @@ mod tests {
     fn an_unknown_route_reason_is_kept_as_its_code() {
         let route = Route::decode(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9]).unwrap();
         assert_eq!(route.reason, 9);
+    }
+
+    #[test]
+    fn a_neighbour_list_round_trips_and_a_partial_tail_is_dropped() {
+        let heard = [
+            Heard {
+                id: 0x1122_3344,
+                rssi: -55,
+            },
+            Heard { id: 2, rssi: -80 },
+        ];
+        let mut out = [0u8; 12];
+        let length = encode_heard(&mut out, heard);
+        assert_eq!(length, 10);
+        let back: Vec<Heard> = HeardRecords::new(&out[..length]).collect();
+        assert_eq!(back, heard);
+        assert_eq!(HeardRecords::new(&out[..7]).count(), 1);
+        assert_eq!(encode_heard(&mut [0u8; 4], heard), 0);
     }
 }

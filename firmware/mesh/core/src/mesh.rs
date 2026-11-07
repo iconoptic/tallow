@@ -10,6 +10,7 @@
 //! Downward frames go from the root to one node. Each node learns which neighbour
 //! an origin's upward frames came from, and unicasts a downward frame that way.
 
+use crate::stats::{encode_heard, Heard};
 use crate::wire::{Command, Frame, FrameKind, Sealer, Watch, MAX_FRAME, MAX_PAYLOAD, WATCH_MAX};
 
 pub const NO_RANK: u8 = 255;
@@ -39,6 +40,11 @@ pub const TX_RETRIES: u8 = 2;
 pub const PARENT_FAILURES: u8 = 4;
 const HYSTERESIS: u16 = 60;
 const BEACON_PAYLOAD: usize = 11;
+/// Beacon flags, byte 7. Set when this neighbour must not be chosen as a parent.
+pub const LEAF: u8 = 0x01;
+/// ESP-NOW channel every mesh node locks. A camera follows its access point, so
+/// it speaks only while `tallow-iot` is on this channel.
+pub const CHANNEL: u8 = 1;
 /// Parent-change events kept while a node has no parent. See `flush_routes`.
 pub const ROUTE_LOG: usize = 4;
 /// uptime seconds, old parent, new parent, reason. Zero in a parent means none.
@@ -138,6 +144,8 @@ pub struct Neighbour {
     pub parent: u32,
     pub rssi: i8,
     pub last_ms: u32,
+    /// Beacon flags. Bit 0 is [`LEAF`].
+    pub flags: u8,
     /// One bit per recent beacon number, newest in bit 0.
     heard: u16,
     last_beacon: u16,
@@ -185,6 +193,8 @@ pub struct Mesh {
     next_beacon_ms: u32,
     root_until_ms: Option<u32>,
     pub rank: u8,
+    /// Set by [`Mesh::set_leaf`]. Beacons then carry [`LEAF`].
+    leaf: bool,
     parent: Option<usize>,
     parent_failures: u8,
     neighbours: [Option<Neighbour>; MAX_NEIGHBOURS],
@@ -253,6 +263,7 @@ impl Mesh {
             next_beacon_ms: boot % BEACON_MS,
             root_until_ms: None,
             rank: NO_RANK,
+            leaf: false,
             parent: None,
             parent_failures: 0,
             neighbours: [None; MAX_NEIGHBOURS],
@@ -281,6 +292,13 @@ impl Mesh {
     pub fn is_root(&self, now_ms: u32) -> bool {
         self.root_until_ms
             .is_some_and(|until| until.wrapping_sub(now_ms) as i32 > 0)
+    }
+
+    /// This node is a leaf for the rest of the boot. Its beacons carry [`LEAF`],
+    /// and other nodes will not choose it as a parent. It still chooses a parent
+    /// of its own and sends its own frames there.
+    pub fn set_leaf(&mut self) {
+        self.leaf = true;
     }
 
     /// The host calls this over serial about once a second. Being plugged into
@@ -325,6 +343,17 @@ impl Mesh {
 
     pub fn neighbours(&self) -> impl Iterator<Item = &Neighbour> {
         self.neighbours.iter().flatten()
+    }
+
+    /// The kind-15 payload: one record per neighbour that fits in `out`.
+    pub fn encode_neighbours(&self, out: &mut [u8]) -> usize {
+        encode_heard(
+            out,
+            self.neighbours().map(|neighbour| Heard {
+                id: neighbour.id,
+                rssi: neighbour.rssi,
+            }),
+        )
     }
 
     pub fn queued(&self) -> usize {
@@ -842,6 +871,7 @@ impl Mesh {
         let rank = payload[0];
         let parent = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]);
         let number = u16::from_le_bytes([payload[5], payload[6]]);
+        let flags = payload[7];
         let slot = self
             .neighbours
             .iter()
@@ -860,6 +890,7 @@ impl Mesh {
                 known.parent = parent;
                 known.mac = src;
                 known.last_ms = now_ms;
+                known.flags = flags;
                 known.rssi = ((known.rssi as i16 * 3 + rssi as i16) / 4) as i8;
             }
             None => {
@@ -870,6 +901,7 @@ impl Mesh {
                     parent,
                     rssi,
                     last_ms: now_ms,
+                    flags,
                     heard: 1,
                     last_beacon: number,
                 };
@@ -903,7 +935,8 @@ impl Mesh {
 
     fn usable(&self, entry: &Neighbour) -> bool {
         // A neighbour whose route runs through this node cannot be a way out.
-        entry.rank < MAX_RANK && entry.parent != self.id
+        // A leaf sends its own frames up and is not a way out for anyone else.
+        entry.rank < MAX_RANK && entry.parent != self.id && entry.flags & LEAF == 0
     }
 
     /// Picks a parent. `before_id` is the parent as it stood before any clearing,
@@ -1007,6 +1040,9 @@ impl Mesh {
         payload[0] = self.rank;
         payload[1..5].copy_from_slice(&parent.to_le_bytes());
         payload[5..7].copy_from_slice(&self.beacon_no.to_le_bytes());
+        if self.leaf {
+            payload[7] = LEAF;
+        }
         let head = self.head(FrameKind::Beacon, 1);
         let mut out = [0u8; MAX_FRAME];
         if let Some(length) = self.sealer.seal(&head, &payload, &mut out) {

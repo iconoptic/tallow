@@ -13,7 +13,7 @@
 
 use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs, NvsDefault};
 use esp_idf_svc::sys;
-use tallow_mesh_core::ota::{Action, Code, Receiver, Up};
+use tallow_mesh_core::ota::{running_version, Action, Code, Identity, Receiver, Up, PRODUCT_NODE};
 
 /// The public half baked by `build.rs`. The seed is not in the image.
 pub const OTA_PUB: &[u8; 32] = include_bytes!(concat!(env!("OUT_DIR"), "/ota_pub.bin"));
@@ -64,6 +64,19 @@ impl Slot {
     /// The highest version this board has confirmed. Images below it are refused.
     pub fn floor(&self) -> u32 {
         self.floor
+    }
+
+    /// Product, the image that is executing, and the confirmed floor.
+    pub fn identity(&self) -> Identity {
+        let pending = self
+            .versions
+            .as_ref()
+            .and_then(|store| store.get_u32(PENDING_KEY).ok().flatten());
+        Identity {
+            product: PRODUCT_NODE,
+            running: running_version(running_is_pending(), pending, self.floor),
+            floor: self.floor,
+        }
     }
 
     /// Performs one flash action. `false` means this action did not land, so the
