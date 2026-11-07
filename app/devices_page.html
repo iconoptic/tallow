@@ -210,11 +210,20 @@ function deviceCard(devices, now) {
   return card;
 }
 
+function firmwareText(node) {
+  if (node.product === undefined || node.running === undefined || node.floor === undefined) {
+    return "not reported";
+  }
+  const name = node.product === 1 ? "node" : node.product === 2 ? "camera" : String(node.product);
+  return name + ", version " + node.running + ", floor " + node.floor;
+}
+
 function nodeCard(id, node, now) {
   const card = make("li", "card");
   card.append(make("h3", "", id));
   const list = make("dl");
   const add = (term, value) => list.append(make("dt", "", term), make("dd", "", value));
+  add("Firmware", firmwareText(node));
   add("Rank", node.rank === undefined ? "unknown" : String(node.rank));
   add("Heap", `${kib(node.heap_free)} free, lowest ${kib(node.heap_min)}`);
   add("Parent", node.parent ? node.parent.toString(16).padStart(8, "0") : "no parent");

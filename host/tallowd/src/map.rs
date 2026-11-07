@@ -19,6 +19,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use tallow_mesh_core::mesh::Reason;
+use tallow_mesh_core::ota::Identity;
 use tallow_mesh_core::sightings::Kind;
 use tallow_mesh_core::stats::Stats;
 use tallow_mesh_core::wire::FrameKind;
@@ -54,6 +55,7 @@ struct NodeRow {
     hops: u32,
     link_rssi: i32,
     seen: i64,
+    firmware: Option<Identity>,
 }
 
 /// The nodes and the devices they hear. Devices are keyed `"<addr> <kind>"`, as
@@ -176,11 +178,27 @@ impl Map {
     }
 
     fn stats(&mut self, node: &str, stats: Stats, hops: u32, link_rssi: i32, now: f64) {
+        let firmware = self.nodes.get(node).and_then(|row| row.firmware);
         let row = NodeRow {
             stats,
             hops,
             link_rssi,
             seen: py_round(now),
+            firmware,
+        };
+        self.nodes.insert(node.to_string(), row);
+    }
+
+    /// The product and versions from an Identity frame. Stats already stored for
+    /// this node stay. A node with no stats yet keeps an empty report.
+    fn identity(&mut self, node: &str, identity: Identity, hops: u32, link_rssi: i32, now: f64) {
+        let previous = self.nodes.get(node).copied();
+        let row = NodeRow {
+            stats: previous.map(|row| row.stats).unwrap_or_default(),
+            hops,
+            link_rssi,
+            seen: py_round(now),
+            firmware: Some(identity),
         };
         self.nodes.insert(node.to_string(), row);
     }
@@ -451,6 +469,11 @@ impl NodeRow {
         out.insert("hops".into(), json!(self.hops));
         out.insert("link_rssi".into(), json!(self.link_rssi));
         out.insert("seen".into(), json!(self.seen));
+        if let Some(firmware) = self.firmware {
+            out.insert("product".into(), json!(firmware.product));
+            out.insert("running".into(), json!(firmware.running));
+            out.insert("floor".into(), json!(firmware.floor));
+        }
         Value::Object(out)
     }
 }
@@ -489,6 +512,14 @@ pub fn handle(world: &mut Map, line: &Line, now: f64, quiet: bool) -> Vec<String
                 world.stats(node, found.stats, line.hops, line.rssi, now);
                 if !quiet {
                     printed.push(stats_line(node, &found.stats));
+                }
+            }
+        }
+        Some(FrameKind::Identity) => {
+            if let Some(identity) = tallow_mesh_core::ota::Identity::decode(&line.payload) {
+                world.identity(node, identity, line.hops, line.rssi, now);
+                if !quiet {
+                    printed.push(identity_line(node, &identity));
                 }
             }
         }
@@ -577,6 +608,13 @@ fn name_line(node: &str, named: &Named) -> String {
         addr_text(&named.addr),
         kind_name(named.kind),
         py_repr(&named.name)
+    )
+}
+
+fn identity_line(node: &str, identity: &Identity) -> String {
+    format!(
+        "identity {node} product {} running {} floor {}",
+        identity.product, identity.running, identity.floor
     )
 }
 
@@ -767,6 +805,40 @@ mod tests {
         for (x, want) in cases {
             assert_eq!(py_round(x), want, "round({x})");
         }
+    }
+
+    #[test]
+    fn an_identity_is_kept_when_stats_arrive_and_is_written_on_the_node() {
+        let identity = Identity {
+            product: 2,
+            running: 4,
+            floor: 3,
+        };
+        let line = Line {
+            frame: u32::from(FrameKind::Identity as u8),
+            origin: "00000005".into(),
+            boot: 0,
+            seq: 0,
+            hops: 1,
+            rssi: -40,
+            payload: identity.encode().to_vec(),
+        };
+        let mut world = Map::default();
+        assert_eq!(
+            handle(&mut world, &line, FIXED_NOW, false),
+            ["identity 00000005 product 2 running 4 floor 3"]
+        );
+        let stats = Stats {
+            uptime_s: 9,
+            ..Stats::default()
+        };
+        world.stats("00000005", stats, 2, -50, FIXED_NOW);
+        let node = world.to_json()["nodes"]["00000005"].clone();
+        assert_eq!(node["product"].as_u64(), Some(2));
+        assert_eq!(node["running"].as_u64(), Some(4));
+        assert_eq!(node["floor"].as_u64(), Some(3));
+        assert_eq!(node["uptime_s"].as_u64(), Some(9));
+        assert_eq!(node["hops"].as_u64(), Some(2));
     }
 
     #[test]

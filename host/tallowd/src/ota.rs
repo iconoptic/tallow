@@ -6,10 +6,12 @@
 //! frame in flight on each hop. The wait takes lines and a clock, as `gatt`
 //! does, so the tests open no port.
 //!
-//! The order is: wait to hear the target, Begin until a Status says it landed,
-//! the chunks, a Query per window with resends, then Commit until a Result
-//! comes back. `<image>.sig` from `tools/mesh.sh ota-sign` is the product and
-//! version as well as the signature, so this needs nothing else to fill Begin.
+//! The order is: read the map, skip anyone who has not reported a lower
+//! version of this product, then for each node that is behind, wait to hear
+//! it, Begin until a Status says it landed, the chunks, a Query per window
+//! with resends, then Commit until a Result comes back. One node at a time.
+//! `<image>.sig` from `tools/mesh.sh ota-sign` is the product and version as
+//! well as the signature, so this needs nothing else to fill Begin.
 
 use crate::gatt::{self, Port, LINE_MAX, READY_S};
 use crate::link::{parse_line, Link};
@@ -18,7 +20,7 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::result::Result as StdResult;
 use tallow_mesh_core::ota::{
-    self, Code, Down, Up, CHUNK, PRODUCT_NODE, SLOT, WINDOW, WINDOW_BYTES,
+    self, Code, Down, Up, CAM_SLOT, CHUNK, PRODUCT_CAM0, PRODUCT_NODE, SLOT, WINDOW, WINDOW_BYTES,
 };
 use tallow_mesh_core::wire::{FrameKind, MAX_PAYLOAD};
 
@@ -47,9 +49,11 @@ const COMMIT_QUERY_S: f64 = 10.0;
 #[derive(Debug, PartialEq, Eq)]
 pub struct Job {
     pub port: String,
-    pub target: u32,
+    /// One node. Absent means every node in the map that is behind.
+    pub target: Option<u32>,
     pub image: PathBuf,
     pub sig: PathBuf,
+    pub map: PathBuf,
 }
 
 /// Bytes in `<image>.sig`: product, version, signature.
@@ -89,7 +93,7 @@ pub enum Fail {
     Route,
     /// The image is empty or does not fit the slot.
     Image,
-    /// The `.sig` names a product other than a mesh node.
+    /// The `.sig` names a product other than a node or a camera.
     Product(u8),
     Result(Code),
     /// Commit went out and no Result was seen, so the outcome is not known.
@@ -112,7 +116,7 @@ impl std::fmt::Display for Fail {
             Fail::Image => write!(out, "the image is empty or larger than the slot"),
             Fail::Product(product) => write!(
                 out,
-                "the image is signed for product {product}, and only a mesh node (product {PRODUCT_NODE}) takes it here"
+                "the image is signed for product {product}, which is not a node ({PRODUCT_NODE}) or a camera ({PRODUCT_CAM0})"
             ),
             Fail::Result(Code::Ok) => write!(out, "the node said ok where it should not"),
             Fail::Result(Code::BadSignature) => write!(
@@ -145,7 +149,8 @@ impl std::fmt::Display for Fail {
     }
 }
 
-/// `tallowd ota --port <p> --target <id> --image <file> --sig <file>`. Opens the port.
+/// `tallowd ota --port <p> --map <file> --image <file> --sig <file> [--target <id>]`.
+/// Opens the port only when at least one node is behind.
 pub fn command(argv: &[String]) -> Result<i32> {
     let job = parse_args(argv)?;
     let image = std::fs::read(&job.image)
@@ -155,19 +160,37 @@ pub fn command(argv: &[String]) -> Result<i32> {
         eprintln!("tallowd ota: {fail}");
         return Ok(1);
     }
-    let mut link = Link::open(&job.port)?;
-    match transfer(&mut link, job.target, &image, &signed, &mut |line| {
-        println!("{line}");
-    })? {
-        Ok(()) => {
-            println!("stored: the node reboots into it, and rolls it back unless it proves itself");
-            Ok(0)
+    let map_text = std::fs::read_to_string(&job.map)
+        .with_context(|| format!("could not read {}", job.map.display()))?;
+    let map: serde_json::Value = serde_json::from_str(&map_text)
+        .with_context(|| format!("{} is not a map", job.map.display()))?;
+    let choice = choose(&map, signed.product, signed.version, job.target);
+    report_choice(&choice, &signed);
+    if choice.due.is_empty() {
+        if job.target.is_some() && choice.current.is_empty() {
+            eprintln!("tallowd ota: the named node was not updated");
+            return Ok(1);
         }
-        Err(fail) => {
-            eprintln!("tallowd ota: {fail}");
-            Ok(1)
+        println!("no node is behind this image");
+        return Ok(0);
+    }
+    let mut link = Link::open(&job.port)?;
+    let mut failed = false;
+    for id in choice.due {
+        println!("update {id:08x}");
+        match transfer(&mut link, id, &image, &signed, &mut |line| {
+            println!("{line}");
+        })? {
+            Ok(()) => println!(
+                "stored {id:08x}: the node reboots into it, and rolls it back unless it proves itself"
+            ),
+            Err(fail) => {
+                eprintln!("tallowd ota: {id:08x}: {fail}");
+                failed = true;
+            }
         }
     }
+    Ok(i32::from(failed))
 }
 
 /// Runs before the port opens, because opening it resets the root.
@@ -187,10 +210,124 @@ fn read_signed(path: &std::path::Path) -> Result<Signed> {
 /// What the host refuses without asking the node. Runs before the port opens,
 /// because opening it resets the root.
 fn refusal(image: &[u8], signed: &Signed) -> Option<Fail> {
-    if image.is_empty() || image.len() > SLOT as usize {
+    let Some(slot) = slot_of(signed.product) else {
+        return Some(Fail::Product(signed.product));
+    };
+    if image.is_empty() || image.len() > slot as usize {
         return Some(Fail::Image);
     }
-    (signed.product != PRODUCT_NODE).then_some(Fail::Product(signed.product))
+    None
+}
+
+/// The slot a product's image has to fit. Anything else is not a firmware we send.
+fn slot_of(product: u8) -> Option<u32> {
+    match product {
+        PRODUCT_NODE => Some(SLOT),
+        PRODUCT_CAM0 => Some(CAM_SLOT),
+        _ => None,
+    }
+}
+
+/// Who the map says should take this image. `due` is sorted by node id.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Choice {
+    pub due: Vec<u32>,
+    pub current: Vec<u32>,
+    pub silent: Vec<u32>,
+    pub other: Vec<u32>,
+}
+
+/// Nodes whose reported product matches and whose running version is lower.
+/// A node with no identity is [`Choice::silent`]. `only` limits the walk to
+/// that id, which is silent when the map does not have it.
+pub fn choose(map: &serde_json::Value, product: u8, version: u32, only: Option<u32>) -> Choice {
+    let mut choice = Choice::default();
+    let Some(nodes) = map.get("nodes").and_then(|value| value.as_object()) else {
+        if let Some(id) = only {
+            choice.silent.push(id);
+        }
+        return choice;
+    };
+    if let Some(id) = only {
+        return choose_one(&mut choice, nodes, id, product, version);
+    }
+    let mut due = Vec::new();
+    for (key, row) in nodes {
+        let Ok(id) = u32::from_str_radix(key, 16) else {
+            continue;
+        };
+        classify(&mut choice, &mut due, id, row, product, version);
+    }
+    due.sort_unstable();
+    choice.due = due;
+    choice.current.sort_unstable();
+    choice.silent.sort_unstable();
+    choice.other.sort_unstable();
+    choice
+}
+
+fn choose_one(
+    choice: &mut Choice,
+    nodes: &serde_json::Map<String, serde_json::Value>,
+    id: u32,
+    product: u8,
+    version: u32,
+) -> Choice {
+    let mut due = Vec::new();
+    match nodes.get(&format!("{id:08x}")) {
+        Some(row) => classify(choice, &mut due, id, row, product, version),
+        None => choice.silent.push(id),
+    }
+    choice.due = due;
+    std::mem::take(choice)
+}
+
+fn classify(
+    choice: &mut Choice,
+    due: &mut Vec<u32>,
+    id: u32,
+    row: &serde_json::Value,
+    product: u8,
+    version: u32,
+) {
+    let Some((heard, running, _)) = identity_of(row) else {
+        choice.silent.push(id);
+        return;
+    };
+    if heard != product {
+        choice.other.push(id);
+    } else if running < version {
+        due.push(id);
+    } else {
+        choice.current.push(id);
+    }
+}
+
+/// Product, running version, and floor, or nothing when any of the three is absent.
+fn identity_of(row: &serde_json::Value) -> Option<(u8, u32, u32)> {
+    let product = row.get("product")?.as_u64()?;
+    let running = row.get("running")?.as_u64()?;
+    let floor = row.get("floor")?.as_u64()?;
+    if product > u64::from(u8::MAX) || running > u64::from(u32::MAX) || floor > u64::from(u32::MAX)
+    {
+        return None;
+    }
+    Some((product as u8, running as u32, floor as u32))
+}
+
+fn report_choice(choice: &Choice, signed: &Signed) {
+    for id in &choice.current {
+        println!("{id:08x} is already at version {} or newer", signed.version);
+    }
+    for id in &choice.silent {
+        println!("{id:08x} has not reported a firmware version");
+    }
+    for id in &choice.other {
+        println!(
+            "{id:08x} is another product, and this image is product {}",
+            signed.product
+        );
+    }
 }
 
 /// Why a step stopped: a transfer that failed, or a port that did.
@@ -221,7 +358,10 @@ pub fn transfer<P: Port>(
     signed: &Signed,
     report: &mut dyn FnMut(&str),
 ) -> Result<StdResult<(), Fail>> {
-    if image.is_empty() || image.len() > SLOT as usize {
+    let Some(slot) = slot_of(signed.product) else {
+        return Ok(Err(Fail::Product(signed.product)));
+    };
+    if image.is_empty() || image.len() > slot as usize {
         return Ok(Err(Fail::Image));
     }
     if !gatt::wait_for_target(port, target, READY_S)? {
@@ -539,6 +679,7 @@ pub fn parse_args(argv: &[String]) -> Result<Job> {
     let mut target = None;
     let mut image = None;
     let mut sig = None;
+    let mut map = None;
     let mut words = argv.iter();
     while let Some(word) = words.next() {
         match word.as_str() {
@@ -549,14 +690,16 @@ pub fn parse_args(argv: &[String]) -> Result<Job> {
             }
             "--image" => image = Some(PathBuf::from(words.next().context("--image needs a file")?)),
             "--sig" => sig = Some(PathBuf::from(words.next().context("--sig needs a file")?)),
+            "--map" => map = Some(PathBuf::from(words.next().context("--map needs a file")?)),
             other => bail!("unknown argument {other}"),
         }
     }
     Ok(Job {
         port: port.context("--port is required")?,
-        target: target.context("--target is required")?,
+        target,
         image: image.context("--image is required")?,
         sig: sig.context("--sig is required")?,
+        map: map.context("--map is required")?,
     })
 }
 
@@ -569,7 +712,7 @@ fn node_id(text: &str) -> Result<u32> {
 mod tests {
     use super::*;
     use ed25519_compact::{KeyPair, Seed};
-    use tallow_mesh_core::ota::{signed_message, verify, Action, Receiver, PRODUCT_NODE};
+    use tallow_mesh_core::ota::{signed_message, verify, Action, Receiver, BITMAP, PRODUCT_NODE};
 
     const TARGET: u32 = 0x0a0b_0c0d;
     const VERSION: u32 = 3;
@@ -679,7 +822,7 @@ mod tests {
                         },
                         TARGET,
                     ));
-                    self.receiver = Receiver::new(PRODUCT_NODE, 0);
+                    self.receiver = Receiver::<SLOT, BITMAP>::new(PRODUCT_NODE, 0);
                     return Ok(());
                 }
                 self.actions.push(action);
@@ -741,7 +884,7 @@ mod tests {
             now: 0.0,
             heard_at: 3.0,
             routed: false,
-            receiver: Receiver::new(PRODUCT_NODE, floor),
+            receiver: Receiver::<SLOT, BITMAP>::new(PRODUCT_NODE, floor),
             public,
             trouble,
             dropped: false,
@@ -973,7 +1116,7 @@ mod tests {
                 if matches!(ota::decode_down(&hex_body(line)), Some(Down::Chunk { .. })) {
                     *self.sends += 1;
                     if *self.sends == 3 {
-                        self.inner.receiver = Receiver::new(PRODUCT_NODE, 0);
+                        self.inner.receiver = Receiver::<SLOT, BITMAP>::new(PRODUCT_NODE, 0);
                     }
                 }
                 self.inner.send(line)
@@ -1182,11 +1325,13 @@ mod tests {
             refusal(&vec![0; SLOT as usize + 1], &good),
             Some(Fail::Image)
         );
-        let cam = Signed {
-            product: PRODUCT_NODE + 1,
+        let other = Signed { product: 9, ..good };
+        assert_eq!(refusal(&image, &other), Some(Fail::Product(9)));
+        let camera = Signed {
+            product: PRODUCT_CAM0,
             ..good
         };
-        assert_eq!(refusal(&image, &cam), Some(Fail::Product(PRODUCT_NODE + 1)));
+        assert_eq!(refusal(&image, &camera), None);
     }
 
     /// The port named here is no serial port, so reaching `Link::open` is an error.
@@ -1196,7 +1341,7 @@ mod tests {
         let _cleanup = TempDir(dir.clone());
         let image = image_of(400);
         let (good, _) = signed(&image);
-        let mut sig = vec![PRODUCT_NODE + 1];
+        let mut sig = vec![9u8];
         sig.extend_from_slice(&good.version.to_le_bytes());
         sig.extend_from_slice(&good.signature);
         std::fs::write(dir.join("cam.bin"), &image).expect("image");
@@ -1208,6 +1353,8 @@ mod tests {
             let argv: Vec<String> = [
                 "--port",
                 &dir.join("no-port").to_string_lossy(),
+                "--map",
+                &dir.join("map.json").to_string_lossy(),
                 "--target",
                 "a0b0c0d",
                 "--image",
@@ -1323,5 +1470,56 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn the_fleet_sends_only_to_an_older_node_of_this_product() {
+        let map = serde_json::json!({
+            "nodes": {
+                "0a0b0c0d": {"product": 1, "running": 2, "floor": 2},
+                "0a0b0c0e": {"product": 1, "running": 4, "floor": 4},
+                "0a0b0c0f": {"product": 1, "running": 5, "floor": 4},
+                "0a0b0c10": {"product": 2, "running": 1, "floor": 1},
+                "0a0b0c11": {"uptime_s": 1}
+            }
+        });
+        let choice = choose(&map, PRODUCT_NODE, 4, None);
+        assert_eq!(choice.due, vec![0x0a0b_0c0d]);
+        assert_eq!(choice.current, vec![0x0a0b_0c0e, 0x0a0b_0c0f]);
+        assert_eq!(choice.other, vec![0x0a0b_0c10]);
+        assert_eq!(choice.silent, vec![0x0a0b_0c11]);
+        let one = choose(&map, PRODUCT_NODE, 4, Some(0x0a0b_0c0e));
+        assert!(one.due.is_empty());
+        assert_eq!(one.current, vec![0x0a0b_0c0e]);
+        let missing = choose(&map, PRODUCT_NODE, 4, Some(0x1111_1111));
+        assert_eq!(missing.silent, vec![0x1111_1111]);
+    }
+
+    #[test]
+    fn a_camera_image_uses_the_camera_slot_and_a_node_image_does_not() {
+        let image = vec![0u8; SLOT as usize + 1];
+        let node = Signed {
+            product: PRODUCT_NODE,
+            version: 1,
+            signature: [0; 64],
+        };
+        assert!(matches!(refusal(&image, &node), Some(Fail::Image)));
+        let camera = Signed {
+            product: PRODUCT_CAM0,
+            version: 1,
+            signature: [0; 64],
+        };
+        assert_eq!(refusal(&image, &camera), None);
+        let huge = vec![0u8; CAM_SLOT as usize + 1];
+        assert!(matches!(refusal(&huge, &camera), Some(Fail::Image)));
+        let unknown = Signed {
+            product: 9,
+            version: 1,
+            signature: [0; 64],
+        };
+        assert!(matches!(
+            refusal(&image[..1], &unknown),
+            Some(Fail::Product(9))
+        ));
     }
 }

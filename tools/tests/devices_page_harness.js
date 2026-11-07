@@ -78,7 +78,7 @@ const LIVE = {
   now: 1000000,
   age_s: 3,
   nodes: {
-    "0a0b0c0d": { rank: 0, heap_free: 90112, heap_min: 40960, hops: 0, parent: 0, seen: 999997, link_rssi: 0 },
+    "0a0b0c0d": { rank: 0, heap_free: 90112, heap_min: 40960, hops: 0, parent: 0, seen: 999997, link_rssi: 0, product: 1, running: 4, floor: 3 },
     "0a0b0c0e": { rank: 2, heap_free: 81920, heap_min: 30720, hops: 2, parent: 0x0a0b0c0d, seen: 999998, link_rssi: -60 },
   },
   devices: {
@@ -203,10 +203,12 @@ const LIVE = {
   check("a node with no parent says so, and a node with one shows its parent", () => {
     const root = cardWith(ids.nodes, "0a0b0c0d");
     assert.match(textOf(root), /Parent\nno parent/);
+    assert.match(textOf(root), /Firmware\nnode, version 4, floor 3/);
     assert.match(textOf(root), /Rank\n0/);
     assert.match(textOf(root), /Heap\n88 KB free, lowest 40 KB/);
     const child = cardWith(ids.nodes, "0a0b0c0e");
     assert.match(textOf(child), /Parent\n0a0b0c0d/);
+    assert.match(textOf(child), /Firmware\nnot reported/);
     assert.match(textOf(child), /Rank\n2/);
   });
 

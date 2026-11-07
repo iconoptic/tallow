@@ -53,7 +53,7 @@ pub fn sightings(payload: &[u8]) -> Vec<Sighting> {
         .map(|record| Sighting {
             addr: record.addr,
             kind: Kind::from_u8(record.kind),
-            rssi: record.best,
+            rssi: record.rssi,
             count: record.count,
             age_s: record.age_s,
         })
@@ -126,7 +126,7 @@ mod tests {
             vec![Sighting {
                 addr: [0xAB; 6],
                 kind: Some(Kind::BleRandom),
-                rssi: -62,
+                rssi: -66,
                 count: 2,
                 age_s: 4,
             }]
