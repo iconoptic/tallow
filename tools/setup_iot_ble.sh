@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
-# Host Bluetooth seed on the TP-Link UB500 (2357:0604).
-# Powers that controller on and leaves it not discoverable and not pairable.
-# No pairing agent is registered. Reinstalls the combo-off oneshot from
-# tools/setup_iot_ap.sh so bluetoothd AutoEnable cannot turn the Realtek
-# combo (0bda:d723) back on. Refuses up unless that Kootech AP is up.
+# Host Bluetooth seed on the Realtek combo (0bda:d723), the same stick as
+# the tallow-iot access point. Powers that controller on and leaves it not
+# discoverable and not pairable. No pairing agent is registered. Does not
+# rfkill it. Refuses up unless that access point is up.
 #
 # Does not load a kernel LE whitelist. An empty whitelist would hide every
 # advertiser from tools/ble_discover.py. secrets/iot-ble/accept_macs is the
 # outbound allow list for the future controller. allow and revoke edit only
 # that file.
 #
-# Keep the UB500 on a USB 2.0 port. A short USB 2.0 extension that moves it
-# away from the Kootech antenna is worth doing before trusting RSSI.
+# The TP-Link UB500 (2357:0604) is not selected. Leave it plugged in or
+# unplug it; this script does not power it and does not require it.
 #
 # Idempotent. Re-running up leaves an existing allow file in place.
 #
@@ -28,24 +27,22 @@ AP_SCRIPT="$(readlink -f "${ROOT}/tools/setup_iot_ap.sh")"
 SECRET_DIR="${ROOT}/secrets/iot-ble"
 RUN=/run/tallow
 
-# Bind by USB id. HCI indexes move.
-UB_VID=2357
-UB_PID=0604
-COMBO_VID=0bda
-COMBO_PID=d723
+# Bind by USB id. HCI indexes move. The seed and the access point are one stick.
+SEED_VID=0bda
+SEED_PID=d723
 AP_VID=0bda
-AP_PID=b812
+AP_PID=d723
 
 usage() {
   cat <<EOF
 Usage: setup_iot_ble.sh <command>
 
-  up                 power on the UB500 and hold the combo Bluetooth off (default)
-  status             show the powered controller, the combo, and the allow list
+  up                 power on the combo and leave it not pairable (default)
+  status             show the access point, the seed, and the allow list
   allow MAC          add a MAC to secrets/iot-ble/accept_macs
   revoke MAC         remove a MAC from that file
 
-up refuses unless the Kootech AP from tools/setup_iot_ap.sh is up.
+up refuses unless the access point from tools/setup_iot_ap.sh is up on this stick.
 allow and revoke only edit the allow file. They do not change BlueZ policy.
 
 The allow list starts empty. Inbound pairing stays closed either way.
@@ -170,8 +167,8 @@ assign_one_hci() {
   return 0
 }
 
-# Print the Kootech netdev. Return 1 when it is missing, 2 when it is ambiguous.
-kootech_iface() {
+# Print the access-point netdev. Return 1 when it is missing, 2 when it is ambiguous.
+ap_iface() {
   local __value status
   set +e
   __value="$(usb_net_iface "$AP_VID" "$AP_PID")"
@@ -190,27 +187,27 @@ require_ap() {
   local live="" conf="" state="" status=0
   [[ -x "$AP_SCRIPT" ]] || die "missing ${AP_SCRIPT}"
   [[ -f /etc/systemd/system/hostapd.service.d/tallow.conf ]] || \
-    die "Kootech AP is not installed. Run: sudo ${AP_SCRIPT}"
+    die "access point is not installed. Run: sudo ${AP_SCRIPT}"
   if ! systemctl is-active --quiet hostapd; then
-    die "Kootech AP is not up. Run: sudo ${AP_SCRIPT}"
+    die "access point is not up. Run: sudo ${AP_SCRIPT}"
   fi
   set +e
-  live="$(kootech_iface)"
+  live="$(ap_iface)"
   status=$?
   set -e
   if [[ "$status" -eq 2 ]]; then
     exit 1
   fi
   if [[ "$status" -ne 0 || -z "$live" ]]; then
-    die "Kootech AP (USB ${AP_VID}:${AP_PID}) is not present"
+    die "access point (USB ${AP_VID}:${AP_PID}) is not present"
   fi
   [[ -r /etc/tallow/hostapd.conf ]] || die "missing /etc/tallow/hostapd.conf"
   conf="$(awk -F= '$1 == "interface" { print $2; exit }' /etc/tallow/hostapd.conf | tr -d '[:space:]')"
-  [[ "$live" == "$conf" ]] || die "hostapd is bound to ${conf:-nothing}, not the Kootech interface ${live}"
-  [[ -d "/sys/class/net/${live}" ]] || die "Kootech interface ${live} is not present"
+  [[ "$live" == "$conf" ]] || die "hostapd is bound to ${conf:-nothing}, not ${live}"
+  [[ -d "/sys/class/net/${live}" ]] || die "access point interface ${live} is not present"
   state="$(tr -d '[:space:]' <"/sys/class/net/${live}/operstate")"
   if [[ "$state" == "down" || -z "$state" ]]; then
-    die "Kootech interface ${live} is down"
+    die "access point interface ${live} is down"
   fi
 }
 
@@ -277,7 +274,7 @@ unblock_hci() {
     [[ "$(tr -d '[:space:]' <"${r}/type")" == "bluetooth" ]] || continue
     if [[ "$(tr -d '[:space:]' <"${r}/hard")" == "1" ]]; then
       eval "$shopts"
-      die "UB500 ${hci} is hard-blocked"
+      die "seed ${hci} is hard-blocked"
     fi
     printf '0\n' >"${r}/soft" || true
   done
@@ -285,62 +282,14 @@ unblock_hci() {
   rfkill unblock "$hci" || true
 }
 
-# Same unit and udev rule as tools/setup_iot_ap.sh. Both scripts write them
-# so a later run of either one keeps the combo controller off.
-install_combo_hold() {
-  local unit=/etc/systemd/system/tallow-iot-combo-bt-off.service
-  local rule=/etc/udev/rules.d/80-tallow-combo-bt.rules
-  local tmp changed=0
-  tmp="$(mktemp)"
-  cat >"$tmp" <<EOF
-[Unit]
-Description=Power off the Realtek combo Bluetooth controller
-After=bluetooth.service
-PartOf=bluetooth.service
-
-[Service]
-Type=oneshot
-ExecStart=${AP_SCRIPT} combo-bt-off
-
-[Install]
-WantedBy=bluetooth.service multi-user.target
-EOF
-  if [[ -f "$unit" ]] && cmp -s "$tmp" "$unit"; then
-    rm -f "$tmp"
-  else
-    cat "$tmp" >"$unit"
-    chmod 0644 "$unit"
-    rm -f "$tmp"
-    changed=1
-  fi
-  tmp="$(mktemp)"
-  cat >"$tmp" <<EOF
-# Realtek combo Bluetooth (${COMBO_VID}:${COMBO_PID}) shares the survey antenna. Keep it off.
-ACTION=="add", SUBSYSTEM=="bluetooth", ATTRS{idVendor}=="${COMBO_VID}", ATTRS{idProduct}=="${COMBO_PID}", TAG+="systemd", ENV{SYSTEMD_WANTS}="tallow-iot-combo-bt-off.service"
-EOF
-  if [[ -f "$rule" ]] && cmp -s "$tmp" "$rule"; then
-    rm -f "$tmp"
-  else
-    cat "$tmp" >"$rule"
-    chmod 0644 "$rule"
-    rm -f "$tmp"
-    changed=1
-  fi
-  if [[ "$changed" -eq 1 ]]; then
-    systemctl daemon-reload
-    udevadm control --reload
-  fi
-  systemctl enable tallow-iot-combo-bt-off.service
-}
-
 power_seed() {
   local hci="" i powered="" disc="" pair=""
-  assign_one_hci hci "$UB_VID" "$UB_PID" || die "UB500 (USB ${UB_VID}:${UB_PID}) is not present"
+  assign_one_hci hci "$SEED_VID" "$SEED_PID" || die "seed (USB ${SEED_VID}:${SEED_PID}) is not present"
   if [[ "$(hci_hard "$hci")" == "blocked" ]]; then
-    die "UB500 ${hci} is hard-blocked"
+    die "seed ${hci} is hard-blocked"
   fi
   for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-    assign_one_hci hci "$UB_VID" "$UB_PID" || die "UB500 (USB ${UB_VID}:${UB_PID}) is not present"
+    assign_one_hci hci "$SEED_VID" "$SEED_PID" || die "seed (USB ${SEED_VID}:${SEED_PID}) is not present"
     unblock_hci "$hci"
     # Close pairing before power-on, then again once the adapter is up.
     # This does not register a pairing agent.
@@ -354,29 +303,11 @@ power_seed() {
     disc="$(adapter_prop "$hci" Discoverable)"
     pair="$(adapter_prop "$hci" Pairable)"
     if [[ "$powered" == "b true" && "$disc" == "b false" && "$pair" == "b false" ]]; then
-      log "UB500 ${hci} powered on, discoverable=false, pairable=false"
+      log "seed ${hci} powered on, discoverable=false, pairable=false"
       return 0
     fi
   done
-  die "UB500 ${hci} did not settle (powered=${powered:-?} discoverable=${disc:-?} pairable=${pair:-?})"
-}
-
-confirm_combo_off() {
-  local hci="" i powered="" soft=""
-  if ! assign_one_hci hci "$COMBO_VID" "$COMBO_PID"; then
-    log "combo Bluetooth controller is not present"
-    return 0
-  fi
-  for i in 1 2 3 4 5; do
-    powered="$(adapter_prop "$hci" Powered)"
-    soft="$(hci_soft "$hci")"
-    if [[ "$powered" == "b false" && "$soft" == "blocked" ]]; then
-      log "combo Bluetooth ${hci} is off"
-      return 0
-    fi
-    sleep 0.4
-  done
-  die "combo Bluetooth ${hci} stayed up (powered=${powered:-?} soft=${soft:-?})"
+  die "seed ${hci} did not settle (powered=${powered:-?} discoverable=${disc:-?} pairable=${pair:-?})"
 }
 
 lock_secrets() {
@@ -484,24 +415,20 @@ cmd_up() {
   need_root up
   require_fedora
   [[ "$#" -eq 0 ]] || die "up takes no arguments"
-  for c in busctl systemctl rfkill awk install flock mktemp cmp tr udevadm; do
+  for c in busctl systemctl rfkill awk install flock mktemp tr; do
     need_cmd "$c"
   done
   require_ap
   refuse_always_pairable
-  assign_one_hci hci "$UB_VID" "$UB_PID" || die "UB500 (USB ${UB_VID}:${UB_PID}) is not present"
+  assign_one_hci hci "$SEED_VID" "$SEED_PID" || die "seed (USB ${SEED_VID}:${SEED_PID}) is not present"
   if [[ "$(systemctl is-enabled bluetooth.service 2>/dev/null || true)" == "masked" ]]; then
     die "bluetooth.service is masked"
   fi
-  install_combo_hold
   systemctl enable bluetooth.service
   if ! systemctl is-active --quiet bluetooth.service; then
     systemctl start bluetooth.service
   fi
-  "$AP_SCRIPT" combo-bt-off
   power_seed
-  "$AP_SCRIPT" combo-bt-off
-  confirm_combo_off
   lock_secrets
   ensure_allow_file
   unlock_secrets
@@ -542,37 +469,30 @@ cmd_status() {
   [[ "$#" -eq 0 ]] || die "status takes no arguments"
   if systemctl is-active --quiet hostapd; then
     set +e
-    live="$(kootech_iface)"
+    live="$(ap_iface)"
     status=$?
     set -e
     if [[ "$status" -eq 2 ]]; then
-      printf 'AP: hostapd active, Kootech USB %s:%s has more than one netdev\n' "$AP_VID" "$AP_PID"
+      printf 'AP: hostapd active, USB %s:%s has more than one netdev\n' "$AP_VID" "$AP_PID"
     elif [[ "$status" -eq 0 && -n "$live" ]]; then
       printf 'AP: active %s USB %s:%s\n' "$live" "$AP_VID" "$AP_PID"
     else
-      printf 'AP: hostapd active, Kootech USB %s:%s missing\n' "$AP_VID" "$AP_PID"
+      printf 'AP: hostapd active, USB %s:%s missing\n' "$AP_VID" "$AP_PID"
     fi
   else
     printf 'AP: down\n'
   fi
   print_powered_controllers
-  if assign_one_hci hci "$UB_VID" "$UB_PID"; then
+  if assign_one_hci hci "$SEED_VID" "$SEED_PID"; then
     addr="$(plain_string "$(adapter_prop "$hci" Address)")"
     powered="$(plain_bool "$(adapter_prop "$hci" Powered)")"
     disc="$(plain_bool "$(adapter_prop "$hci" Discoverable)")"
     pair="$(plain_bool "$(adapter_prop "$hci" Pairable)")"
-    printf 'UB500: %s USB %s:%s address %s powered=%s discoverable=%s pairable=%s\n' \
-      "$hci" "$UB_VID" "$UB_PID" "$addr" "$powered" "$disc" "$pair"
-  else
-    printf 'UB500: not present (USB %s:%s)\n' "$UB_VID" "$UB_PID"
-  fi
-  if assign_one_hci hci "$COMBO_VID" "$COMBO_PID"; then
-    powered="$(plain_bool "$(adapter_prop "$hci" Powered)")"
     soft="$(hci_soft "$hci")"
-    printf 'combo Bluetooth: %s USB %s:%s powered=%s soft=%s\n' \
-      "$hci" "$COMBO_VID" "$COMBO_PID" "$powered" "$soft"
+    printf 'seed: %s USB %s:%s address %s powered=%s discoverable=%s pairable=%s soft=%s\n' \
+      "$hci" "$SEED_VID" "$SEED_PID" "$addr" "$powered" "$disc" "$pair" "$soft"
   else
-    printf 'combo Bluetooth: not present (USB %s:%s)\n' "$COMBO_VID" "$COMBO_PID"
+    printf 'seed: not present (USB %s:%s)\n' "$SEED_VID" "$SEED_PID"
   fi
   if [[ -f "${SECRET_DIR}/accept_macs" ]]; then
     n="$(valid_macs "${SECRET_DIR}/accept_macs" | awk 'END { print NR + 0 }')"

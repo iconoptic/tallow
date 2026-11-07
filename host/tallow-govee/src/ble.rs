@@ -11,13 +11,14 @@ use std::future::Future;
 use std::path::Path;
 use std::time::Duration;
 
-/// The TP-Link UB500 is the host seed. Its hci index moves, so it is found by this id.
-pub const SEED_USB: (&str, &str) = ("2357", "0604");
+/// The Realtek combo (the tallow-iot stick) is the host seed. Its hci index
+/// moves, so it is found by this id.
+pub const SEED_USB: (&str, &str) = ("0bda", "d723");
 /// The write characteristic on the light's service.
 pub const WRITE_UUID: &str = "00010203-0405-0607-0809-0a0b0c0d2b11";
 /// The notify characteristic on the light's service.
 pub const READ_UUID: &str = "00010203-0405-0607-0809-0a0b0c0d2b10";
-/// What `seed_adapter` answers when no UB500 is attached. Python falls back to it too.
+/// What `seed_adapter` answers when the combo is not attached. Python falls back to it too.
 pub const FALLBACK_ADAPTER: &str = "hci0";
 
 /// What a scan saw of the light: its name and its manufacturer entries.
@@ -90,7 +91,7 @@ pub fn advertisement_of(manufacturer: &BTreeMap<u16, Vec<u8>>) -> Option<Adverti
     found
 }
 
-/// The hci name of the UB500 under `root`, which is `/sys/class/bluetooth` in use. An
+/// The hci name of the combo under `root`, which is `/sys/class/bluetooth` in use. An
 /// adapter matches when its `device/../` directory has the seed's vendor and product id.
 /// Names are tried in order, and `hci0` answers when none matches or the root is absent.
 pub fn seed_adapter_in(root: &Path) -> String {
@@ -182,7 +183,7 @@ mod tests {
     fn the_seed_adapter_is_found_by_usb_id_not_by_hci_number() {
         let root = tree(
             "seed",
-            &[("hci0", "8087", "0026"), ("hci1", "2357", "0604")],
+            &[("hci0", "8087", "0026"), ("hci1", "0bda", "d723")],
         );
         assert_eq!(seed_adapter_in(&root), "hci1");
         let _ = std::fs::remove_dir_all(&root);
@@ -192,7 +193,7 @@ mod tests {
     fn with_no_seed_adapter_the_answer_is_hci0() {
         let root = tree(
             "none",
-            &[("hci0", "8087", "0026"), ("hci1", "2357", "0605")],
+            &[("hci0", "8087", "0026"), ("hci1", "0bda", "d724")],
         );
         assert_eq!(seed_adapter_in(&root), FALLBACK_ADAPTER);
         let _ = std::fs::remove_dir_all(&root);

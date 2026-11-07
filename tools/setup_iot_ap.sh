@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Isolated 2.4 GHz IoT access point on the Kootech USB stick (0bda:b812).
-# The Realtek combo (0bda:d723) only surveys channels 1, 6, and 11 and writes
-# advice. It does not restart hostapd. apply-channel is the retune command.
-# The combo's Bluetooth controller is held off so a scan is not time-sliced.
+# Isolated 2.4 GHz IoT access point on the Realtek combo (0bda:d723).
+# That stick's Bluetooth controller is the host seed (tools/setup_iot_ble.sh).
+# There is no second radio. Scanning this interface would take it out of AP
+# mode, so the survey timer is retired and survey-timer does not scan.
+# apply-channel still copies advice already on disk. It does not scan.
 #
 # Idempotent. Re-running up does not rotate the passphrase and leaves hostapd
 # running when the rendered config is unchanged.
@@ -15,6 +16,8 @@
 #   sudo ./tools/setup_iot_ap.sh reserve aa:bb:cc:dd:ee:ff 10.87.0.22
 #   sudo ./tools/setup_iot_ap.sh unreserve aa:bb:cc:dd:ee:ff
 #   sudo ./tools/setup_iot_ap.sh apply-channel
+#   sudo ./tools/setup_iot_ap.sh pin-channel 1
+#   sudo ./tools/setup_iot_ap.sh pin-channel off
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,11 +29,8 @@ RUN=/run/tallow
 
 # Bind by USB id. Interface names and HCI indexes move.
 AP_VID=0bda
-AP_PID=b812
-AP_DRIVER=rtw88_8822bu
-COMBO_VID=0bda
-COMBO_PID=d723
-COMBO_DRIVER=rtw88_8723du
+AP_PID=d723
+AP_DRIVER=rtw88_8723du
 
 AP_CIDR=10.87.0.1/24
 AP_ADDR=10.87.0.1
@@ -60,12 +60,15 @@ Usage: setup_iot_ap.sh <command>
   revoke MAC         remove a station and reload hostapd
   reserve MAC IP     give a node a fixed lease, 10.87.0.${NODE_FIRST}-${NODE_LAST}
   unreserve MAC      drop a node's reservation
-  apply-channel      copy the survey recommendation into the saved channel
-                     and restart hostapd
+  apply-channel      copy saved survey advice into the saved channel
+                     and restart hostapd. This command does not scan.
+  pin-channel CH     lock the saved channel to 1, 6, or 11 and restart hostapd
+  pin-channel off    clear that lock; the saved channel stays
 
-SSID, passphrase, saved channel, survey advice, accept_macs, and reservations
+SSID, passphrase, saved channel, channel lock, accept_macs, and reservations
 live in secrets/iot-ap/ (directory 0700, files 0600). Re-running up does not rotate
-the passphrase. The survey timer only records advice.
+the passphrase. The saved channel is kept. This radio is not scanned while it
+is the access point.
 
 The accept list starts empty: the SSID is up and nothing can associate.
 
@@ -282,6 +285,15 @@ write_channel() {
   local channel="$1"
   [[ "$channel" =~ ^(1|6|11)$ ]] || die "refusing channel ${channel}"
   printf '%s\n' "$channel" | write_secret "${SECRET_DIR}/channel"
+}
+
+# The channel a pin holds, or nothing when the lock is absent or unreadable.
+locked_channel() {
+  local c=""
+  [[ -f "${SECRET_DIR}/channel.lock" ]] || return 1
+  c="$(tr -d '[:space:]' <"${SECRET_DIR}/channel.lock")"
+  [[ "$c" =~ ^(1|6|11)$ ]] || return 1
+  printf '%s\n' "$c"
 }
 
 norm_mac() {
@@ -727,29 +739,20 @@ ensure_initial_channel() {
     return 0
   fi
   log "no saved channel yet; surveying once before hostapd starts"
-  if iface="$(usb_net_iface "$COMBO_VID" "$COMBO_PID")"; then
-    if survey_iface "$iface" combo "initial survey on the combo radio" yes; then
-      log "initial channel $(current_channel) from the combo survey"
-      return 0
-    fi
-    log "combo scan failed (${SCAN_ERROR:-unknown}); saving channel 6"
-    write_fallback_advice "combo scan failed (${SCAN_ERROR:-unknown}); saved channel 6"
-    return 0
-  fi
   if systemctl is-active --quiet hostapd; then
-    log "combo radio is absent and hostapd is already up; saving channel 6 without scanning the AP radio"
-    write_fallback_advice "combo survey radio ${COMBO_VID}:${COMBO_PID} is not present; saved channel 6 without scanning the AP radio"
+    log "hostapd is already up; saving channel 6 without scanning the AP radio"
+    write_fallback_advice "saved channel 6 without scanning the AP radio"
     return 0
   fi
   assign_usb_iface iface "$AP_VID" "$AP_PID" \
-    "Kootech AP (USB ${AP_VID}:${AP_PID}) is not present. Leave it in the USB port it is in."
-  log "combo radio is absent; surveying the Kootech once before hostapd starts"
-  if survey_iface "$iface" kootech "initial survey on the AP radio before hostapd started" yes; then
-    log "initial channel $(current_channel) from the Kootech survey"
+    "Realtek combo (USB ${AP_VID}:${AP_PID}) is not present. Leave it in the USB port it is in."
+  log "surveying the AP radio once before hostapd starts"
+  if survey_iface "$iface" ap "initial survey on the AP radio before hostapd started" yes; then
+    log "initial channel $(current_channel) from the AP survey"
     return 0
   fi
-  log "Kootech scan failed (${SCAN_ERROR:-unknown}); saving channel 6"
-  write_fallback_advice "Kootech scan failed (${SCAN_ERROR:-unknown}); saved channel 6"
+  log "AP scan failed (${SCAN_ERROR:-unknown}); saving channel 6"
+  write_fallback_advice "AP scan failed (${SCAN_ERROR:-unknown}); saved channel 6"
 }
 
 render_tree() {
@@ -1044,13 +1047,14 @@ EOF
 
 configure_nm() {
   local conf="/etc/NetworkManager/conf.d/tallow-iot-unmanaged.conf"
-  local tmp line="" d iface drv pair state
-  local -a drivers=("$AP_DRIVER" "$COMBO_DRIVER")
-  for pair in "${AP_VID}:${AP_PID}" "${COMBO_VID}:${COMBO_PID}"; do
-    iface="$(usb_net_iface "${pair%%:*}" "${pair##*:}")" || continue
+  local tmp line="" d iface="" drv="" state
+  local -a drivers=("$AP_DRIVER")
+  if iface="$(usb_net_iface "$AP_VID" "$AP_PID")"; then
     drv="$(driver_of "$iface" || true)"
     [[ -n "$drv" ]] && drivers+=("$drv")
-  done
+  else
+    iface=""
+  fi
   while read -r d; do
     [[ "$d" =~ ^[A-Za-z0-9_.-]+$ ]] || continue
     if [[ -n "$line" ]]; then
@@ -1061,8 +1065,7 @@ configure_nm() {
   tmp="$(mktemp)"
   cat >"$tmp" <<EOF
 # Installed by tools/setup_iot_ap.sh.
-# NetworkManager must not run a shared hotspot on these radios or join a
-# network on the survey stick.
+# NetworkManager must not run a shared hotspot on this radio.
 [keyfile]
 unmanaged-devices=${line}
 EOF
@@ -1071,15 +1074,13 @@ EOF
     nmcli general reload
   fi
   rm -f "$tmp"
-  for pair in "${AP_VID}:${AP_PID}" "${COMBO_VID}:${COMBO_PID}"; do
-    iface="$(usb_net_iface "${pair%%:*}" "${pair##*:}")" || continue
-    state="$(nmcli -g GENERAL.STATE device show "$iface" 2>/dev/null || true)"
-    case "$state" in
-      *disconnected* | *unmanaged* | *unavailable* | "") ;;
-      *) nmcli device disconnect "$iface" || true ;;
-    esac
-    nmcli device set "$iface" managed no || true
-  done
+  [[ -n "$iface" ]] || return 0
+  state="$(nmcli -g GENERAL.STATE device show "$iface" 2>/dev/null || true)"
+  case "$state" in
+    *disconnected* | *unmanaged* | *unavailable* | "") ;;
+    *) nmcli device disconnect "$iface" || true ;;
+  esac
+  nmcli device set "$iface" managed no || true
 }
 
 install_units() {
@@ -1119,52 +1120,7 @@ WantedBy=multi-user.target
 EOF
   chmod 0644 /etc/systemd/system/tallow-iot-dnsmasq.service
 
-  cat >/etc/systemd/system/tallow-iot-combo-bt-off.service <<EOF
-[Unit]
-Description=Power off the Realtek combo Bluetooth controller
-After=bluetooth.service
-PartOf=bluetooth.service
-
-[Service]
-Type=oneshot
-ExecStart=${SCRIPT} combo-bt-off
-
-[Install]
-WantedBy=bluetooth.service multi-user.target
-EOF
-  chmod 0644 /etc/systemd/system/tallow-iot-combo-bt-off.service
-
-  cat >/etc/systemd/system/tallow-iot-survey.service <<EOF
-[Unit]
-Description=Record 2.4 GHz channel advice from the Realtek combo
-After=tallow-iot-combo-bt-off.service
-
-[Service]
-Type=oneshot
-ExecStart=${SCRIPT} survey-timer
-EOF
-  chmod 0644 /etc/systemd/system/tallow-iot-survey.service
-
-  cat >/etc/systemd/system/tallow-iot-survey.timer <<EOF
-[Unit]
-Description=Survey 2.4 GHz channels 1, 6, and 11 every 30 minutes
-
-[Timer]
-OnBootSec=1min
-OnActiveSec=1min
-OnUnitActiveSec=30min
-AccuracySec=1min
-
-[Install]
-WantedBy=timers.target
-EOF
-  chmod 0644 /etc/systemd/system/tallow-iot-survey.timer
-
-  cat >/etc/udev/rules.d/80-tallow-combo-bt.rules <<EOF
-# Realtek combo Bluetooth (0bda:d723) shares the survey antenna. Keep it off.
-ACTION=="add", SUBSYSTEM=="bluetooth", ATTRS{idVendor}=="${COMBO_VID}", ATTRS{idProduct}=="${COMBO_PID}", TAG+="systemd", ENV{SYSTEMD_WANTS}="tallow-iot-combo-bt-off.service"
-EOF
-  chmod 0644 /etc/udev/rules.d/80-tallow-combo-bt.rules
+  retire_survey_hold
 
   cat >/etc/tmpfiles.d/tallow-iot.conf <<EOF
 d ${RUN} 0755 root root -
@@ -1182,7 +1138,7 @@ cmd_prepare() {
   need_root
   [[ "$#" -eq 0 ]] || die "prepare takes no arguments"
   assign_usb_iface iface "$AP_VID" "$AP_PID" \
-    "Kootech AP (USB ${AP_VID}:${AP_PID}) is not present. Leave it in the USB port it is in."
+    "Realtek combo (USB ${AP_VID}:${AP_PID}) is not present. Leave it in the USB port it is in."
   refuse_lan "$iface"
   drv="$(driver_of "$iface" || true)"
   if [[ -n "$drv" && "$drv" != "$AP_DRIVER" ]]; then
@@ -1198,83 +1154,41 @@ cmd_prepare() {
   fi
 }
 
-block_combo_hci() {
-  local hci="$1" shopts r
-  shopts="$(shopt -p nullglob || true)"
-  shopt -s nullglob
-  for r in /sys/class/rfkill/rfkill*; do
-    if [[ "$(tr -d '[:space:]' <"${r}/name")" == "$hci" && "$(tr -d '[:space:]' <"${r}/type")" == "bluetooth" ]]; then
-      printf '1\n' >"${r}/soft" || true
-    fi
+# Drop the units that powered this stick's Bluetooth off and scanned its Wi-Fi.
+# A leftover oneshot must not rfkill the seed. survey-timer does not scan.
+retire_survey_hold() {
+  local unit
+  for unit in tallow-iot-combo-bt-off.service tallow-iot-survey.timer tallow-iot-survey.service; do
+    systemctl disable --now "$unit" 2>/dev/null || true
   done
-  eval "$shopts"
-  rfkill block "$hci" || true
+  rm -f \
+    /etc/systemd/system/tallow-iot-combo-bt-off.service \
+    /etc/systemd/system/tallow-iot-survey.service \
+    /etc/systemd/system/tallow-iot-survey.timer \
+    /etc/udev/rules.d/80-tallow-combo-bt.rules
 }
 
 cmd_combo_bt_off() {
-  local hci="" i powered="" soft=""
   need_root
   [[ "$#" -eq 0 ]] || die "combo-bt-off takes no arguments"
-  hci="$(usb_hci "$COMBO_VID" "$COMBO_PID" || true)"
-  if [[ -z "$hci" ]]; then
-    log "combo Bluetooth controller is not present"
-    return 0
-  fi
-  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-    hci="$(usb_hci "$COMBO_VID" "$COMBO_PID" || true)"
-    [[ -n "$hci" ]] || return 0
-    block_combo_hci "$hci"
-    if systemctl is-active --quiet bluetooth; then
-      busctl set-property org.bluez "/org/bluez/${hci}" org.bluez.Adapter1 Powered b false || true
-    fi
-    sleep 0.4
-    powered="$(busctl get-property org.bluez "/org/bluez/${hci}" org.bluez.Adapter1 Powered 2>/dev/null || echo 'b false')"
-    soft="$(rfkill -r -n -o DEVICE,SOFT | awk -v h="$hci" '$1 == h { print $2; exit }')"
-    if [[ "$powered" == "b false" && "$soft" == "blocked" ]]; then
-      log "combo Bluetooth ${hci} is off"
-      return 0
-    fi
-    if ! systemctl is-active --quiet bluetooth && [[ "$soft" == "blocked" ]]; then
-      log "combo Bluetooth ${hci} is rfkill-blocked"
-      return 0
-    fi
-  done
-  printf 'setup_iot_ap: combo Bluetooth %s stayed up (powered=%s soft=%s)\n' \
-    "$hci" "${powered:-?}" "${soft:-?}" >&2
-  return 1
+  log "Bluetooth on ${AP_VID}:${AP_PID} is the seed and stays on"
 }
 
 cmd_survey_timer() {
-  local iface
+  local iface="" saved=""
   need_root
   [[ "$#" -eq 0 ]] || die "survey-timer takes no arguments"
   if [[ ! -d "$SECRET_DIR" ]]; then
     log "secrets directory is missing; run up first"
     return 0
   fi
-  if ! iface="$(usb_net_iface "$COMBO_VID" "$COMBO_PID")"; then
-    lock_secrets
-    ensure_secret_dir
-    write_advice missing "" "" "combo survey radio ${COMBO_VID}:${COMBO_PID} is not present"
-    unlock_secrets
-    log "combo survey radio is not present"
-    return 0
-  fi
-  if ! cmd_combo_bt_off; then
-    lock_secrets
-    ensure_secret_dir
-    write_advice blocked "$iface" "" "combo Bluetooth stayed up; scan skipped"
-    unlock_secrets
-    return 0
-  fi
-  if ! survey_iface "$iface" combo "advice only; apply-channel restarts the AP on the recommended channel" no; then
-    lock_secrets
-    write_advice combo "$iface" "" "scan failed: ${SCAN_ERROR:-unknown}"
-    unlock_secrets
-    log "survey failed: ${SCAN_ERROR:-unknown}"
-    return 0
-  fi
-  log "advice recorded; recommended channel $(advice_field recommended || true)"
+  iface="$(usb_net_iface "$AP_VID" "$AP_PID" || true)"
+  saved="$(current_channel || true)"
+  lock_secrets
+  ensure_secret_dir
+  write_advice ap "$iface" "" "this radio is the access point; survey skipped" "$saved"
+  unlock_secrets
+  log "survey skipped; this radio is the access point"
 }
 
 allow_mac() {
@@ -1438,23 +1352,9 @@ cmd_unreserve() {
   return 0
 }
 
-cmd_apply_channel() {
-  local rec cur
-  need_root
-  require_fedora
-  [[ "$#" -eq 0 ]] || die "apply-channel takes no arguments"
-  [[ -f "${SECRET_DIR}/advice" ]] || die "no survey advice in ${SECRET_DIR}/advice"
-  rec="$(advice_field recommended || true)"
-  [[ "$rec" =~ ^(1|6|11)$ ]] || die "no channel recommendation to apply (see ${SECRET_DIR}/advice)"
-  cur="$(current_channel || true)"
-  if [[ "$cur" == "$rec" ]]; then
-    log "saved channel is already ${rec}"
-    return 0
-  fi
-  lock_secrets
-  write_channel "$rec"
-  unlock_secrets
-  log "saved channel ${cur:-unset} -> ${rec}"
+# Restarts the AP when this host is already running it, so a channel write is
+# the channel stations join. A host that has not been brought up only saves it.
+restart_ap_for_channel() {
   if [[ ! -x /usr/bin/hostapd || ! -f /etc/systemd/system/hostapd.service.d/tallow.conf ]]; then
     log "channel saved; run up to start the AP"
     return 0
@@ -1464,6 +1364,53 @@ cmd_apply_channel() {
   if [[ -f /etc/systemd/system/tallow-iot-dnsmasq.service ]]; then
     systemctl restart tallow-iot-dnsmasq
   fi
+}
+
+cmd_pin_channel() {
+  local cur
+  need_root
+  require_fedora
+  [[ "$#" -eq 1 ]] || die "usage: ${SCRIPT} pin-channel <1|6|11|off>"
+  if [[ "$1" == "off" ]]; then
+    lock_secrets
+    rm -f "${SECRET_DIR}/channel.lock"
+    unlock_secrets
+    log "channel lock cleared"
+    return 0
+  fi
+  [[ "$1" =~ ^(1|6|11)$ ]] || die "refusing channel ${1}"
+  cur="$(current_channel || true)"
+  lock_secrets
+  ensure_secret_dir
+  write_channel "$1"
+  printf '%s\n' "$1" | write_secret "${SECRET_DIR}/channel.lock"
+  unlock_secrets
+  log "pinned channel ${cur:-unset} -> ${1}"
+  restart_ap_for_channel
+}
+
+cmd_apply_channel() {
+  local rec cur lock
+  need_root
+  require_fedora
+  [[ "$#" -eq 0 ]] || die "apply-channel takes no arguments"
+  [[ -f "${SECRET_DIR}/advice" ]] || die "no survey advice in ${SECRET_DIR}/advice"
+  rec="$(advice_field recommended || true)"
+  [[ "$rec" =~ ^(1|6|11)$ ]] || die "no channel recommendation to apply (see ${SECRET_DIR}/advice)"
+  lock="$(locked_channel || true)"
+  if [[ -n "$lock" && "$lock" != "$rec" ]]; then
+    die "channel is locked to ${lock} for the mesh; run ${SCRIPT} pin-channel off to unlock"
+  fi
+  cur="$(current_channel || true)"
+  if [[ "$cur" == "$rec" ]]; then
+    log "saved channel is already ${rec}"
+    return 0
+  fi
+  lock_secrets
+  write_channel "$rec"
+  unlock_secrets
+  log "saved channel ${cur:-unset} -> ${rec}"
+  restart_ap_for_channel
 }
 
 install_hostapd() {
@@ -1488,7 +1435,7 @@ cmd_up() {
     log "/etc/tallow is not traversable; dnsmasq cannot read reservations"
   fi
   assign_usb_iface iface "$AP_VID" "$AP_PID" \
-    "Kootech AP (USB ${AP_VID}:${AP_PID}) is not present. Leave it in the USB port it is in."
+    "Realtek combo (USB ${AP_VID}:${AP_PID}) is not present. Leave it in the USB port it is in."
   refuse_lan "$iface"
   if systemctl is-active --quiet dnsmasq.service; then
     die "system dnsmasq.service is active. This AP uses tallow-iot-dnsmasq.service. Stop the system unit first."
@@ -1503,7 +1450,6 @@ cmd_up() {
   configure_firewall
   configure_chrony
   install_units
-  systemctl enable --now tallow-iot-combo-bt-off.service
   ensure_initial_channel
   cmd_prepare
   systemctl enable hostapd.service
@@ -1529,33 +1475,35 @@ cmd_up() {
   fi
   reclaim_reserved_addresses "$iface" "$must"
   pin_reservation_neighbors "$iface"
-  systemctl enable --now tallow-iot-survey.timer
+  log "survey retired; saved channel stays $(current_channel || printf '%s' unset)"
   log "SSID $(tr -d '[:space:]' <"${SECRET_DIR}/ssid") on ${iface} channel $(current_channel) address ${AP_CIDR}"
   log "passphrase: ${SECRET_DIR}/passphrase"
   if [[ -z "$(valid_macs "${SECRET_DIR}/accept_macs")" ]]; then
     log "accept list is empty; nothing can join until: sudo ${SCRIPT} allow aa:bb:cc:dd:ee:ff"
   fi
   log "channel changes: sudo ${SCRIPT} apply-channel"
+  log "mesh channel lock: sudo ${SCRIPT} pin-channel 1"
 }
 
 cmd_status() {
   local iface hci n soft powered from_pri to_pri from_target to_target zone_target zone_services
   need_root
   iface="$(usb_net_iface "$AP_VID" "$AP_PID" || true)"
-  hci="$(usb_hci "$COMBO_VID" "$COMBO_PID" || true)"
+  hci="$(usb_hci "$AP_VID" "$AP_PID" || true)"
   printf 'SSID file: %s\n' "${SECRET_DIR}/ssid"
   if [[ -f "${SECRET_DIR}/ssid" ]]; then
     printf 'SSID: %s\n' "$(tr -d '[:space:]' <"${SECRET_DIR}/ssid")"
   fi
   printf 'passphrase file: %s\n' "${SECRET_DIR}/passphrase"
   printf 'saved channel: %s\n' "$(current_channel || printf '%s' 'unset')"
+  printf 'channel lock: %s\n' "$(locked_channel || printf '%s' 'off')"
   printf 'AP interface: %s\n' "${iface:-missing}"
   if [[ -n "$iface" ]]; then
     ip -4 -o addr show dev "$iface" | awk '{ print "address: " $4 }' || true
   fi
   printf 'hostapd: %s\n' "$(systemctl is-active hostapd 2>/dev/null || true)"
   printf 'dnsmasq: %s\n' "$(systemctl is-active tallow-iot-dnsmasq 2>/dev/null || true)"
-  printf 'survey timer: %s\n' "$(systemctl is-active tallow-iot-survey.timer 2>/dev/null || true)"
+  printf 'survey: retired\n'
   if [[ -f "${SECRET_DIR}/accept_macs" ]]; then
     n="$(valid_macs "${SECRET_DIR}/accept_macs" | awk 'END { print NR + 0 }')"
     printf 'accept list (%s):\n' "$n"
@@ -1572,9 +1520,9 @@ cmd_status() {
   if [[ -n "$hci" ]]; then
     soft="$(rfkill -r -n -o DEVICE,SOFT | awk -v h="$hci" '$1 == h { print $2; exit }')"
     powered="$(busctl get-property org.bluez "/org/bluez/${hci}" org.bluez.Adapter1 Powered 2>/dev/null || echo 'unknown')"
-    printf 'combo Bluetooth: %s soft=%s powered=%s\n' "$hci" "${soft:-unknown}" "$powered"
+    printf 'Bluetooth: %s soft=%s powered=%s\n' "$hci" "${soft:-unknown}" "$powered"
   else
-    printf 'combo Bluetooth: not present\n'
+    printf 'Bluetooth: not present\n'
   fi
   if [[ -f "${SECRET_DIR}/advice" ]]; then
     printf 'advice:\n'
@@ -1613,6 +1561,7 @@ main() {
     reserve) cmd_reserve "$@" ;;
     unreserve) cmd_unreserve "$@" ;;
     apply-channel) cmd_apply_channel "$@" ;;
+    pin-channel) cmd_pin_channel "$@" ;;
     prepare) cmd_prepare "$@" ;;
     combo-bt-off) cmd_combo_bt_off "$@" ;;
     survey-timer) cmd_survey_timer "$@" ;;
