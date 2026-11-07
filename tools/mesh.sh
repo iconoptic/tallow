@@ -30,10 +30,13 @@
 #                                      sign <image> for that product and version with ota.key;
 #                                      write the 69-byte <image>.sig: product, version, signature.
 #                                      A board refuses a version below the highest it has confirmed.
-#   tools/mesh.sh daemon ota /dev/ttyUSB0 --target <id> --image <file> --sig <file>
-#                                      send that signed image; Begin takes the product and version
-#                                      from the .sig. The container gets the port as daemon gatt
-#                                      does, and the named image and signature only.
+#   tools/mesh.sh daemon ota /dev/ttyUSB0 --image <file> --sig <file> [--target <id>]
+#                                      send that signed image to every node in data/mesh/map.json
+#                                      whose reported product matches and whose running version is
+#                                      lower. --target limits it to that one id. Begin takes the
+#                                      product and version from the .sig. The container gets the
+#                                      port as daemon gatt does, the map, and the named image and
+#                                      signature only.
 #   tools/mesh.sh build                release image for a classic ESP32
 #   tools/mesh.sh size                 image size against the OTA slot
 #   tools/mesh.sh cam-build            release image for an ESP32-S3 cam
@@ -99,7 +102,8 @@ MESH="${ROOT}/firmware/mesh"
 CAM="${ROOT}/firmware/cam"
 CAM_ELF="target/xtensa-esp32s3-espidf/release/tallow-cam"
 # Wi-Fi credentials for the cam image. The build reads this one file. It is
-# never printed. mesh.key is not mounted into the cam build.
+# never printed. A cam build also reads mesh.key, mounted at /run/mesh-key.
+# fmt does not.
 CAM_SECRETS="${ROOT}/firmware/cam/secrets.yaml"
 # The mesh node's already-checked-out IDF, so the cam build does not clone it.
 CAM_IDF="${MESH}/node/.embuild/espressif/esp-idf/v5.5.5"
@@ -159,9 +163,10 @@ in_image_from() {
   run_image_from "$image" "$workdir" bash -lc "set -euo pipefail; $*"
 }
 
-# The cam crate is a separate image and a separate tree. It does not mount the
-# mesh key, it does not mount firmware/mesh itself, and it does not write into
-# the mesh crates. The two mesh mounts are the core crate and ota.pub.
+# The cam crate is a separate image and a separate tree. A build mounts the
+# mesh key read-only; fmt does not need it. The crate does not mount
+# firmware/mesh itself except the core, and it does not write into the mesh
+# crates. The mesh mounts are the core crate, ota.pub, and, for a build, the key.
 # The cam build bakes wifi_ssid and wifi_password. A missing file stops here,
 # before podman refuses a missing bind source.
 need_cam_secrets() {
@@ -175,6 +180,7 @@ need_cam_ota() {
 
 run_cam_image() {
   need_cam_secrets
+  need_key
   cam_container "$CAM_SECRETS" "$@"
 }
 
@@ -195,6 +201,9 @@ cam_container() {
     -v "${MESH}/core:/mesh/core:ro"
     -v "${OTA_PUB}:/run/ota.pub:ro"
     -e HOME=/home/esp)
+  # Present for fmt too when the key exists. A build refuses a missing key
+  # before this, in run_cam_image.
+  [[ -n "$secrets" && -r "$KEY" ]] && args+=(-v "${KEY}:/run/mesh-key:ro")
   [[ -n "$secrets" ]] && args+=(-v "${secrets}:/run/secrets.yaml:ro")
   if [[ -d "$CAM_IDF" ]]; then
     args+=(-v "${CAM_IDF}:/idf:ro" -e IDF_PATH=/idf)
@@ -554,7 +563,7 @@ hide_node_target() {
   chmod 700 "${MESH}/node/target"
 }
 
-# The cam image embeds the Wi-Fi password. run_cam_image calls this before each
+# The cam image embeds the Wi-Fi password and the mesh key. run_cam_image calls this before each
 # container, so a failed first build never leaves a readable tree.
 hide_cam_target() {
   mkdir -p "${CAM}/target"
@@ -595,16 +604,35 @@ need_cam_port() {
   echo "Hold BOOT and tap RST first."
 }
 
+# 0 when this address accepts the panel's status port. An inventory row is not
+# evidence: sync leaves a cam that has gone quiet.
+cam_status_up() {
+  local address="$1"
+  "${ROOT}/.venv/bin/python" - "$address" <<'PY'
+import socket
+import sys
+
+sock = socket.socket()
+sock.settimeout(1.5)
+try:
+    sock.connect((sys.argv[1], 6053))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+PY
+}
+
 # After a cam flash the board reboots and joins the AP. Put it on the panel page
 # as soon as port 6053 answers, so the page does not wait for a fleetd poll.
 wait_cam_on_panel() {
   local address="$1" tries=0
   while [[ "$tries" -lt 24 ]]; do
-    "${ROOT}/.venv/bin/python" "${ROOT}/tools/sync_panel_cams.py" \
-      --catalog "${MESH}/devices.jsonl" \
-      --reservations "${ROOT}/secrets/iot-ap/reservations" \
-      --inventory "${ROOT}/data/panel/cams.json" || return 0
-    if grep -q "\"${address}\"" "${ROOT}/data/panel/cams.json" 2>/dev/null; then
+    if cam_status_up "$address"; then
+      "${ROOT}/.venv/bin/python" "${ROOT}/tools/sync_panel_cams.py" \
+        --catalog "${MESH}/devices.jsonl" \
+        --reservations "${ROOT}/secrets/iot-ap/reservations" \
+        --inventory "${ROOT}/data/panel/cams.json"
       echo "${address} is on the panel page (data/panel/cams.json)."
       return 0
     fi
@@ -612,6 +640,7 @@ wait_cam_on_panel() {
     sleep 5
   done
   echo "${address} did not answer on 6053 within 2 minutes. When it joins, run: tools/mesh.sh cams" >&2
+  return 1
 }
 
 # Gives this cam MAC its own address. setup_iot_ap.sh owns the reservations.
@@ -703,7 +732,8 @@ run_daemon_ota() {
     -v "${ROOT}/host:/repo/host:ro" -v "${ROOT}/data/mesh:/repo/data/mesh" \
     -v "${image}:/run/ota-image:ro" -v "${sig}:/run/ota-image.sig:ro" \
     "$RUST_HOST_IMAGE" /repo/host/target/release/tallowd ota \
-    --port "$port" --image /run/ota-image --sig /run/ota-image.sig "${rest[@]}"
+    --port "$port" --map /repo/data/mesh/map.json \
+    --image /run/ota-image --sig /run/ota-image.sig "${rest[@]}"
 }
 
 # Signs one image with firmware/mesh/ota.key. The message is what `signed_message`
@@ -788,10 +818,10 @@ run_daemon() {
       ;;
     ota)
       shift
-      [[ -n "${1:-}" ]] || die "Name the port: tools/mesh.sh daemon ota /dev/ttyUSBn --target <id> --image <file> --sig <file>"
+      [[ -n "${1:-}" ]] || die "Name the port: tools/mesh.sh daemon ota /dev/ttyUSBn --image <file> --sig <file> [--target <id>]"
       run_daemon_ota "$1" "${@:2}"
       ;;
-    *) die "Usage: tools/mesh.sh daemon check|build|run <port> [arguments]|gatt <port> [arguments]|ota <port> --target <id> --image <file> --sig <file>" ;;
+    *) die "Usage: tools/mesh.sh daemon check|build|run <port> [arguments]|gatt <port> [arguments]|ota <port> --image <file> --sig <file> [--target <id>]" ;;
   esac
 }
 

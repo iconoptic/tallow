@@ -5,7 +5,8 @@ Documentation=file:///home/btgrant/Projects/tallow/docs/devices/govee-h7020.md
 Conflicts=tallow-panel-broker.service
 
 [Service]
-ExecStart=/home/btgrant/Projects/tallow/host/target/release/tallow-broker
+# The live copy, not host/target/release. daemon build rewrites the release binary.
+ExecStart=%h/Projects/tallow/host/target/live/tallow-broker
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true

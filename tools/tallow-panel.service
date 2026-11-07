@@ -1,0 +1,27 @@
+# The LAN panel. It starts `tallowd run` itself from this same binary, so do not
+# also run tallowd.service: both would hold the root board's port, and the panel
+# stands aside when another writer keeps the map fresh.
+#
+# ExecStart is the live copy. tools/mesh.sh daemon build rewrites
+# host/target/release/tallowd, and tools/deploy_panel.sh copies that build here
+# before it restarts this unit.
+#
+# The user manager does not give this process the login's groups, and
+# SupplementaryGroups= is refused. The board port is group dialout, mode 0660,
+# so the panel is started with sg. NoNewPrivileges would block that.
+[Unit]
+Description=tallow LAN panel
+Conflicts=tallowd.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Projects/tallow
+ExecStart=/usr/bin/sg dialout -c "%h/Projects/tallow/host/target/live/tallowd panel"
+Restart=on-failure
+RestartSec=3
+UMask=0077
+
+[Install]
+WantedBy=default.target
