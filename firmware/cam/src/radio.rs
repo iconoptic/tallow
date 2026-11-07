@@ -1,0 +1,189 @@
+//! ESP-NOW through `esp-idf-sys`.
+//!
+//! The safe `EspNow` wrapper turns Wi-Fi modem sleep off. This camera stays
+//! awake for another reason, and that wrapper also drops each frame's signal
+//! strength, so this file is the small unsafe seam instead. It does not call
+//! `esp_wifi_set_channel`: the station is already associated, and that call
+//! would pull it off the access point. ESP-NOW then uses the station channel.
+
+use core::ffi::c_int;
+use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+use std::sync::{Mutex, MutexGuard};
+
+use esp_idf_svc::sys::*;
+use tallow_mesh_core::MAX_FRAME;
+
+pub const BROADCAST: [u8; 6] = [0xFF; 6];
+const RX_QUEUE: usize = 12;
+
+pub struct Rx {
+    pub src: [u8; 6],
+    pub rssi: i8,
+    pub length: u8,
+    pub data: [u8; MAX_FRAME],
+}
+
+const NOTHING: u8 = 0;
+const SENT: u8 = 1;
+const FAILED: u8 = 2;
+
+static RX: Mutex<Option<SyncSender<Rx>>> = Mutex::new(None);
+static TX_RESULT: AtomicU8 = AtomicU8::new(NOTHING);
+pub static RX_FRAMES: AtomicU32 = AtomicU32::new(0);
+pub static RX_DROPS: AtomicU32 = AtomicU32::new(0);
+
+fn rx_queue() -> MutexGuard<'static, Option<SyncSender<Rx>>> {
+    RX.lock().unwrap_or_else(|poison| poison.into_inner())
+}
+
+/// Runs on the Wi-Fi task. It only copies the frame and hands it off.
+///
+/// # Safety
+/// ESP-NOW calls this with `info` and `data` valid for this call, and `data`
+/// readable for `length` bytes. Each pointer is still checked for null, and
+/// `src_addr` points at the 6-byte source address.
+unsafe extern "C" fn on_receive(info: *const esp_now_recv_info_t, data: *const u8, length: c_int) {
+    let Ok(length) = usize::try_from(length) else {
+        return;
+    };
+    if info.is_null() || data.is_null() || length > MAX_FRAME {
+        return;
+    }
+    let info = &*info;
+    if info.src_addr.is_null() {
+        return;
+    }
+    let mut frame = Rx {
+        src: [0; 6],
+        rssi: -127,
+        length: length as u8,
+        data: [0; MAX_FRAME],
+    };
+    frame
+        .src
+        .copy_from_slice(core::slice::from_raw_parts(info.src_addr, 6));
+    if !info.rx_ctrl.is_null() {
+        // The field is 8 bits of a bitfield, so the low byte holds the sign.
+        frame.rssi = (*info.rx_ctrl).rssi() as u8 as i8;
+    }
+    frame.data[..length].copy_from_slice(core::slice::from_raw_parts(data, length));
+    RX_FRAMES.fetch_add(1, Ordering::Relaxed);
+    let queue = rx_queue();
+    if let Some(sender) = queue.as_ref() {
+        if sender.try_send(frame).is_err() {
+            RX_DROPS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+/// # Safety
+/// ESP-NOW calls this. It reads no pointer, only `status`.
+unsafe extern "C" fn on_sent(_info: *const esp_now_send_info_t, status: esp_now_send_status_t) {
+    let result = if status == esp_now_send_status_t_ESP_NOW_SEND_SUCCESS {
+        SENT
+    } else {
+        FAILED
+    };
+    TX_RESULT.store(result, Ordering::Release);
+}
+
+fn check(code: esp_err_t) -> Result<(), EspError> {
+    esp!(code)
+}
+
+/// Starts ESP-NOW on the station's current channel. Wi-Fi must already be started.
+pub fn start() -> Result<Receiver<Rx>, EspError> {
+    let (sender, receiver) = sync_channel(RX_QUEUE);
+    // Installed before the callbacks, so a frame that arrives during init is queued.
+    *rx_queue() = Some(sender);
+    // SAFETY: Wi-Fi is started, as this function requires. Both callbacks match the
+    // signatures ESP-NOW declares, are `'static`, and copy before returning.
+    // A failed init still calls deinit, which returns an error when no stack exists.
+    let started = unsafe {
+        match check(esp_now_init()) {
+            Ok(()) => register(),
+            Err(err) => Err(err),
+        }
+    };
+    if let Err(err) = started {
+        *rx_queue() = None;
+        // SAFETY: deinit with no stack returns an error, which is ignored.
+        unsafe {
+            let _ = esp_now_deinit();
+        }
+        return Err(err);
+    }
+    if let Err(err) = ensure_peer(BROADCAST) {
+        *rx_queue() = None;
+        // SAFETY: init succeeded above, so deinit tears down that stack.
+        unsafe {
+            let _ = esp_now_deinit();
+        }
+        return Err(err);
+    }
+    Ok(receiver)
+}
+
+/// # Safety
+/// Called only after `esp_now_init` has succeeded and before `esp_now_deinit`.
+unsafe fn register() -> Result<(), EspError> {
+    check(esp_now_register_recv_cb(Some(on_receive)))?;
+    check(esp_now_register_send_cb(Some(on_sent)))?;
+    Ok(())
+}
+
+/// Drops the ESP-NOW stack. A later [`start`] can bring it back.
+pub fn stop() {
+    *rx_queue() = None;
+    TX_RESULT.store(NOTHING, Ordering::Release);
+    // SAFETY: deinit with no stack returns an error, which is ignored. When a
+    // stack exists, this is the matching teardown for `esp_now_init`.
+    unsafe {
+        let _ = esp_now_deinit();
+    }
+}
+
+pub fn ensure_peer(mac: [u8; 6]) -> Result<(), EspError> {
+    // SAFETY: `mac` outlives each call and is the 6 bytes they read. ESP-NOW copies
+    // `peer`, which is fully initialised from its `Default`.
+    unsafe {
+        if esp_now_is_peer_exist(mac.as_ptr()) {
+            return Ok(());
+        }
+        // Frames are sealed by the mesh, so the 7-peer limit on ESP-NOW's own
+        // encryption does not apply.
+        let peer = esp_now_peer_info_t {
+            peer_addr: mac,
+            channel: 0,
+            ifidx: wifi_interface_t_WIFI_IF_STA,
+            encrypt: false,
+            ..Default::default()
+        };
+        check(esp_now_add_peer(&peer))
+    }
+}
+
+pub fn drop_peer(mac: [u8; 6]) {
+    // SAFETY: `mac` outlives the call and is the 6 bytes it reads.
+    unsafe {
+        esp_now_del_peer(mac.as_ptr());
+    }
+}
+
+pub fn send(mac: [u8; 6], data: &[u8]) -> Result<(), EspError> {
+    TX_RESULT.store(NOTHING, Ordering::Release);
+    ensure_peer(mac)?;
+    // SAFETY: both buffers outlive the call, the length is `data`'s, and ESP-NOW
+    // copies the payload before it returns.
+    unsafe { check(esp_now_send(mac.as_ptr(), data.as_ptr(), data.len())) }
+}
+
+/// The last send's outcome, once the radio reports it.
+pub fn sent() -> Option<bool> {
+    match TX_RESULT.load(Ordering::Acquire) {
+        SENT => Some(true),
+        FAILED => Some(false),
+        _ => None,
+    }
+}

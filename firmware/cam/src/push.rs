@@ -13,7 +13,7 @@
 use tallow_mesh_core::ota::{verify, Code, ImageHash, PRODUCT_CAM0};
 
 /// `app0` and `app1` in the cam partition table. Not the mesh node's slot.
-pub const SLOT: u32 = 0x7C_0000;
+pub const SLOT: u32 = tallow_mesh_core::ota::CAM_SLOT;
 /// Size, product, version, digest, signature.
 pub const HEADER_LEN: usize = 4 + 1 + 4 + 32 + 64;
 /// Five minutes, in the wrapping millisecond clock the caller supplies.

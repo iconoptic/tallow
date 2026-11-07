@@ -8,6 +8,7 @@
       "decode_point_negated",
       "fiat_25519_carry_mul"
     ],
-    "main + ota result": ["tallow_cam4main", "8Listener3end"]
+    "main + ota result": ["tallow_cam4main", "8Listener3end"],
+    "main + mesh leaf": ["tallow_cam4main", "9note_link", "4Mesh3new"]
   }
 }

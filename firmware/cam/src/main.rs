@@ -2,18 +2,22 @@
 //!
 //! It takes its `tallow-iot` address by DHCP and serves MJPEG on port 8080.
 //! Port 6053 accepts a TCP connection so the panel's status check can pass.
-//! Port 3232 takes one signed image, and the cam reboots into it. The station
-//! and those listeners come up before the sensor starts, so a stuck sensor
-//! cannot keep the station off the air. There is no Bluetooth and no fallback
-//! access point. Serial output is the USB Serial/JTAG port. None of this has
-//! run on a board.
+//! Port 3232 takes one signed image, and the cam reboots into it. When the
+//! access point is on the mesh channel, the cam also speaks ESP-NOW as a leaf
+//! and can take the same signed image from the mesh. Peer frames only, never a
+//! socket, and never the root. The station and those listeners come up before
+//! the sensor starts, so a stuck sensor cannot keep
+//! the station off the air. There is no Bluetooth and no fallback access point.
+//! Serial output is the USB Serial/JTAG port. None of this has run on a board.
 
 #![warn(clippy::undocumented_unsafe_blocks)]
 
 mod camera;
+mod mesh_link;
 mod net;
 mod ota;
 mod push;
+mod radio;
 mod serve;
 mod stream;
 
@@ -25,6 +29,8 @@ use camera::Camera;
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::sys;
+use tallow_mesh_core::ota::{encode_up, Up};
+use tallow_mesh_core::{FrameKind, MAX_PAYLOAD};
 
 /// Prints free internal heap and free PSRAM. The IDF heap is up by the time
 /// `main` runs, and these queries only read it.
@@ -40,6 +46,14 @@ fn boot() {
         )
     };
     println!("boot heap {heap} psram {psram}");
+}
+
+/// Send one OTA status or result up the mesh. The bytes stay off every socket.
+fn send_mesh_up(mesh: &mut mesh_link::MeshLeaf, up: &Up, now: u32) {
+    let mut encoded = [0u8; MAX_PAYLOAD];
+    if let Some(length) = encode_up(up, &mut encoded) {
+        mesh.send_up(FrameKind::OtaUp, &encoded[..length], now);
+    }
 }
 
 /// Bind 8080 and 6053. Retries until the stack accepts them.
@@ -75,6 +89,7 @@ fn main() {
     // Without NVS, Wi-Fi still runs. The floor then refuses every push.
     let nvs = EspDefaultNvsPartition::take().ok();
     let versions = ota::Versions::open(nvs.clone());
+    let mut mesh = mesh_link::MeshLeaf::open(nvs.clone());
     let mut link = net::join(nvs);
     let mut listeners = listen_panel();
     let port = loop {
@@ -87,6 +102,7 @@ fn main() {
         }
     };
     let mut updates = ota::Listener::new(port, versions);
+    let mut mesh_push = ota::MeshPush::open(updates.floor());
     // The sensor can hang inside init. Accept the panel ports on another task
     // until it returns, so that hang cannot leave the station unreachable.
     // This task keeps the station. A second join cannot take the peripherals.
@@ -130,17 +146,31 @@ fn main() {
         misses = next;
         if again {
             println!("wifi down");
+            mesh.note_link(false, ota::now_ms());
             if link.reconnect().is_err() {
                 println!("wifi join failed");
             }
         }
         let now = ota::now_ms();
+        if let Some(floor) = updates.confirm_at(now) {
+            mesh_push.raise_floor(floor);
+        }
+        let identity = updates.identity();
+        mesh.note_link(link.up(), now);
+        let downs = mesh.poll(now, identity);
+        let tcp_busy = updates.busy();
+        for body in downs {
+            if let Some(up) = mesh_push.apply(&body, updates.versions_mut(), tcp_busy, now) {
+                send_mesh_up(&mut mesh, &up, now);
+            }
+        }
+        mesh_push.expire(now, updates.versions_mut());
         updates.note_link(link.up(), now);
         listeners.poll();
-        updates.poll();
+        updates.poll(mesh_push.busy());
         // A push owns the loop. Capture blocks for a frame, and with it each
         // pass would take only a few chunks.
-        if !updates.busy() {
+        if !updates.busy() && !mesh_push.busy() {
             if let Some(camera) = camera.as_mut() {
                 if let Some(frame) = camera.capture() {
                     if !logged_frame {
@@ -153,8 +183,12 @@ fn main() {
                 }
             }
         }
-        updates.confirm_at(ota::now_ms());
-        let pause = if updates.busy() {
+        if mesh_push.restart_due(ota::now_ms(), mesh.tx_idle()) {
+            // SAFETY: takes no arguments and does not return. The new image is
+            // already selected for the next boot, and the result has been queued.
+            unsafe { sys::esp_restart() };
+        }
+        let pause = if updates.busy() || mesh_push.busy() {
             1
         } else if listeners.streaming() {
             200

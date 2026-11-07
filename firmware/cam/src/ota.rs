@@ -20,7 +20,9 @@ use std::time::Duration;
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs, NvsDefault};
 use esp_idf_svc::sys;
-use tallow_mesh_core::ota::Code;
+use tallow_mesh_core::ota::{
+    running_version, Action, Code, Identity, Receiver, Up, CAM_BITMAP, CAM_SLOT, PRODUCT_CAM0,
+};
 
 use crate::push::{self, Idle, Offer, Steady};
 
@@ -72,6 +74,19 @@ impl Versions {
 
     fn floor(&self) -> u32 {
         self.floor
+    }
+
+    /// Product, the image that is executing, and the confirmed floor.
+    fn identity(&self) -> Identity {
+        let pending = self
+            .nvs
+            .as_ref()
+            .and_then(|nvs| nvs.get_u32(PENDING_KEY).ok().flatten());
+        Identity {
+            product: PRODUCT_CAM0,
+            running: running_version(running_is_pending(), pending, self.floor),
+            floor: self.floor,
+        }
     }
 
     fn set_pending(&mut self, version: u32) -> bool {
@@ -160,6 +175,21 @@ impl Listener {
         self.job.is_some()
     }
 
+    /// The confirmed floor, for the mesh receiver opened beside this listener.
+    pub fn floor(&self) -> u32 {
+        self.versions.floor()
+    }
+
+    /// What this camera reports on the mesh.
+    pub fn identity(&self) -> Identity {
+        self.versions.identity()
+    }
+
+    /// The version store the mesh writer shares with the TCP push.
+    pub fn versions_mut(&mut self) -> &mut Versions {
+        &mut self.versions
+    }
+
     pub fn note_link(&mut self, up: bool, now_ms: u32) {
         self.steady.note_link(up, now_ms);
     }
@@ -169,31 +199,46 @@ impl Listener {
     }
 
     /// Mark the running image valid when [`Steady`] says so and the running
-    /// slot is still pending verify. One success ends the checks.
-    pub fn confirm_at(&mut self, now_ms: u32) {
+    /// slot is still pending verify. One success ends the checks. The returned
+    /// floor is the one just stored, so the mesh receiver can refuse anything
+    /// older.
+    pub fn confirm_at(&mut self, now_ms: u32) -> Option<u32> {
         if !self.steady.due(now_ms) {
-            return;
+            return None;
         }
         if !running_is_pending() {
             self.steady.mark();
-            return;
+            return None;
         }
         // SAFETY: takes no arguments. Marks the running image valid so a reboot
         // keeps it. The pending-verify check above is what makes this the first
         // confirmation rather than a mark of an image that was never pending.
         if unsafe { sys::esp_ota_mark_app_valid_cancel_rollback() } == sys::ESP_OK {
             self.steady.mark();
+            let before = self.versions.floor();
             self.versions.promote();
             println!("ota valid");
+            let after = self.versions.floor();
+            return (after != before).then_some(after);
         }
+        None
     }
 
-    /// Accept one image, or keep reading the one already accepted.
-    pub fn poll(&mut self) {
+    /// Accept one image, or keep reading the one already accepted. A mesh
+    /// transfer already using the inactive slot refuses a new connection
+    /// without writing.
+    pub fn poll(&mut self, mesh_busy: bool) {
         if self.job.is_none() {
-            let Ok((sock, _)) = self.sock.accept() else {
+            let Ok((mut sock, _)) = self.sock.accept() else {
                 return;
             };
+            if mesh_busy {
+                let _ = sock.set_nonblocking(false);
+                let _ = sock.set_write_timeout(Some(ANSWER_TIMEOUT));
+                let _ = sock.write_all(&[Code::Refused as u8]);
+                println!("ota result {:?}", Code::Refused);
+                return;
+            }
             let _ = sock.set_nonblocking(false);
             let _ = sock.set_read_timeout(Some(Duration::from_millis(200)));
             let _ = sock.set_write_timeout(Some(ANSWER_TIMEOUT));
@@ -420,6 +465,28 @@ impl Slot {
         err == sys::ESP_OK
     }
 
+    fn perform(&mut self, action: &Action, versions: &mut Versions) -> bool {
+        match *action {
+            Action::Begin { size } => self.begin(size),
+            Action::Write { offset, len, data } => {
+                let Some(bytes) = data.get(..usize::from(len)) else {
+                    self.abort();
+                    return false;
+                };
+                let wrote = self.write(offset, bytes);
+                if !wrote {
+                    self.abort();
+                }
+                wrote
+            }
+            Action::Abort => {
+                self.abort();
+                true
+            }
+            Action::Finish { version } => self.finish(version, versions),
+        }
+    }
+
     fn abort(&mut self) {
         self.partition = core::ptr::null();
         let Some(handle) = self.handle.take() else {
@@ -434,6 +501,114 @@ impl Slot {
 impl Drop for Slot {
     fn drop(&mut self) {
         self.abort();
+    }
+}
+
+/// How soon after a stored image the reboot waits, so the result can leave.
+const RESTART_MIN_MS: u32 = 200;
+/// The longest that reboot waits for the radio.
+const RESTART_MAX_MS: u32 = 2_000;
+
+/// A mesh image written to the inactive slot the TCP push also uses.
+///
+/// Only one of the two writes at a time. This type does not read or write a
+/// socket, and the TCP listener does not send these bytes on ESP-NOW.
+pub struct MeshPush {
+    receiver: Box<Receiver<CAM_SLOT, CAM_BITMAP>>,
+    slot: Slot,
+    last_ms: u32,
+    restart_from: Option<u32>,
+}
+
+impl MeshPush {
+    /// `floor` is the highest version this camera has confirmed.
+    pub fn open(floor: u32) -> Self {
+        Self {
+            receiver: Box::new(Receiver::<CAM_SLOT, CAM_BITMAP>::new(PRODUCT_CAM0, floor)),
+            slot: Slot::new(),
+            last_ms: 0,
+            restart_from: None,
+        }
+    }
+
+    /// True while bytes are being written, or a stored image is waiting to boot.
+    pub fn busy(&self) -> bool {
+        self.receiver.in_progress() || self.restart_from.is_some()
+    }
+
+    /// The confirmed floor rose, so a later Begin below it is refused.
+    pub fn raise_floor(&mut self, version: u32) {
+        self.receiver.raise_floor(version);
+    }
+
+    /// One downward payload. A TCP push already in progress refuses a new mesh
+    /// image before any flash write. After a stored image, further payloads are
+    /// ignored so a new Begin cannot erase that slot.
+    pub fn apply(
+        &mut self,
+        payload: &[u8],
+        versions: &mut Versions,
+        tcp_busy: bool,
+        now: u32,
+    ) -> Option<Up> {
+        if self.restart_from.is_some() {
+            return None;
+        }
+        if tcp_busy && !self.receiver.in_progress() {
+            return Some(Up::Result {
+                code: Code::Refused,
+            });
+        }
+        self.last_ms = now;
+        let up = self.receiver.push(payload, OTA_PUB);
+        let landed = self.settle(versions);
+        let up = match up {
+            Some(Up::Result { code: Code::Ok }) if !landed => Some(Up::Result {
+                code: Code::Refused,
+            }),
+            None if !landed => Some(Up::Result {
+                code: Code::Refused,
+            }),
+            other => other,
+        };
+        if matches!(up, Some(Up::Result { code: Code::Ok })) {
+            self.restart_from = Some(now);
+        }
+        up
+    }
+
+    /// Drops a transfer that has gone quiet. A stored image is left to reboot.
+    pub fn expire(&mut self, now: u32, versions: &mut Versions) {
+        if self.restart_from.is_some() {
+            return;
+        }
+        if self.receiver.expire(now, self.last_ms) {
+            println!("ota mesh quiet, dropped");
+            let _ = self.settle(versions);
+        }
+    }
+
+    /// True once the result has had time to leave, or the wait has run out.
+    pub fn restart_due(&self, now: u32, tx_idle: bool) -> bool {
+        let Some(from) = self.restart_from else {
+            return false;
+        };
+        let waited = now.wrapping_sub(from);
+        waited >= RESTART_MAX_MS || (waited >= RESTART_MIN_MS && tx_idle)
+    }
+
+    fn settle(&mut self, versions: &mut Versions) -> bool {
+        let mut landed = true;
+        while let Some(action) = self.receiver.take_action() {
+            landed &= self.slot.perform(&action, versions);
+        }
+        if !landed {
+            self.receiver.abandon();
+            while let Some(action) = self.receiver.take_action() {
+                let _ = self.slot.perform(&action, versions);
+            }
+        }
+        landed
     }
 }
 

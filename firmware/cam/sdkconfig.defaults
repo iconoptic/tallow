@@ -27,8 +27,12 @@ CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 # IDF default, 160.
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 
-# Wi-Fi and the stream run on the main task. The IDF default stack is too small.
-CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+# Wi-Fi, the stream, and the mesh leaf run on the main task. The IDF default
+# is too small. The first note_link on channel 1 builds Mesh there: main,
+# note_link, and Mesh::new are live together (20048 bytes). The "main + mesh
+# leaf" chain in tools/tests/stack_chains_cam.json needs 24576 so the 4096
+# margin still fits. Wi-Fi buffers stay on PSRAM; this stack is internal RAM.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=24576
 
 # The rollback timer marks the image invalid and reboots on this task, so it runs
 # the shutdown handlers here. The same as the mesh node.
